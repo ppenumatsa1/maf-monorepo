@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: maf_workflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maf_workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mock-mcp:
+    build:
+      context: ./backend
+    command: uvicorn scripts.mcp.mock_mcp_server:app --host 0.0.0.0 --port 8011
+    environment:
+      MOCK_MCP_API_KEY: demo-api-key
+      MOCK_MCP_BEARER_TOKEN: demo-bearer-token
+    ports:
+      - "${MCP_PORT:-8011}:8011"
+    volumes:
+      - ./:/app
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-mcp:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      APP_ENV: docker
+      OTEL_SERVICE_NAME: maf-customer-resolution
+      RUNTIME_TARGET: ${RUNTIME_TARGET:-local_maf}
+      FOUNDRY_RESPONSES_ENDPOINT: ${FOUNDRY_RESPONSES_ENDPOINT:-}
+      FOUNDRY_RESPONSES_TIMEOUT_SECONDS: ${FOUNDRY_RESPONSES_TIMEOUT_SECONDS:-60}
+      FOUNDRY_PROJECTS_ENDPOINT: ${FOUNDRY_PROJECTS_ENDPOINT:-}
+      FOUNDRY_MODEL_DEPLOYMENT_NAME: ${FOUNDRY_MODEL_DEPLOYMENT_NAME:-}
+      MCP_SERVER_URL: http://mock-mcp:8011/mcp
+      MCP_API_KEY: demo-api-key
+      MCP_BEARER_TOKEN: demo-bearer-token
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/maf_workflow
+    volumes:
+      - ./backend/.foundry:/app/.foundry
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    environment:
+      NGINX_API_UPSTREAM: http://backend:8000
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.60.0-jammy
+    profiles: ["test"]
+    depends_on:
+      - backend
+      - frontend
+    working_dir: /workspace/scripts/playwright
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:5173
+      PLAYWRIGHT_ARTIFACTS_DIR: /workspace/playwright-report/docker
+    volumes:
+      - ./:/workspace
+    command: bash -lc "npm ci && npm run test:e2e"
+
+volumes:
+  postgres-data:

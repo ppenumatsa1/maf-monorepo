@@ -1,0 +1,51 @@
+name: Order Resolution Private Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "agents/order-resolution/foundry-private/**"
+      - ".github/workflows/order-resolution-private-*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "agents/order-resolution/foundry-private/**"
+      - ".github/workflows/order-resolution-private-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-contracts:
+    name: Validate credential-free workflow contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate private runner workflow contracts
+        run: python3 agents/order-resolution/foundry-private/scripts/github/validate_private_runner_workflows.py
+
+  private-infrastructure:
+    name: Validate private infrastructure without Azure credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell release assets
+        run: |
+          set -euo pipefail
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/preflight_private_release.sh
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/verify_private_connectivity.sh
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/harden_postgres_private_access.sh
+          bash -n agents/order-resolution/foundry-private/scripts/foundry/collect_private_release_evidence.sh
+      - name: Validate deployment parameter JSON
+        run: |
+          set -euo pipefail
+          python3 -m json.tool agents/order-resolution/foundry-private/infra/foundry-hosted/iac/main.parameters.json >/dev/null
+          python3 -m json.tool agents/order-resolution/foundry-private/infra/foundry-hosted/iac/parameters.dev.json >/dev/null
+      - name: Compile private Bicep
+        run: az bicep build --file agents/order-resolution/foundry-private/infra/foundry-hosted/iac/main.bicep --stdout >/dev/null

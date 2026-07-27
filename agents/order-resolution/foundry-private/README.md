@@ -1,0 +1,224 @@
+# MAF Order Resolution Agent
+
+## Goal
+
+Build a verifiable customer-support workflow that:
+
+- auto-resolves low-risk cases,
+- pauses for human approval on risky cases,
+- preserves timeline and audit history end-to-end.
+
+Primary scenarios include delayed delivery, damaged item, and policy-driven compensation decisions.
+
+## Start Here (Self-Serve Onboarding Path)
+
+If someone starts from this README, this path should let them understand and run the system end-to-end:
+
+1. **Product + business intent**
+   - PRD: [docs/design/prd.md](docs/design/prd.md)
+   - User flow: [docs/design/userflow.md](docs/design/userflow.md)
+2. **Architecture + contracts**
+   - Architecture: [docs/design/architecture.md](docs/design/architecture.md)
+   - HITL decision rules: [docs/design/hitl-approval-conditions.md](docs/design/hitl-approval-conditions.md)
+   - API/event/telemetry schema: [docs/design/schema-io-telemetry.md](docs/design/schema-io-telemetry.md)
+3. **Delivery model (how work is governed)**
+   - Canonical contract: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+   - Repo instructions: [.github/copilot-instructions.md](.github/copilot-instructions.md), [agents.md](agents.md)
+4. **Implementation + repo shape**
+   - Backend runtime details: [backend/README.md](backend/README.md)
+   - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
+   - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
+5. **IaC + deployment lane**
+   - Infra overview: [infra/README.md](infra/README.md)
+   - Foundry-hosted private VNet lane: [infra/foundry-hosted/README.md](infra/foundry-hosted/README.md)
+6. **Validation + operations/SRE**
+   - Scripts and validation commands: [scripts/README.md](scripts/README.md)
+   - Operational run history and RCA log: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
+
+## Journey Status
+
+| Stage                | Status      | Runtime path                                                                                                 |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| Local MAF            | Implemented | Shared MAF workflow (`backend/app/maf/workflows/order_resolution.py`)                                       |
+| Foundry hosted agent | Implemented (private VNet lane retained) | Shared workflow hosted at `backend/foundry/main.py` with Responses protocol conversation turns              |
+| Private web delivery | Validated on the private release path | External frontend ACA proxies same-origin `/api` and SSE to an internal FastAPI ACA, which calls private Foundry Responses and PostgreSQL. |
+
+MAF internals are split for maintainability into `backend/app/maf/prompts`,
+`agents`, `tools`, `executors`, `runner`, and `workflows`.
+
+## Latest Foundry trace status (2026-07-27)
+
+- The private Foundry workflow, PostgreSQL state, and HITL behavior have hosted
+  E2E and correlated Application Insights evidence.
+- Hosted monitoring uses the private project-level `ApplicationInsights`
+  connection and Foundry's native
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` injection; do not add runtime
+  connection-string aliases or instrumentation-key fallbacks.
+- Private release and database lockdown remain gated by a fresh ACA and
+  hosted-agent connectivity proof for the canonical PostgreSQL FQDN.
+- Current private telemetry RCA and run evidence are tracked in:
+  - [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
+
+## Quick Start (Local)
+
+1. Bootstrap dependencies.
+
+```bash
+make bootstrap
+```
+
+## Private VNet web release
+
+The private deployment exposes only the frontend Container App. The browser never
+receives a Foundry or database credential: Nginx proxies `/api` to the
+internal-ingress FastAPI Container App, and the backend uses managed identity
+for the private Foundry Responses endpoint.
+
+PR validation remains credential-free. Protected manual workflows
+`foundry-provision.yml` and `foundry-deploy.yml` run only on the
+`foundry-private-v2` self-hosted runner in `foundry-private-env`, using Azure
+OIDC and the runner's retained private AZD environment. The local in-VNet
+operator flow remains available:
+
+```bash
+make foundry-provision-preview
+FOUNDRY_REFRESH_HOSTED_AGENT=true make foundry-release
+```
+
+`foundry-release` records ACA and hosted-agent connectivity in
+`backend/.foundry/results/private-connectivity-proof.json` before it disables
+PostgreSQL public access and removes the temporary Azure-services firewall rule.
+For a manual staged run, execute `make foundry-connectivity-proof` before
+`make foundry-postgres-lockdown`; the lockdown target rejects missing, stale, or
+mismatched proof for the canonical `POSTGRES_SERVER_NAME` FQDN. The current
+recorded target is
+`maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
+the AZD environment changes.
+
+2. Configure backend environment.
+
+- Copy backend env template and edit values in [backend/.env.example](backend/.env.example) and [backend/.env](backend/.env).
+- Core local mode:
+
+```bash
+STORE_PROVIDER=postgres
+RAG_PROVIDER=pgvector
+MEMORY_PROVIDER=postgres
+```
+
+3. Start services.
+
+```bash
+make up
+```
+
+Or run backend/frontend separately:
+
+```bash
+make run-backend
+make run-frontend
+```
+
+4. Open UI and health endpoints.
+
+- Frontend: http://localhost:5173
+- Backend health: http://localhost:8000/health
+
+## Required Validation Gates
+
+Run these before considering a change complete:
+
+```bash
+make test
+make eval-backend
+make eval-foundry   # report-only by default; evaluates current hosted E2E trace evidence
+make test-e2e
+./scripts/skills/design-review-skill.sh
+```
+
+`make test` and `make eval-backend` now auto-start the local Docker `postgres`
+service when `DATABASE_URL` points to localhost and PostgreSQL is not already running.
+
+Cross-target parity gate (requires endpoint matrix env vars):
+
+```bash
+make parity-all
+```
+
+POC parity is intentionally fast while still covering both targets (local + Foundry):
+
+- manual baseline cases: ORD-1001 and ORD-1009
+- event contract checks: all contract cases
+- UI smoke checks: low-risk complete, high-risk approve, high-risk reject
+
+Baseline behavior checks:
+
+- ORD-1001 should usually complete without HITL.
+- ORD-1009 should require HITL.
+
+## Deploy to Foundry (Hosted Agent)
+
+Deploy hosted agent package:
+
+```bash
+azd deploy order-resolution-hosted --no-prompt
+```
+
+Verify and invoke:
+
+```bash
+azd ai agent show order-resolution-hosted --output json
+azd ai agent invoke order-resolution-hosted "Resolve delayed order ORD-1001" --protocol responses --conversation-id c1 --no-prompt
+azd ai agent invoke order-resolution-hosted "Why was that resolution selected?" --protocol responses --conversation-id c1 --no-prompt
+```
+
+For high-risk requests, continue the same conversation with `Approve` or `Reject`.
+
+## Environment Model Configuration
+
+For hosted model client mode (`maf_sdk` + `foundry_models`), model/deployment config is read from backend environment:
+
+- FOUNDRY_PROJECTS_ENDPOINT
+- FOUNDRY_MODEL_DEPLOYMENT_NAME
+- FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME
+
+Current default examples in checked-in templates use gpt-4.1-mini for chat deployment.
+
+## Foundry-Hosted Wiring
+
+The hosted agent package is rooted at `backend/` and uses:
+
+- `backend/agent.yaml` (`protocol: responses`, `version: 2.0.0`)
+- `backend/foundry/main.py` (thin Responses host around the shared workflow)
+- `backend/.foundry/agent-metadata.yaml` and `backend/eval.yaml` for hosted eval metadata
+- `infra/foundry-hosted/azure.yaml` service project path (`./agent`) generated from `backend/` via `scripts/foundry/sync_hosted_source.sh`
+
+## Troubleshooting
+
+- If parity fails with 429 session_quota_exceeded from Foundry, reduce test concurrency, add case delays, or clear/raise session quota.
+- If hosted responses fail, verify `backend/agent.yaml` protocol and pass `--protocol responses` on `azd ai agent invoke`.
+
+## Documentation Map
+
+### Product and design
+
+- PRD: [docs/design/prd.md](docs/design/prd.md)
+- User flow: [docs/design/userflow.md](docs/design/userflow.md)
+- System architecture: [docs/design/architecture.md](docs/design/architecture.md)
+- HITL rules and baseline scenarios: [docs/design/hitl-approval-conditions.md](docs/design/hitl-approval-conditions.md)
+- API/event/telemetry schema: [docs/design/schema-io-telemetry.md](docs/design/schema-io-telemetry.md)
+
+### Delivery, implementation, and decisions
+
+- Engineering operating model (intent -> skills -> implementation -> evidence): [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+- Project phases and milestone history: [docs/design/implementation-phases.md](docs/design/implementation-phases.md)
+- Repo structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
+- Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
+- Backend operational details: [backend/README.md](backend/README.md)
+
+### IaC, deployment, and SRE operations
+
+- Infra overview: [infra/README.md](infra/README.md)
+- Foundry-hosted IaC/deployment: [infra/foundry-hosted/README.md](infra/foundry-hosted/README.md)
+- Scripts, parity, and E2E usage: [scripts/README.md](scripts/README.md)
+- Incident/RCA and execution log: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)

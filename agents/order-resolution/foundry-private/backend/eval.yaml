@@ -1,0 +1,25 @@
+name: order-resolution-quality
+dataset:
+  local_uri: .foundry/datasets/order-resolution-hosted-cases.jsonl
+agent:
+  name: order-resolution-hosted
+evaluators:
+  - task_completion
+  - task_adherence
+  - intent_resolution
+  - relevance
+foundry:
+  name: order-resolution-foundry-report
+  report_only: true
+  max_queries: 10
+  poll_interval: 5
+  timeout: 1800
+  evaluators:
+    - task_completion
+    - coherence
+  trace_evaluation:
+    evidence_file: .foundry/results/hosted-e2e-evidence.json
+    max_traces: 10
+    max_evidence_age_seconds: 21600
+options:
+  pass_threshold: 0.8

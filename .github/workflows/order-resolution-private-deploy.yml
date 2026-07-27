@@ -1,0 +1,150 @@
+name: Order Resolution Private Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Select deploy to publish backend and frontend images to the private ACR.
+        required: true
+        type: choice
+        default: cancel
+        options: [cancel, deploy]
+      refresh_hosted_agent:
+        description: Also refresh the Foundry-hosted agent after the ACA deployment.
+        required: true
+        type: boolean
+        default: false
+      repair_postgres_admin_password:
+        description: Reset the canonical PostgreSQL administrator password to the protected runtime connection credential.
+        required: true
+        type: boolean
+        default: false
+      run_smoke:
+        description: Run the hosted-agent smoke check after deployment.
+        required: true
+        type: boolean
+        default: true
+      run_evidence:
+        description: Run hosted E2E, evaluation, and telemetry evidence collection.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: order-resolution-private-deploy
+  cancel-in-progress: false
+
+env:
+  AZD_ENVIRONMENT_NAME: foundry-private-env
+  TARGET_RESOURCE_GROUP: rg-maf-ora-foundry-v2
+  TARGET_FOUNDRY_PROJECT: order-resolution
+  TARGET_POSTGRES_DATABASE: maf_workflow
+
+jobs:
+  deploy:
+    if: ${{ inputs.confirmation == 'deploy' }}
+    runs-on: [self-hosted, foundry-private-v2]
+    environment: foundry-private-env
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - name: Clean workspace while retaining the private azd environment
+        run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+      - name: Authenticate with the runner's federated Azure identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/setup-azd@v2
+      - name: Configure azd for Azure CLI OIDC authentication
+        run: |
+          set -euo pipefail
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          azd config set auth.useAzCliAuth true
+          azd ext install azure.ai.agents --no-prompt
+          azd ext install azure.ai.connections --no-prompt
+      - name: Initialize missing private release defaults
+        run: |
+          set -euo pipefail
+          (
+            cd agents/order-resolution/foundry-private/infra/foundry-hosted
+            azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+          )
+          agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
+      - name: Verify the selected private deployment environment
+        run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Repair PostgreSQL runtime credential
+        if: ${{ inputs.repair_postgres_admin_password }}
+        run: agents/order-resolution/foundry-private/scripts/foundry/repair_private_postgres_admin_password.sh
+      - name: Verify private ACR deployment target
+        run: |
+          set -euo pipefail
+          cd agents/order-resolution/foundry-private/infra/foundry-hosted
+          backend_app="$(azd env get-value BACKEND_CONTAINER_APP_NAME)"
+          frontend_app="$(azd env get-value FRONTEND_CONTAINER_APP_NAME)"
+          [[ -n "$backend_app" && -n "$frontend_app" ]]
+          mapfile -t acr_login_servers < <(
+            az acr list --resource-group "$TARGET_RESOURCE_GROUP" --query '[].loginServer' --output tsv
+          )
+          [[ "${#acr_login_servers[@]}" == "1" ]] || {
+            echo "Expected exactly one private ACR in the selected resource group."
+            exit 1
+          }
+          acr_login_server="${acr_login_servers[0]}"
+          [[ "$acr_login_server" == *.azurecr.io ]]
+          azd env set containerRegistryLoginServer "$acr_login_server"
+          azd env set AZURE_CONTAINER_REGISTRY_ENDPOINT "$acr_login_server"
+      - name: Deploy backend and frontend Container Apps
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-app-deploy
+      - name: Verify active Container Apps use private ACR images
+        run: |
+          set -euo pipefail
+          cd agents/order-resolution/foundry-private/infra/foundry-hosted
+          acr_login_server="$(azd env get-value containerRegistryLoginServer)"
+          backend_app="$(azd env get-value BACKEND_CONTAINER_APP_NAME)"
+          frontend_app="$(azd env get-value FRONTEND_CONTAINER_APP_NAME)"
+          for app in "$backend_app" "$frontend_app"; do
+            image="$(az containerapp show --resource-group "$TARGET_RESOURCE_GROUP" --name "$app" --query 'properties.template.containers[0].image' --output tsv)"
+            [[ "$image" == "$acr_login_server/"* ]] || {
+              echo "Container App image is not sourced from the selected private ACR."
+              exit 1
+            }
+          done
+      - name: Refresh hosted agent
+        if: ${{ inputs.refresh_hosted_agent }}
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-deploy
+      - name: Run hosted-agent smoke check
+        if: ${{ inputs.run_smoke }}
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-smoke
+      - name: Collect sanitized hosted-agent diagnostics after smoke failure
+        if: ${{ failure() && inputs.run_smoke }}
+        run: |
+          set -euo pipefail
+          cd agents/order-resolution/foundry-private/infra/foundry-hosted
+          for log_type in system console; do
+            echo "Hosted-agent ${log_type} diagnostics:"
+            azd ai agent monitor order-resolution-hosted --type "$log_type" --tail 200 --utc --no-prompt 2>&1 \
+              | grep -Eia 'error|exception|traceback|readiness|timeout|connection|postgres|failed|start' \
+              | sed -E -e 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^[:space:]@]+@#\1***@#g' -e 's/(password|token|secret|connection string)=([^[:space:]]+)/\1=***/Ig' \
+              | tail -100 || true
+          done
+      - name: Collect hosted release evidence
+        if: ${{ inputs.run_evidence }}
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-evidence

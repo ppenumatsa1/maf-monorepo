@@ -1,0 +1,17 @@
+name: order-resolution-quality
+dataset:
+  local_uri: .foundry/datasets/order-resolution-hosted-cases.jsonl
+evaluators:
+  - relevance
+foundry:
+  name: order-resolution-foundry-report
+  report_only: true
+  report_case_ids:
+    - ord-1001-low-risk-late
+    - ord-1009-high-amount
+  poll_interval: 5
+  timeout: 900
+  evaluators:
+    - relevance
+options:
+  pass_threshold: 0.8

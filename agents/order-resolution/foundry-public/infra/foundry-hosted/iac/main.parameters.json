@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "foundryAccountName": {
+      "value": "${FOUNDRY_ACCOUNT_NAME}"
+    },
+    "traceReaderPrincipalId": {
+      "value": "${FOUNDRY_TRACE_READER_PRINCIPAL_ID}"
+    },
+    "foundryProjectName": {
+      "value": "${FOUNDRY_PROJECT_NAME}"
+    },
+    "hostedAgentName": {
+      "value": "${HOSTED_AGENT_NAME}"
+    },
+    "containerRegistryName": {
+      "value": "${CONTAINER_REGISTRY_NAME}"
+    },
+    "containerAppsEnvironmentName": {
+      "value": "${CONTAINER_APPS_ENVIRONMENT_NAME=ora-public-dev2-aca}"
+    },
+    "backendContainerAppName": {
+      "value": "${BACKEND_CONTAINER_APP_NAME=ora-public-dev2-backend}"
+    },
+    "frontendContainerAppName": {
+      "value": "${FRONTEND_CONTAINER_APP_NAME=ora-public-dev2-frontend}"
+    },
+    "backendImageName": {
+      "value": "${SERVICE_BACKEND_IMAGE_NAME=mcr.microsoft.com/k8se/quickstart:latest}"
+    },
+    "frontendImageName": {
+      "value": "${SERVICE_FRONTEND_IMAGE_NAME=mcr.microsoft.com/k8se/quickstart:latest}"
+    },
+    "createPostgresServer": {
+      "value": "${CREATE_POSTGRES_SERVER}"
+    },
+    "postgresServerName": {
+      "value": "${POSTGRES_SERVER_NAME}"
+    },
+    "postgresAdminUsername": {
+      "value": "${POSTGRES_ADMIN_USERNAME}"
+    },
+    "postgresAdminPassword": {
+      "value": "${POSTGRES_ADMIN_PASSWORD}"
+    },
+    "postgresDatabaseName": {
+      "value": "${POSTGRES_DATABASE_NAME}"
+    },
+    "runtimeDatabaseUrl": {
+      "value": "${RUNTIME_DATABASE_URL}"
+    },
+    "postgresLocation": {
+      "value": "${POSTGRES_LOCATION}"
+    }
+  }
+}

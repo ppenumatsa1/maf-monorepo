@@ -1,0 +1,117 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+      "value": "${NAME_PREFIX}"
+    },
+    "aiSearchLocation": {
+      "value": "${AI_SEARCH_LOCATION}"
+    },
+    "foundryProjectName": {
+      "value": "${FOUNDRY_PROJECT_NAME}"
+    },
+    "hostedAgentName": {
+      "value": "${HOSTED_AGENT_NAME}"
+    },
+    "containerAppsEnvironmentName": {
+      "value": "${CONTAINER_APPS_ENVIRONMENT_NAME}"
+    },
+    "backendContainerAppName": {
+      "value": "${BACKEND_CONTAINER_APP_NAME}"
+    },
+    "frontendContainerAppName": {
+      "value": "${FRONTEND_CONTAINER_APP_NAME}"
+    },
+    "backendImageName": {
+      "value": "${SERVICE_BACKEND_IMAGE_NAME}"
+    },
+    "frontendImageName": {
+      "value": "${SERVICE_FRONTEND_IMAGE_NAME}"
+    },
+    "networkMode": {
+      "value": "${NETWORK_MODE}"
+    },
+    "createPrivateDnsVnetLinks": {
+      "value": "${CREATE_PRIVATE_DNS_VNET_LINKS}"
+    },
+    "createPrivateEndpoints": {
+      "value": "${CREATE_PRIVATE_ENDPOINTS}"
+    },
+    "enableContainerApps": {
+      "value": "${ENABLE_CONTAINER_APPS}"
+    },
+    "enablePostgresPrivateEndpoint": {
+      "value": "${ENABLE_POSTGRES_PRIVATE_ENDPOINT}"
+    },
+    "createPostgresAzureServicesFirewall": {
+      "value": "${CREATE_POSTGRES_AZURE_SERVICES_FIREWALL}"
+    },
+    "createNatGateway": {
+      "value": "${CREATE_NAT_GATEWAY}"
+    },
+    "createPrivateRunnerAccess": {
+      "value": "${CREATE_PRIVATE_RUNNER_ACCESS}"
+    },
+    "createBastionHost": {
+      "value": "${CREATE_BASTION_HOST}"
+    },
+    "createRunnerVm": {
+      "value": "${CREATE_RUNNER_VM}"
+    },
+    "runnerVmSshPublicKey": {
+      "value": "${RUNNER_VM_SSH_PUBLIC_KEY}"
+    },
+    "enableStandardAgentNetworkInjection": {
+      "value": "${ENABLE_STANDARD_AGENT_NETWORK_INJECTION}"
+    },
+    "assignPreCaphostRbac": {
+      "value": "${ASSIGN_PRE_CAPHOST_RBAC}"
+    },
+    "assignPostCaphostRbac": {
+      "value": "${ASSIGN_POST_CAPHOST_RBAC}"
+    },
+    "createAccountCapabilityHost": {
+      "value": "${CREATE_ACCOUNT_CAPABILITY_HOST}"
+    },
+    "createProjectCapabilityHost": {
+      "value": "${CREATE_PROJECT_CAPABILITY_HOST}"
+    },
+    "manageProjectConnections": {
+      "value": "${MANAGE_PROJECT_CONNECTIONS}"
+    },
+    "foundryChatDeploymentName": {
+      "value": "${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
+    },
+    "foundryChatDeploymentCapacity": {
+      "value": "${FOUNDRY_CHAT_DEPLOYMENT_CAPACITY}"
+    },
+    "foundryEmbeddingsDeploymentCapacity": {
+      "value": "${FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY}"
+    },
+    "runtimeConnectionName": {
+      "value": "orderresolutionruntimesecrets"
+    },
+    "createPostgresServer": {
+      "value": "${CREATE_POSTGRES_SERVER}"
+    },
+    "postgresServerName": {
+      "value": "${POSTGRES_SERVER_NAME}"
+    },
+    "postgresAdminUsername": {
+      "value": "${POSTGRES_ADMIN_USERNAME}"
+    },
+    "postgresAdminPassword": {
+      "value": "${POSTGRES_ADMIN_PASSWORD}"
+    },
+    "postgresDatabaseName": {
+      "value": "${POSTGRES_DATABASE_NAME}"
+    },
+    "postgresLocation": {
+      "value": "${POSTGRES_LOCATION}"
+    },
+    "runtimeDatabaseUrl": {
+      "value": "${RUNTIME_DATABASE_URL}"
+    }
+  }
+}

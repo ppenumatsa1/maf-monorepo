@@ -1,0 +1,84 @@
+name: Order Resolution Private Provision
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Select provision to apply private Foundry infrastructure changes.
+        required: true
+        type: choice
+        default: cancel
+        options: [cancel, provision]
+      provision_no_state:
+        description: Run azd provision with --no-state.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: order-resolution-private-provision
+  cancel-in-progress: false
+
+env:
+  AZD_ENVIRONMENT_NAME: foundry-private-env
+  TARGET_RESOURCE_GROUP: rg-maf-ora-foundry-v2
+  TARGET_FOUNDRY_PROJECT: order-resolution
+  TARGET_POSTGRES_DATABASE: maf_workflow
+
+jobs:
+  provision:
+    if: ${{ inputs.confirmation == 'provision' }}
+    runs-on: [self-hosted, foundry-private-v2]
+    environment: foundry-private-env
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - name: Clean workspace while retaining the private azd environment
+        run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+      - name: Authenticate with the runner's federated Azure identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/setup-azd@v2
+      - name: Configure azd for Azure CLI OIDC authentication
+        run: |
+          set -euo pipefail
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          azd config set auth.useAzCliAuth true
+          azd ext install azure.ai.agents --no-prompt
+          azd ext install azure.ai.connections --no-prompt
+      - name: Initialize missing private release defaults
+        run: |
+          set -euo pipefail
+          (
+            cd agents/order-resolution/foundry-private/infra/foundry-hosted
+            azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+          )
+          agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
+      - name: Verify the selected private deployment environment
+        run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Provision private Foundry infrastructure
+        working-directory: agents/order-resolution/foundry-private
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.provision_no_state }}" == "true" ]]; then
+            FOUNDRY_PROVISION_NO_STATE=true make foundry-provision
+          else
+            make foundry-provision
+          fi
+      - name: Re-verify canonical private deployment environment
+        run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh

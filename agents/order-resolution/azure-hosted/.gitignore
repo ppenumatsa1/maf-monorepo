@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.tox/
+.nox/
+
+# Node
+node_modules/
+dist/
+
+# Env and local data
+.env
+backend/.env
+backend/.foundry/checkpoints/*.json
+backend/.foundry/memory/*.json
+backend/.foundry/results/*.json
+
+# Logs
+*.log
+
+# Test artifacts
+playwright-report/
+test-results/
+scripts/parity/reports/
+
+# Local runtime config
+local.ini
+*.local.ini
+
+# Generated Bicep build artifacts (keep parameters.dev.json tracked)
+backend/tmp-foundry-sample/
