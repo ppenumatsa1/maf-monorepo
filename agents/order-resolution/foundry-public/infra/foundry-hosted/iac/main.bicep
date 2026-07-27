@@ -300,7 +300,7 @@ resource evaluationStorageAccount 'Microsoft.Storage/storageAccounts@2024-01-01'
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Allow'

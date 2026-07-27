@@ -4,6 +4,18 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## Monorepo deployment access blocker
+
+On 2026-07-27, an application-only deployment initiated from the operator host
+could not publish to `mafprv0722v3acr4aiw7fw5gjdo4`. The registry correctly
+rejected the public operator IP with HTTP 403. This is expected private ACR
+network enforcement, not an identity or application failure.
+
+The private monorepo deployment must run from the VNet-connected
+`foundry-private-v2` runner, which has private registry access and retains the
+selected `foundry-private-env` AZD environment. No ACR firewall exception,
+public endpoint, or admin-user workaround is permitted.
+
 ## Current topology
 
 ```text

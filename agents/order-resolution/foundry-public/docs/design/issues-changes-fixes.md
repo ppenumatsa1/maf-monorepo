@@ -44,6 +44,45 @@ native SSE; the rich stream is additive.
 - Application Insights correlation verified workflow and HITL spans for the
   hosted E2E conversations.
 
+## Monorepo redeployment blocker and fix
+
+On 2026-07-27, the monorepo Foundry Public `azd provision --preview` showed
+that `maffndevaljaq57wl77uqws` would change from
+`publicNetworkAccess: Disabled` to `Enabled`. The live account was already
+working with public access disabled, `allowBlobPublicAccess: false`, and
+`allowSharedKeyAccess: false`; enabling its public endpoint would weaken the
+proven security posture without being required for deployment.
+
+The cause was the evaluation artifact Storage account declaration in
+`infra/foundry-hosted/iac/main.bicep`, which set
+`publicNetworkAccess: 'Enabled'`. It now declares `Disabled`, matching the
+live account. Its existing Azure Services bypass and `defaultAction: Allow`
+settings are unchanged because public network access is disabled. Provisioning
+and application deployment remain blocked until a fresh preview confirms that
+this public-access drift is gone.
+
+The first monorepo `azd deploy` then failed because the clean repository does
+not track the generated `infra/foundry-hosted/agent/` deployment source. This
+is expected generated input, not missing application code. Running the existing
+`scripts/foundry/sync_hosted_source.sh` helper recreated it from `backend/`;
+the retry deployed the backend, frontend, and hosted agent successfully.
+
+## PostgreSQL startup incident and recovery
+
+After the monorepo deployment, backend revision
+`ora-public-dev2-backend--azd-1785186052` failed activation and the frontend
+`/api/health` proxy timed out. Container Apps console logs identified
+`psycopg_pool.PoolTimeout` during `postgres_db.ensure_schema()`. The root cause
+was the public Flexible Server `maffndpgbfscpfhjr7sp4cu` being in the `Stopped`
+state; its FQDN, public-access setting, and Azure-services firewall rule were
+otherwise correct.
+
+Starting the existing server restored backend health. Hosted workflow UI checks
+then passed, including the HITL approval/resume path. One manual-test case
+timed out while the database recovered, but its immediate isolated retry passed
+without code changes, confirming recovery latency rather than a UI or workflow
+regression.
+
 ## Telemetry signal policy
 
 The public project and both Container Apps export to the configured Application
