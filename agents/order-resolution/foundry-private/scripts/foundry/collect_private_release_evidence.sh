@@ -26,11 +26,11 @@ fi
 
 cd "$ROOT_DIR"
 ./scripts/github/foundry_hosted_e2e.sh
-FOUNDRY_EVAL_ENFORCE_PASS=true \
-FOUNDRY_EVAL_MAX_ERRORED=0 \
-make eval-foundry
 AZURE_RESOURCE_GROUP="$resource_group" \
 APPLICATION_INSIGHTS_NAME="${application_insights_target##*/}" \
 ./scripts/foundry/verify_telemetry.sh
+FOUNDRY_EVAL_ENFORCE_PASS=true \
+FOUNDRY_EVAL_MAX_ERRORED=0 \
+make eval-foundry
 
 echo "Private release evidence collection completed."

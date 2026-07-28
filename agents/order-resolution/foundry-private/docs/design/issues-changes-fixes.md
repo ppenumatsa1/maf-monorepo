@@ -581,6 +581,18 @@ evaluation now additionally requires a completed run to return at least one
 result for each of the three recorded conversations; a completed but empty
 evaluation cannot satisfy the release gate.
 
+**Follow-up correction.** A subsequent run confirmed that waiting alone did
+not create eligible evaluation rows. The E2E helper previously placed its
+per-request content marker only in a client header; the hosted Responses path
+does not guarantee that header reaches the application context. Each E2E
+payload now includes the existing
+`metadata.trace_evaluation_record_content=true` marker that the application
+already parses, so only those release-validation requests emit the required
+GenAI input/output attributes. The evidence sequence now validates
+Application Insights correlation before it starts Foundry evaluation. This
+keeps ordinary traffic redacted and makes missing trace export a direct,
+separate failure instead of an opaque zero-row evaluation.
+
 **Authority and retry boundary.** Microsoft’s conversation-trace evaluation
 guidance states that Application Insights ingestion can delay trace
 availability and directs operators to wait a few minutes before retrying:
