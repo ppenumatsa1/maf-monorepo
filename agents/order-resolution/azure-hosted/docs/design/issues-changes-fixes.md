@@ -2,10 +2,19 @@
 
 ## Current status
 
-**Deployed and validated.** The application is deployed to
-`rg-maf-ora-azure` in North Central US. Smoke, hosted Playwright, report-only
-evaluation, and Application Insights HITL correlation passed; the current
-evidence is recorded in `.azure/deployment-plan.md`.
+**Not currently deployed.** The Azure-hosted resources were intentionally
+deleted on 2026-07-28. The prior release evidence in
+`.azure/deployment-plan.md` is historical only and cannot be used to claim a
+current deployment. A fresh provision, deployment, smoke, hosted Playwright,
+evaluation, and Application Insights HITL-correlation run is required.
+
+## Source-of-truth correction
+
+The delivery record continued to describe the deleted resources as active.
+The root cause was preserving successful 2026-07-27 release evidence without a
+teardown status transition. The affected deployment plan and README now label
+that evidence historical; a new release must replace it with fresh endpoint
+and validation evidence.
 
 ## Validation record
 

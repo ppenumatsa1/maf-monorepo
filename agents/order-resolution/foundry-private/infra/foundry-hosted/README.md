@@ -41,8 +41,11 @@ Provisioning now reads `iac/main.parameters.json`, which maps AZD environment ke
 PR validation is credential-free through
 `.github/workflows/foundry-private-validation.yml`. Authenticated infrastructure
 and application deployment is available only by manually dispatching
-`foundry-provision.yml` or `foundry-deploy.yml`; both are protected by the
-`foundry-private-env` GitHub environment and run only on
+`order-resolution-private-provision.yml` or
+`order-resolution-private-deploy.yml`; both are protected by the
+`foundry-private-env` GitHub environment, share the
+`order-resolution-private-release` concurrency group with the observability
+workflow, and run only on
 `self-hosted,foundry-private-v2` with Azure OIDC. They use the runner's retained
 selected AZD environment, so do not recreate that environment or place its
 database credentials in GitHub workflow configuration.
@@ -52,18 +55,25 @@ enable the required GitHub environment protection rules.
 
 The release target executes this fixed sequence:
 
-1. local validation and private release preflight;
+1. `make test` and private release preflight;
 2. non-mutating provisioning preview, then infrastructure provisioning;
 3. backend then frontend ACA deployment;
-4. optional hosted-agent refresh (`FOUNDRY_REFRESH_HOSTED_AGENT=true`);
+4. hosted-agent deployment from the current source;
 5. ACA readiness plus hosted-agent workflow proof of PostgreSQL connectivity;
-6. PostgreSQL public-network lockdown and removal of the Azure-services firewall rule;
+6. PostgreSQL public-network lockdown and removal of the Azure-services
+   firewall rule after explicit workflow confirmation;
 7. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
 
 ```bash
 make foundry-provision-preview  # no Azure resource changes
-FOUNDRY_REFRESH_HOSTED_AGENT=true make foundry-release
+make foundry-release
 ```
+
+The deployment workflow runs only when both manual inputs select
+`confirmation=deploy` and `postgres_lockdown_confirmation=lockdown`; this
+prevents a partially configured release from reaching the irreversible
+lockdown. It does not expose a password-repair, public-access, firewall, or
+administrator-user workaround.
 
 The frontend is the only external ingress and proxies browser `/api` traffic to
 the internal backend ACA. Both Container Apps keep one minimum replica so the
@@ -164,8 +174,9 @@ az bicep build --file infra/foundry-hosted/iac/modules/private-endpoint.bicep
 Repository deterministic gates remain:
 
 - `make test`
-- `make eval-backend`
-- `make test-e2e`
-- `./scripts/skills/design-review-skill.sh`
+
+For this private release automation change, do not run local evaluations.
+Hosted E2E, enforced Foundry evaluation, and telemetry validation are release
+evidence collected only from the private runner.
 
 Delivery ownership, required gate mapping, and evidence handoff expectations are documented in `docs/design/engineering-operating-model.md`.

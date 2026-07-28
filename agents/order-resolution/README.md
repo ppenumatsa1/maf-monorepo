@@ -45,3 +45,17 @@ details:
 Run validation and deployment commands from the selected project root. The
 project README is authoritative for its environment, credentials, release
 sequence, and hosted validation requirements.
+
+## Parallel local validation
+
+For a workstation-level release check across all variants, run:
+
+```bash
+make validate-parallel
+```
+
+This target isolates each lane in a distinct Docker Compose project and local
+PostgreSQL host port. It preserves the existing single-lane `make` defaults.
+Foundry-private runs `make test` only; its local E2E is deferred until it is
+confirmed to require only local components, and its evaluations are collected
+after deployment from the private runner.

@@ -1,9 +1,9 @@
 # Azure Hosted Deployment Plan
 
-> **Status:** Deployed and validated from the monorepo on 2026-07-27.
-> Bicep compilation, a non-mutating AZD preview, HTTPS health/proxy checks, and
-> hosted Playwright UI parity passed against the existing target. Fresh
-> post-deployment evidence remains required.
+> **Status:** Not deployed. The previous target was intentionally deleted on
+> 2026-07-28. The 2026-07-27 evidence below is historical and must not be used
+> to claim a live deployment. A clean provision and complete post-deployment
+> validation run are required.
 
 ## Target
 
@@ -13,14 +13,15 @@
 | AZD environment | `maf-ora-azure` |
 | Region | `northcentralus` |
 | Deployment package | `infra/azure-apphosted/iac` |
-| Frontend | `https://maf-frontend-puzsry.kindpebble-e634081a.northcentralus.azurecontainerapps.io` |
-| Backend API | `https://maf-backend-puzsry.kindpebble-e634081a.northcentralus.azurecontainerapps.io` |
+| Frontend | Assigned by fresh provision |
+| Backend API | Assigned by fresh provision |
 
 ## Scope
 
-Deploy the FastAPI MAF backend and React frontend from this variant into the
-existing Container Apps resources. Foundry remains limited to model inference
-and report-only evaluation; it is not an application host in this lane.
+Provision the FastAPI MAF backend and React frontend from this variant, then
+deploy them into the newly created Container Apps resources. Foundry remains
+limited to model inference and report-only evaluation; it is not an application
+host in this lane.
 
 ## Local configuration
 

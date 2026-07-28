@@ -5,7 +5,7 @@ COMPOSE_ENV_FILE ?= backend/.env
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
-	foundry-up foundry-preflight foundry-provision-preview foundry-provision foundry-deploy foundry-hosted-refresh \
+	foundry-up foundry-preflight foundry-provision-preview foundry-provision foundry-deploy \
 	foundry-app-deploy foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
 
 help:
@@ -36,12 +36,11 @@ help:
 	@echo "  foundry-provision-preview - Preview private infrastructure changes without applying them"
 	@echo "  foundry-provision - Provision self-contained Foundry hosted-agent infra only"
 	@echo "  foundry-deploy  - Deploy hosted agent to Foundry (after provision/up)"
-	@echo "  foundry-hosted-refresh - Optionally refresh the hosted agent (FOUNDRY_REFRESH_HOSTED_AGENT=true)"
 	@echo "  foundry-app-deploy - Deploy private backend and public frontend Container Apps"
 	@echo "  foundry-connectivity-proof - Record ACA and hosted-agent PostgreSQL connectivity proof"
 	@echo "  foundry-postgres-lockdown - Disable PostgreSQL public access using recorded connectivity proof"
 	@echo "  foundry-evidence - Collect hosted E2E, evaluation, and telemetry evidence"
-	@echo "  foundry-release - Preflight, provision, deploy apps, optional agent refresh, proof, lockdown, evidence"
+	@echo "  foundry-release - Test, provision, deploy apps and hosted agent, proof, lockdown, evidence"
 	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
 	@echo "  foundry-access-path - Deploy private runner/Bastion access path via Bicep"
 	@echo "  clean           - Remove caches and test artifacts"
@@ -260,13 +259,6 @@ foundry-app-deploy:
 	cd infra/foundry-hosted && azd deploy backend --no-prompt
 	cd infra/foundry-hosted && azd deploy frontend --no-prompt
 
-foundry-hosted-refresh:
-	@if [[ "$${FOUNDRY_REFRESH_HOSTED_AGENT:-false}" == "true" ]]; then \
-		$(MAKE) foundry-deploy; \
-	else \
-		echo "Skipping hosted-agent refresh (set FOUNDRY_REFRESH_HOSTED_AGENT=true to deploy it)."; \
-	fi
-
 foundry-connectivity-proof:
 	./scripts/foundry/verify_private_connectivity.sh
 
@@ -290,11 +282,11 @@ foundry-evidence:
 	./scripts/foundry/collect_private_release_evidence.sh
 
 foundry-release:
-	$(MAKE) validate-full
+	$(MAKE) test
 	$(MAKE) foundry-provision-preview
 	$(MAKE) foundry-provision
 	$(MAKE) foundry-app-deploy
-	$(MAKE) foundry-hosted-refresh
+	$(MAKE) foundry-deploy
 	$(MAKE) foundry-connectivity-proof
 	$(MAKE) foundry-postgres-lockdown
 	$(MAKE) foundry-evidence

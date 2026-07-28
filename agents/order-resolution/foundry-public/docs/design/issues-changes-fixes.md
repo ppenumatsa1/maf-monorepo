@@ -20,7 +20,28 @@ and resumes HITL using checkpoint-keyed `function_call_output`. Browser live
 updates come from persisted PostgreSQL projections through polling and stable
 native SSE; the rich stream is additive.
 
-## Current public target
+## Redeployment baseline
+
+The public Foundry resources were intentionally deleted on 2026-07-28. The
+target details and release evidence below are historical only and must not be
+used to claim a current deployment. A clean `make foundry-release` run must
+recreate infrastructure, deploy the agent and Container Apps, then produce new
+smoke, E2E, evaluation, and telemetry evidence.
+
+The delivery ledger was stale because the successful 2026-07-27 release
+evidence was retained without a teardown status transition. The README and this
+ledger now identify deleted resources and require fresh evidence before a live
+deployment is claimed.
+
+## Local E2E bootstrap correction
+
+The local Foundry-public E2E target referenced the ignored `backend/.env`
+directly, so a clean checkout failed before it could start its isolated Compose
+stack. The target now uses `backend/.env` when a developer created one and
+otherwise falls back to the checked-in non-secret `backend/.env.example`.
+This keeps local E2E reproducible without reading deployment credentials.
+
+## Previous public target (deleted)
 
 - Resource group: `rg-maf-ora-foundry-public-dev2`
 - Foundry project: `order-resolution-public-managed-dev2`
@@ -29,7 +50,7 @@ native SSE; the rich stream is additive.
   `https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io/`
 - Backend: internal-only Container App; it is not a browser endpoint.
 
-## Verified release evidence
+## Superseded release evidence (2026-07-27)
 
 - Local backend tests, deterministic evaluation, local Playwright, Docker
   Playwright, and the deterministic review gate passed.

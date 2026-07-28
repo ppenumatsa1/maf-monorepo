@@ -38,6 +38,13 @@ removed only after fresh explicit ACA and hosted-agent connectivity proof.
 Only the generated proof artifact may authorize lockdown; it must not be
 replaced by a manual environment flag.
 
+Private provision, deploy, and observability workflows must serialize on the
+same release group and run only on `foundry-private-v2`. A clean release deploys
+backend, frontend, and the hosted agent before fresh connectivity proof; it
+locks PostgreSQL only after explicit workflow confirmation, then runs hosted
+E2E, enforced evaluation, and telemetry. Do not add optional refresh,
+administrator-password, public-access, or firewall bypasses to that path.
+
 ## Workflow Guardrails
 
 - Keep API, application service, MAF runtime, and infrastructure concerns separated:

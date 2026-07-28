@@ -17,6 +17,13 @@ This file describes expected behavior for coding agents working in this reposito
   hosted-agent connectivity proof. `POSTGRES_SERVER_NAME` and
   `RUNTIME_DATABASE_URL` must identify that same FQDN; only the generated,
   current connectivity-proof artifact can authorize lockdown.
+- Private provision, deploy, and observability workflows share one serialized
+  release group on `foundry-private-v2`. Clean deployment always deploys
+  backend, frontend, and the hosted agent before fresh connectivity proof;
+  PostgreSQL lockdown additionally requires explicit workflow confirmation and
+  is followed by hosted E2E, enforced evaluation, and telemetry. Do not add
+  optional agent-refresh, administrator-password, public-access, or firewall
+  bypasses.
 - Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
 - Event streaming: legacy SSE remains the stable contract; additive rich events are exposed for AG-UI-compatible clients.
 - Backend package boundaries:

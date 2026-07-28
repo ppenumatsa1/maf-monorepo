@@ -45,6 +45,15 @@ Hosted validation and deployment are private-lane-first in the current operating
   hosted-agent connectivity. Lockdown then verifies the approved private
   endpoint, `postgresqlServer` group, private-DNS A record, and VNet link before
   disabling public access and deleting `allow-azure-services`.
+- **Release serialization and order:** provision, deploy, and observability
+  workflows share `order-resolution-private-release` concurrency and execute
+  only on `foundry-private-v2`. A clean deployment must deploy backend,
+  frontend, and the hosted agent; produce fresh connectivity proof; perform
+  PostgreSQL lockdown only when the workflow dispatch explicitly selects
+  `postgres_lockdown_confirmation=lockdown`; then run hosted E2E, enforced
+  Foundry evaluation, and telemetry validation. Optional agent refresh,
+  password repair, public-access, firewall, and administrator-user bypasses
+  are not valid release paths.
 
 ## Inputs and authority
 
@@ -108,7 +117,9 @@ A change is done only when all applicable items are true:
 `make eval-foundry` remains report-only for ad hoc/local use. The private release
 workflow first exercises low-risk and HITL scenarios once, then enforces Foundry
 judgement and Application Insights correlation over those same conversation IDs;
-it does not generate a second evaluator traffic pass.
+it does not generate a second evaluator traffic pass. Release-automation
+changes use `make test` as their only local private validation; the hosted
+evaluation is collected only in the private release sequence.
 
 ## Operationalization (automated)
 

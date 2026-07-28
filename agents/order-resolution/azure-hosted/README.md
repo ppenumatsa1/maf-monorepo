@@ -10,9 +10,10 @@ FastAPI is the only application host for the MAF workflow, locally and in the
 Azure Container Apps target. Foundry is limited to model inference and
 report-only evaluation; it is not an application host.
 
-The Azure deployment is active in `rg-maf-ora-azure` in North Central US. East
-US is excluded because of an Azure PostgreSQL offer restriction. The frontend
-uses the same-origin `/api` proxy; the FastAPI backend remains the sole MAF host.
+The prior Azure deployment in `rg-maf-ora-azure` was intentionally deleted on
+2026-07-28 and must be provisioned again from this package. East US is excluded
+because of an Azure PostgreSQL offer restriction. The frontend uses the
+same-origin `/api` proxy; the FastAPI backend remains the sole MAF host.
 
 ## Quick start
 

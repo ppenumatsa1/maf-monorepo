@@ -41,7 +41,7 @@ If someone starts from this README, this path should let them understand and run
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
 | Local MAF            | Implemented | Shared MAF workflow (`backend/app/maf/workflows/order_resolution.py`)                                       |
 | Foundry hosted agent | Implemented | Shared workflow hosted at `backend/foundry/main.py` with public Responses protocol conversation turns |
-| Hosted UI/API wrapper | Validated | External frontend ACA proxies the stable API/SSE contract to an internal FastAPI ACA, which invokes Foundry Responses |
+| Hosted UI/API wrapper | Requires fresh redeployment | External frontend ACA proxies the stable API/SSE contract to an internal FastAPI ACA, which invokes Foundry Responses |
 
 MAF internals are split for maintainability into `backend/app/maf/prompts`,
 `agents`, `tools`, `executors`, `runner`, and `workflows`.
@@ -54,8 +54,9 @@ MAF internals are split for maintainability into `backend/app/maf/prompts`,
   identity to invoke Foundry Responses and PostgreSQL for durable state.
 - **Public Foundry** owns hosted Responses-agent deployment, conversation/HITL
   verification, Foundry evaluation, and Application Insights telemetry.
-- **Public UI URL:** `https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io/`.
-  The backend URL is internal-only and is intentionally not a browser endpoint.
+- **Public UI URL:** Assigned by fresh provision; the previous target was
+  intentionally deleted on 2026-07-28. The backend URL is internal-only and is
+  intentionally not a browser endpoint.
 - Evidence is tracked in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
 
 ## Quick Start (Local)

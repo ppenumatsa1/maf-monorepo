@@ -41,14 +41,17 @@ If someone starts from this README, this path should let them understand and run
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
 | Local MAF            | Implemented | Shared MAF workflow (`backend/app/maf/workflows/order_resolution.py`)                                       |
 | Foundry hosted agent | Implemented (private VNet lane retained) | Shared workflow hosted at `backend/foundry/main.py` with Responses protocol conversation turns              |
-| Private web delivery | Validated on the private release path | External frontend ACA proxies same-origin `/api` and SSE to an internal FastAPI ACA, which calls private Foundry Responses and PostgreSQL. |
+| Private web delivery | Requires fresh redeployment | External frontend ACA proxies same-origin `/api` and SSE to an internal FastAPI ACA, which calls private Foundry Responses and PostgreSQL. |
 
 MAF internals are split for maintainability into `backend/app/maf/prompts`,
 `agents`, `tools`, `executors`, `runner`, and `workflows`.
 
-## Latest Foundry trace status (2026-07-27)
+## Historical Foundry trace evidence (2026-07-27)
 
-- The private Foundry workflow, PostgreSQL state, and HITL behavior have hosted
+- The private Foundry resources were intentionally deleted on 2026-07-28. The
+  following hosted E2E and telemetry record is historical only; a clean release
+  must produce fresh evidence before any deployment is claimed.
+- The private Foundry workflow, PostgreSQL state, and HITL behavior had hosted
   E2E and correlated Application Insights evidence.
 - Hosted monitoring uses the private project-level `ApplicationInsights`
   connection and Foundry's native
@@ -75,14 +78,24 @@ internal-ingress FastAPI Container App, and the backend uses managed identity
 for the private Foundry Responses endpoint.
 
 PR validation remains credential-free. Protected manual workflows
-`foundry-provision.yml` and `foundry-deploy.yml` run only on the
+`order-resolution-private-provision.yml` and
+`order-resolution-private-deploy.yml` run only on the
 `foundry-private-v2` self-hosted runner in `foundry-private-env`, using Azure
-OIDC and the runner's retained private AZD environment. The local in-VNet
-operator flow remains available:
+OIDC and the runner's retained private AZD environment. Provision, deploy, and
+observability dispatches share one release concurrency group. A deploy dispatch
+requires both `confirmation=deploy` and
+`postgres_lockdown_confirmation=lockdown`; this is the explicit workflow
+confirmation for the irreversible database cutover. The release sequence always
+deploys backend, frontend, and the hosted agent, generates a fresh
+connectivity proof, performs the confirmed lockdown, then runs hosted E2E,
+enforced Foundry evaluation, and telemetry evidence. It has no password-repair,
+public-access, firewall, or administrator-user bypass.
+
+The same source-of-truth target is available only from the private runner:
 
 ```bash
 make foundry-provision-preview
-FOUNDRY_REFRESH_HOSTED_AGENT=true make foundry-release
+make foundry-release
 ```
 
 `foundry-release` records ACA and hosted-agent connectivity in
@@ -94,6 +107,15 @@ mismatched proof for the canonical `POSTGRES_SERVER_NAME` FQDN. The current
 recorded target is
 `maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
 the AZD environment changes.
+
+For release automation changes, the only local private validation is:
+
+```bash
+make test
+```
+
+Foundry evaluation runs only as the enforced hosted release-evidence step,
+after hosted E2E; do not run a local evaluation as a substitute.
 
 2. Configure backend environment.
 
@@ -126,18 +148,16 @@ make run-frontend
 
 ## Required Validation Gates
 
-Run these before considering a change complete:
+For private release-automation changes, run the sole local gate:
 
 ```bash
 make test
-make eval-backend
-make eval-foundry   # report-only by default; evaluates current hosted E2E trace evidence
-make test-e2e
-./scripts/skills/design-review-skill.sh
 ```
 
-`make test` and `make eval-backend` now auto-start the local Docker `postgres`
-service when `DATABASE_URL` points to localhost and PostgreSQL is not already running.
+`make test` auto-starts local Docker `postgres` when `DATABASE_URL` points to
+localhost and PostgreSQL is not already running. Hosted E2E, enforced Foundry
+evaluation, and telemetry are collected only from the private runner after
+deployment.
 
 Cross-target parity gate (requires endpoint matrix env vars):
 

@@ -4,6 +4,14 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## Redeployment baseline
+
+The private Foundry resources were intentionally deleted on 2026-07-28. All
+2026-07-27 target details and validation records in this document are
+historical only and cannot be used to claim a live deployment. A fresh
+private-runner release must produce a current connectivity proof, hosted E2E,
+enforced evaluation, and telemetry evidence after PostgreSQL lockdown.
+
 ## Monorepo deployment access blocker
 
 On 2026-07-27, an application-only deployment initiated from the operator host
@@ -15,6 +23,37 @@ The private monorepo deployment must run from the VNet-connected
 `foundry-private-v2` runner, which has private registry access and retains the
 selected `foundry-private-env` AZD environment. No ACR firewall exception,
 public endpoint, or admin-user workaround is permitted.
+
+## Release automation correction (2026-07-28)
+
+**Root cause.** The private provision, deployment, and observability workflows
+used different concurrency groups, so they could overlap. The deployment
+workflow made hosted-agent refresh and release evidence optional, omitted the
+required connectivity-proof and PostgreSQL-lockdown steps, and exposed an
+administrator-password repair option. `make foundry-release` likewise skipped
+the hosted-agent deploy unless `FOUNDRY_REFRESH_HOSTED_AGENT=true` was supplied.
+After all deployments were deleted, those optional branches could leave a
+recreated environment without the hosted agent or its required release
+evidence.
+
+**Precise fix.** All three workflows now serialize on
+`order-resolution-private-release` and retain the
+`foundry-private-v2` runner plus its selected AZD environment. The deployment
+workflow requires both deployment and explicit lockdown confirmation, then
+unconditionally deploys backend/frontend and the hosted agent, generates fresh
+ACA/hosted-agent connectivity proof, performs fail-closed PostgreSQL lockdown,
+and collects hosted E2E, enforced Foundry evaluation, and telemetry evidence.
+The password-repair and optional evidence/refresh paths were removed.
+`make foundry-release` now runs `make test` and always invokes
+`foundry-deploy` before proof and lockdown.
+
+**Intended validation evidence.** Static validation must show the shared
+concurrency group, required ordered deploy targets, and absence of bypass
+inputs; workflow YAML and changed shell assets must parse. The sole local
+private validation is `make test`. A future manually confirmed private-runner
+release must produce the fresh connectivity-proof artifact, hosted E2E
+conversation evidence, an enforced zero-error Foundry evaluation, and
+correlated telemetry. No Azure resources were deployed while making this fix.
 
 ## Current topology
 
@@ -33,7 +72,7 @@ dedicated VNet-integrated subnet that is distinct from the Foundry agent-host
 subnet. Backend, Foundry, PostgreSQL, ACR, and application data planes remain
 private.
 
-## Verified private evidence (2026-07-27)
+## Superseded private evidence (2026-07-27)
 
 - Private-runner provisioning and application deployment completed.
 - The active frontend and internal backend Container App revisions are healthy;
@@ -84,12 +123,8 @@ Foundry deployment, smoke, evaluation, and telemetry validation must execute
 from that private network path; a workstation outside the VNet is not a valid
 hosted validation surface.
 
-Run the applicable local gates before a release:
+For private release-automation changes, run the sole applicable local gate:
 
 ```bash
 make test
-make eval-backend
-make eval-foundry
-make test-e2e
-./scripts/skills/design-review-skill.sh
 ```

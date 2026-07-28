@@ -4,38 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: Select deploy to publish backend and frontend images to the private ACR.
+        description: Select deploy to run the complete private release sequence.
         required: true
         type: choice
         default: cancel
         options: [cancel, deploy]
-      refresh_hosted_agent:
-        description: Also refresh the Foundry-hosted agent after the ACA deployment.
+      postgres_lockdown_confirmation:
+        description: Select lockdown only to confirm removal of the temporary Azure-services firewall rule and PostgreSQL public access after fresh connectivity proof.
         required: true
-        type: boolean
-        default: false
-      repair_postgres_admin_password:
-        description: Reset the canonical PostgreSQL administrator password to the protected runtime connection credential.
-        required: true
-        type: boolean
-        default: false
-      run_smoke:
-        description: Run the hosted-agent smoke check after deployment.
-        required: true
-        type: boolean
-        default: true
-      run_evidence:
-        description: Run hosted E2E, evaluation, and telemetry evidence collection.
-        required: true
-        type: boolean
-        default: false
+        type: choice
+        default: cancel
+        options: [cancel, lockdown]
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: order-resolution-private-deploy
+  group: order-resolution-private-release
   cancel-in-progress: false
 
 env:
@@ -46,7 +32,7 @@ env:
 
 jobs:
   deploy:
-    if: ${{ inputs.confirmation == 'deploy' }}
+    if: ${{ inputs.confirmation == 'deploy' && inputs.postgres_lockdown_confirmation == 'lockdown' }}
     runs-on: [self-hosted, foundry-private-v2]
     environment: foundry-private-env
     defaults:
@@ -86,9 +72,6 @@ jobs:
           agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
       - name: Verify the selected private deployment environment
         run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
-      - name: Repair PostgreSQL runtime credential
-        if: ${{ inputs.repair_postgres_admin_password }}
-        run: agents/order-resolution/foundry-private/scripts/foundry/repair_private_postgres_admin_password.sh
       - name: Verify private ACR deployment target
         run: |
           set -euo pipefail
@@ -124,16 +107,14 @@ jobs:
               exit 1
             }
           done
-      - name: Refresh hosted agent
-        if: ${{ inputs.refresh_hosted_agent }}
+      - name: Deploy hosted agent from current source
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-deploy
-      - name: Run hosted-agent smoke check
-        if: ${{ inputs.run_smoke }}
+      - name: Generate fresh ACA and hosted-agent connectivity proof
         working-directory: agents/order-resolution/foundry-private
-        run: make foundry-smoke
-      - name: Collect sanitized hosted-agent diagnostics after smoke failure
-        if: ${{ failure() && inputs.run_smoke }}
+        run: make foundry-connectivity-proof
+      - name: Collect sanitized hosted-agent diagnostics after proof failure
+        if: ${{ failure() }}
         run: |
           set -euo pipefail
           cd agents/order-resolution/foundry-private/infra/foundry-hosted
@@ -144,7 +125,9 @@ jobs:
               | sed -E -e 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^[:space:]@]+@#\1***@#g' -e 's/(password|token|secret|connection string)=([^[:space:]]+)/\1=***/Ig' \
               | tail -100 || true
           done
+      - name: Lock down PostgreSQL after confirmed fresh proof
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-postgres-lockdown
       - name: Collect hosted release evidence
-        if: ${{ inputs.run_evidence }}
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-evidence

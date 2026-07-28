@@ -11,6 +11,10 @@ DEPLOYMENT_WORKFLOWS = (
     "order-resolution-private-provision.yml",
     "order-resolution-private-deploy.yml",
 )
+SERIALIZED_PRIVATE_WORKFLOWS = (
+    *DEPLOYMENT_WORKFLOWS,
+    "order-resolution-private-observability.yml",
+)
 PRIVATE_PREFIX = "agents/order-resolution/foundry-private"
 EXPECTED_TARGETS = (
     "AZD_ENVIRONMENT_NAME: foundry-private-env",
@@ -28,6 +32,15 @@ def require(text: str, value: str, workflow: str) -> None:
 def forbid(text: str, value: str, workflow: str) -> None:
     if value in text:
         raise AssertionError(f"{workflow} contains forbidden contract: {value}")
+
+
+def require_order(text: str, values: tuple[str, ...], source: str) -> None:
+    positions = [text.index(value) if value in text else -1 for value in values]
+    if -1 in positions or positions != sorted(positions):
+        raise AssertionError(
+            f"{source} does not preserve the required release order: "
+            f"{' -> '.join(values)}"
+        )
 
 
 def validate_deployment_workflow(name: str) -> None:
@@ -65,14 +78,73 @@ def validate() -> None:
     for name in DEPLOYMENT_WORKFLOWS:
         validate_deployment_workflow(name)
 
+    for name in SERIALIZED_PRIVATE_WORKFLOWS:
+        require(
+            (WORKFLOWS / name).read_text(),
+            "group: order-resolution-private-release",
+            name,
+        )
+
     deploy_name = "order-resolution-private-deploy.yml"
     deploy = (WORKFLOWS / deploy_name).read_text()
     require(deploy, "make foundry-app-deploy", deploy_name)
+    require(deploy, "make foundry-deploy", deploy_name)
+    require(deploy, "make foundry-connectivity-proof", deploy_name)
+    require(deploy, "make foundry-postgres-lockdown", deploy_name)
+    require(deploy, "make foundry-evidence", deploy_name)
+    require(deploy, "postgres_lockdown_confirmation:", deploy_name)
+    require(
+        deploy,
+        "inputs.postgres_lockdown_confirmation == 'lockdown'",
+        deploy_name,
+    )
     require(
         deploy,
         "Verify active Container Apps use private ACR images",
         deploy_name,
     )
+    forbid(deploy, "refresh_hosted_agent:", deploy_name)
+    forbid(deploy, "repair_postgres_admin_password:", deploy_name)
+    forbid(deploy, "run_smoke:", deploy_name)
+    forbid(deploy, "run_evidence:", deploy_name)
+    forbid(deploy, "make foundry-hosted-refresh", deploy_name)
+    require_order(
+        deploy,
+        (
+            "make foundry-app-deploy",
+            "make foundry-deploy",
+            "make foundry-connectivity-proof",
+            "make foundry-postgres-lockdown",
+            "make foundry-evidence",
+        ),
+        deploy_name,
+    )
+
+    makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
+    release_body = makefile.split("foundry-release:\n", maxsplit=1)[1].split(
+        "\n\nfoundry-smoke:", maxsplit=1
+    )[0]
+    require_order(
+        release_body,
+        (
+            "$(MAKE) test",
+            "$(MAKE) foundry-provision-preview",
+            "$(MAKE) foundry-provision",
+            "$(MAKE) foundry-app-deploy",
+            "$(MAKE) foundry-deploy",
+            "$(MAKE) foundry-connectivity-proof",
+            "$(MAKE) foundry-postgres-lockdown",
+            "$(MAKE) foundry-evidence",
+        ),
+        "foundry-release Make target",
+    )
+    forbid(release_body, "foundry-hosted-refresh", "foundry-release Make target")
+    repair_script = (
+        Path(PRIVATE_PREFIX)
+        / "scripts/foundry/repair_private_postgres_admin_password.sh"
+    )
+    if repair_script.exists():
+        raise AssertionError("Private release retains a PostgreSQL admin-password repair path.")
 
     provision_name = "order-resolution-private-provision.yml"
     provision = (WORKFLOWS / provision_name).read_text()
