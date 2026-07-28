@@ -333,7 +333,7 @@ var resolvedApplicationInsightsConnectionName = manageProjectConnections ? proje
 var resolvedApplicationInsightsConnectionId = manageProjectConnections ? projectConnections!.outputs.applicationInsightsConnectionId : resourceId('Microsoft.CognitiveServices/accounts/projects/connections', effectiveFoundryAccountName, foundryProjectName, 'ApplicationInsights')
 var resolvedRuntimeConnectionName = manageProjectConnections && !empty(runtimeDatabaseUrl) ? runtimeConnection!.outputs.runtimeConnection : effectiveRuntimeConnectionName
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-08-01-preview' = {
   name: effectiveContainerRegistryName
   location: location
   sku: {
@@ -342,14 +342,11 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   properties: {
     adminUserEnabled: false
     publicNetworkAccess: privateNetworking ? 'Disabled' : 'Enabled'
-  }
-}
-
-resource containerRegistryAzureAdAuthenticationAsArmPolicy 'Microsoft.ContainerRegistry/registries/policies@2023-07-01' = {
-  parent: containerRegistry
-  name: 'azureADAuthenticationAsArmPolicy'
-  properties: {
-    status: 'enabled'
+    policies: {
+      azureADAuthenticationAsArmPolicy: {
+        status: 'enabled'
+      }
+    }
   }
 }
 

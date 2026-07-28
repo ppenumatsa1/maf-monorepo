@@ -437,6 +437,28 @@ built. The same Graph-free identity template assigns `AcrPush` at the private
 ACR scope to the protected deployment identity; image push retries only the
 new role's `unauthorized` or `denied` propagation state.
 
+## Private ACR policy lifecycle correction (2026-07-28)
+
+**Root cause.** Workflow
+[`30402789003`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30402789003)
+applied the staged Foundry project connections but failed its final
+infrastructure operation on the ACR
+`azureADAuthenticationAsArmPolicy` child resource. ARM reported the child
+operation as `BadRequest`/`NotFound` with no message even though the registry
+subsequently reported `azureAdAuthenticationAsArmPolicy.status: enabled`.
+The policy setting succeeded, but the child-resource API's post-deployment
+lifecycle result made `azd provision` fail closed and blocked the release
+before image build.
+
+**Precise fix.** The private ACR now declares
+`policies.azureADAuthenticationAsArmPolicy.status: enabled` directly on the
+registry resource and no longer deploys the problematic child policy resource.
+This preserves the required ARM-token ACR authentication as IaC while avoiding
+the provider's invalid child-resource polling path. No registry network,
+admin-user, or RBAC control is weakened. The next guarded release reruns the
+staged connection provision, then proceeds to image deployment only if it
+succeeds.
+
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
 `ContainerConfiguration.image` and polling the created version to `active`:
