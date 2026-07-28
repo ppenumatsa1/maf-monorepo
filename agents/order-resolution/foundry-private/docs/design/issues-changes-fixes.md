@@ -364,3 +364,12 @@ environment context from the canonical resource names and requires only
 `POSTGRES_ADMIN_PASSWORD` from the protected GitHub environment. A tracked
 secret-migration command copies that existing secret into the monorepo
 environment without displaying or committing it.
+
+**Core-stage confirmation.** Protected workflow
+[`30397620770`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30397620770)
+completed successfully on the recovered private runner. It recreated
+`mafprv0722v3-postgres-pe-4aiw7fw5gjdo4`; the endpoint is succeeded, the
+private DNS record resolves `maffndpgv20722` to `10.90.2.13`, and PostgreSQL
+public access remains disabled. The next stage is the separate project
+connection provision followed by application/hosted-agent deployment and
+connectivity proof.
