@@ -337,3 +337,11 @@ stack now uses Azure's `User Access Administrator`
 `18d7d88d-d35e-4fb5-a5c3-7773c20a72d9` definition. The bootstrap removes only
 the superseded assignment matching the incorrect role definition after the
 correct declarative assignment exists.
+
+**Recovery confirmation.** The dedicated deployment application now has one
+active GitHub federation subject for the monorepo private environment and
+exactly Contributor plus User Access Administrator at
+`rg-maf-ora-foundry-v2`; the temporary historical-app trust was removed.
+`bas-maffnd` is Standard with native tunneling enabled, and the rebuilt runner
+`vm-vm-maffnd-runner-foundry-private-v2` is online in
+`ppenumatsa1/maf-monorepo` with the required `foundry-private-v2` label.
