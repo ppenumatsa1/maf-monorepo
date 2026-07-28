@@ -118,6 +118,12 @@ jobs:
               exit 1
             }
           done
+      - name: Refresh federated Azure identity before hosted-agent release
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Synchronize Foundry hosted-agent deployment role
         run: agents/order-resolution/foundry-private/scripts/foundry/assign_private_foundry_project_manager.sh
       - name: Deploy hosted agent from current source

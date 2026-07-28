@@ -561,6 +561,31 @@ The next guarded workflow must return a version and then poll it to `active`;
 only then may the existing proof, lockdown, E2E, evaluation, and telemetry
 gates proceed.
 
+## Hosted-agent release token-lifetime correction (2026-07-28)
+
+**Root cause.** Protected workflow
+[`30405737376`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30405737376)
+did not reach image deployment. Its preceding staged connection and Container
+App operations consumed more than the initial GitHub OIDC client assertion's
+five-minute validity window. The later declarative Foundry Project Manager
+role synchronization then failed with `AADSTS700024` because Azure CLI tried
+to exchange that expired assertion. This is a workflow token-lifetime issue,
+not missing Foundry RBAC; previous runs had already passed the same
+source-controlled assignment.
+
+**Precise fix.** The protected workflow now performs a second, declarative
+`azure/login@v2` OIDC exchange immediately before Foundry role synchronization
+and hosted-agent deployment. It uses the same protected-environment client,
+tenant, subscription, narrow federated subject, and workflow permissions as
+the initial login. No CLI login, persistent credential, role assignment, or
+identity setting is added outside the workflow.
+
+**Retry boundary.** The refresh occurs after potentially long application
+deployment and before every Azure CLI/SDK operation that needs the deployment
+identity. A future run must complete role synchronization and hosted-agent
+activation before it can advance to proof, lockdown, E2E, evaluation, and
+telemetry.
+
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
 `ContainerConfiguration.image` and polling the created version to `active`:

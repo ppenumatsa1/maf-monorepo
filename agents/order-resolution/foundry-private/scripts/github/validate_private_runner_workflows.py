@@ -99,6 +99,20 @@ def validate() -> None:
     require(deploy, "make foundry-evidence", deploy_name)
     require(deploy, "uses: actions/setup-python@v5", deploy_name)
     require(deploy, 'python-version: "3.12"', deploy_name)
+    require(
+        deploy,
+        "Refresh federated Azure identity before hosted-agent release",
+        deploy_name,
+    )
+    require_order(
+        deploy,
+        (
+            "Refresh federated Azure identity before hosted-agent release",
+            "Synchronize Foundry hosted-agent deployment role",
+            "make foundry-deploy",
+        ),
+        deploy_name,
+    )
     require(deploy, "postgres_lockdown_confirmation:", deploy_name)
     require(
         deploy,
