@@ -240,3 +240,15 @@ The helper now reads each existing Container App's active image and preserves
 it in the selected AZD environment. It uses a bootstrap image only when that
 app is absent, retaining both safe active-environment reconciliation and clean
 teardown recovery.
+
+## Hosted-agent code-build registry permission correction (2026-07-28)
+
+After clean provisioning, `azd deploy order-resolution-hosted` failed with
+Foundry `ImageError: Container image not found`. The recreated ACR contained
+the backend and frontend artifacts but no hosted-agent image. The Foundry
+account had `AcrPush`, while the Foundry project identity that performs the
+code deployment had only `AcrPull`.
+
+The project ACR assignment now grants `AcrPush`, which includes read access and
+allows the project code build to publish the immutable hosted-agent runtime
+image before activation. The role remains scoped to this lane's registry.
