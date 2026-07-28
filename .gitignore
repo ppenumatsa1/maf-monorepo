@@ -48,6 +48,9 @@
 **/test-results/
 **/.artifacts/
 
+# Local deployment progress reports and operational evidence.
+/deployment-reports/
+
 # Editor and operating-system files
 .vscode/
 .idea/
