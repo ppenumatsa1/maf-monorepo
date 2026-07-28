@@ -56,13 +56,16 @@ enable the required GitHub environment protection rules.
 The release target executes this fixed sequence:
 
 1. `make test` and private release preflight;
-2. non-mutating provisioning preview, then infrastructure provisioning;
-3. backend then frontend ACA deployment;
-4. hosted-agent deployment from the current source;
-5. ACA readiness plus hosted-agent workflow proof of PostgreSQL connectivity;
-6. PostgreSQL public-network lockdown and removal of the Azure-services
+2. non-mutating provisioning preview, then private core provisioning without
+   Foundry connection secrets;
+3. project-identity propagation followed by staged Foundry connection
+   provisioning;
+4. backend then frontend ACA deployment;
+5. hosted-agent deployment from the current source;
+6. ACA readiness plus hosted-agent workflow proof of PostgreSQL connectivity;
+7. PostgreSQL public-network lockdown and removal of the Azure-services
    firewall rule after explicit workflow confirmation;
-7. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
+8. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
 
 ```bash
 make foundry-provision-preview  # no Azure resource changes
@@ -74,6 +77,26 @@ The deployment workflow runs only when both manual inputs select
 prevents a partially configured release from reaching the irreversible
 lockdown. It does not expose a password-repair, public-access, firewall, or
 administrator-user workaround.
+
+### Staged Foundry project connections
+
+The core target sets `MANAGE_PROJECT_CONNECTIONS=false`, allowing the account,
+project identity, private endpoints, and pre-capability-host RBAC assignments
+to complete before Foundry stores the protected `ApplicationInsights` and
+`orderresolutionruntimesecrets` credentials. The
+`foundry-project-connections` target then sets it to `true` and reruns
+`main.bicep`; its connection modules depend on those RBAC assignments and the
+runtime secret connection depends on the completed project connections. This
+avoids creating connection secrets while the restored project's managed
+identity is still propagating.
+
+If that explicit second stage still reports a managed-identity/Key Vault token
+failure, wait for platform propagation and retry
+`make foundry-project-connections`. Do not substitute a public endpoint,
+administrator credential, or alternate connection. If PostgreSQL private
+endpoint creation reports `OperationNotAllowedWhenLastOperationTypeIsDelete`,
+wait for Azure's delete operation to complete and retry the same staged
+provision; this is a platform timing condition, not a network-control bypass.
 
 The frontend is the only external ingress and proxies browser `/api` traffic to
 the internal backend ACA. Both Container Apps keep one minimum replica so the
@@ -93,6 +116,16 @@ The latest recorded target is
 not a template default: `make foundry-preflight` and the selected AZD
 environment are authoritative if the canonical server changes.
 
+### Soft-deleted Foundry account recovery
+
+The current intentional teardown left
+`mafprv0722v3ai4aiw7fw5gjdo4` soft-deleted. The retained private AZD
+environment defaults `RESTORE_FOUNDRY_ACCOUNT=true`, which maps to
+`restoreFoundryAccount` on the `Microsoft.CognitiveServices/accounts@2025-06-01`
+resource in `main.bicep`. Keep it true while recovering this account name; set
+it false only after purging the soft-deleted account name. This restore setting
+does not relax the private network, ACR, or PostgreSQL controls.
+
 ## Private runner bootstrap
 
 If the private runner VM has been deleted, first use the management-plane
@@ -104,12 +137,12 @@ RUNNER_SSH_PUBKEY_PATH=/secure/path/id_ed25519.pub make foundry-access-path
 
 The target fails before any Azure command when the key path is absent, missing,
 or empty. It selects `foundry-private-env`, runs private-release preflight, and
-sets `CREATE_PRIVATE_RUNNER_ACCESS=true`, `CREATE_RUNNER_VM=true`, and
-`RUNNER_VM_SSH_PUBLIC_KEY` in the retained AZD environment before invoking
-`azd provision`. This uses the existing resource-group-scoped `main.bicep`
-private-runner module; do not use a separate access resource group or a
-nonexistent standalone access-path template. It creates no public ACR or
-PostgreSQL firewall exception.
+sets the private runner/VM parameters in the retained AZD environment before
+invoking `azd provision`. It also runs the default helper, so the required
+Foundry-account restore flag is present. This uses the existing
+resource-group-scoped `main.bicep` private-runner module; do not use a separate
+access resource group or a nonexistent standalone access-path template. It
+creates no public ACR or PostgreSQL firewall exception.
 
 After the VM is available, use Bastion to prepare and register/start the
 private self-hosted runner:

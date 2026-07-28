@@ -1,9 +1,8 @@
 # Azure Hosted Deployment Plan
 
-> **Status:** Not deployed. The previous target was intentionally deleted on
-> 2026-07-28. The 2026-07-27 evidence below is historical and must not be used
-> to claim a live deployment. A clean provision and complete post-deployment
-> validation run are required.
+> **Status:** Deployed and validated from the monorepo on 2026-07-28. The
+> previous target was intentionally deleted, then reprovisioned from this
+> package. The prior 2026-07-27 evidence remains historical only.
 
 ## Target
 
@@ -13,8 +12,8 @@
 | AZD environment | `maf-ora-azure` |
 | Region | `northcentralus` |
 | Deployment package | `infra/azure-apphosted/iac` |
-| Frontend | Assigned by fresh provision |
-| Backend API | Assigned by fresh provision |
+| Frontend | `https://maf-frontend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io` |
+| Backend API | `https://maf-backend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io` |
 
 ## Scope
 
@@ -39,10 +38,14 @@ templates; they are not deployment credentials.
    deterministic evaluation, report-only Foundry evaluation, and correlated
    Application Insights telemetry.
 
-## Monorepo deployment evidence
+## Fresh monorepo deployment evidence (2026-07-28)
 
+- `azd provision --no-prompt` recreated the resource group, Foundry account and
+  project, PostgreSQL, Container Apps environment, ACR, monitoring, backend,
+  and frontend.
 - `azd deploy --no-prompt` deployed backend and frontend from this variant.
 - The application-hosted smoke validated low-risk completion and high-risk HITL.
 - Hosted Playwright passed all seven UI flows through the frontend proxy.
-- The deterministic evaluation passed 10/10 cases.
-- Application Insights recorded 21 recent workflow/HITL dependency spans.
+- `make eval-foundry-deployed` completed two Foundry-evaluated cases with two
+  passed, zero failed, and zero errored.
+- Application Insights recorded 32 recent workflow/HITL dependency spans.

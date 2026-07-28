@@ -10,10 +10,10 @@ FastAPI is the only application host for the MAF workflow, locally and in the
 Azure Container Apps target. Foundry is limited to model inference and
 report-only evaluation; it is not an application host.
 
-The prior Azure deployment in `rg-maf-ora-azure` was intentionally deleted on
-2026-07-28 and must be provisioned again from this package. East US is excluded
-because of an Azure PostgreSQL offer restriction. The frontend uses the
-same-origin `/api` proxy; the FastAPI backend remains the sole MAF host.
+The Azure deployment in `rg-maf-ora-azure` was reprovisioned from this package
+on 2026-07-28 after an intentional teardown. East US is excluded because of an
+Azure PostgreSQL offer restriction. The frontend uses the same-origin `/api`
+proxy; the FastAPI backend remains the sole MAF host.
 
 ## Quick start
 
@@ -51,6 +51,7 @@ Baseline scenarios: `ORD-1001` should not require HITL; `ORD-1009` should.
 make test
 make eval-backend
 make eval-foundry   # report-only; requires Foundry configuration
+make eval-foundry-deployed  # report-only gate against the selected AZD backend URL
 make test-e2e
 ./scripts/skills/design-review-skill.sh
 ```

@@ -117,7 +117,15 @@ the backend connection string from the newly created server in that mode. Set
 `CREATE_POSTGRES_SERVER=false` only when deliberately reusing a separately
 managed PostgreSQL server and supplying `RUNTIME_DATABASE_URL`.
 
+Before `make foundry-provision`, `make foundry-up`, or `make foundry-release`,
+the shared AZD environment bootstrap resets both `SERVICE_*_IMAGE_NAME` values
+to `mcr.microsoft.com/k8se/quickstart:latest`. This prevents a retained
+environment from referring to a deleted ACR/tag during Container App creation.
+The following `azd deploy` builds and replaces both bootstrap images with the
+published application images.
+
 Foundry account names are soft-deleted by Azure. `restoreFoundryAccount`
-defaults to `true`, so the established account name is restored during a clean
-lane recovery. Set it to `false` only if the soft-deleted account was purged
-first and the same name is being created anew.
+defaults to `false`, which is safe for new and active-account provisions. When
+Azure reports that the named account is soft-deleted, set
+`RESTORE_FOUNDRY_ACCOUNT=true` for that one restore provision, then return it
+to `false` after the account is active.

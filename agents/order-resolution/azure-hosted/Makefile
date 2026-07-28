@@ -2,7 +2,7 @@ SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env.example
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-test-postgres \
-	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e manual-matrix \
+	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-foundry-deployed eval-all test-e2e manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test validate-quick validate-full deploy-app deploy-full clean
 
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  test             - Run backend lint and tests"
 	@echo "  eval-backend     - Run deterministic workflow contract evaluation"
 	@echo "  eval-foundry     - Run report-only Foundry low/high-risk evaluation"
+	@echo "  eval-foundry-deployed - Run the Foundry evaluation against the selected AZD backend URL"
 	@echo "  test-e2e         - Run local Playwright tests"
 	@echo "  docker-test      - Run Playwright against Docker Compose"
 	@echo "  parity-all       - Run fast local and Azure app-hosted parity checks"
@@ -58,6 +59,21 @@ eval-backend: ensure-backend-env ensure-test-postgres
 
 eval-foundry: ensure-backend-env
 	cd backend && . .venv/bin/activate && python -m evals.foundry_eval_runner
+
+eval-foundry-deployed:
+	@set -euo pipefail; \
+	environment="$${AZURE_ENV_NAME:-maf-ora-azure}"; \
+	get_value() { AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$$1" --environment "$$environment"; }; \
+	api_url="$$(get_value API_URL)"; \
+	project_endpoint="$$(get_value FOUNDRY_PROJECTS_ENDPOINT)"; \
+	model_name="$$(get_value FOUNDRY_MODEL_DEPLOYMENT_NAME)"; \
+	eval_model="$$(get_value FOUNDRY_EVAL_MODEL)"; \
+	[[ -n "$$api_url" && -n "$$project_endpoint" && -n "$$model_name" && -n "$$eval_model" ]] || { echo "Selected AZD environment is missing deployed Foundry evaluation configuration."; exit 1; }; \
+	FOUNDRY_EVAL_API_URL="$$api_url" \
+	FOUNDRY_PROJECTS_ENDPOINT="$$project_endpoint" \
+	FOUNDRY_MODEL_DEPLOYMENT_NAME="$$model_name" \
+	FOUNDRY_EVAL_MODEL="$$eval_model" \
+	$(MAKE) eval-foundry
 
 eval-all: eval-backend eval-foundry
 

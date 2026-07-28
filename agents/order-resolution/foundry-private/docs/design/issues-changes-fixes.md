@@ -12,6 +12,69 @@ historical only and cannot be used to claim a live deployment. A fresh
 private-runner release must produce a current connectivity proof, hosted E2E,
 enforced evaluation, and telemetry evidence after PostgreSQL lockdown.
 
+## Soft-deleted private Foundry account recovery (2026-07-28)
+
+**Root cause.** Clean-room runner recovery reached the retained private AZD
+environment but Azure rejected the soft-deleted
+`mafprv0722v3ai4aiw7fw5gjdo4` account with `FlagMustBeSetForRestore`. The
+private account resource used an API schema without the parent-account
+`restore` setting, and its parameters/default helper could not supply one.
+
+**Precise fix.** Private `main.bicep` now uses
+`Microsoft.CognitiveServices/accounts@2025-06-01` and parameterizes
+`restoreFoundryAccount`, including it on the parent account resource.
+`main.parameters.json` maps `RESTORE_FOUNDRY_ACCOUNT`, while the retained AZD
+default helper sets it to `true` for the current intentional teardown without
+overriding a later explicit `false` after purge. The runner-recovery target
+runs that helper before its `main.bicep` provision path. No network control,
+ACR setting, or PostgreSQL firewall behavior changed.
+
+**Intended validation evidence.** Static validation checks the account schema,
+restore parameter, parameters mapping, default helper, and recovery target
+ordering. Bicep must compile and the selected private AZD environment must
+complete `azd provision --preview` before an authorized operator runs any
+actual provision. No actual Azure provision was performed for this fix.
+
+**Preview outcome.** On 2026-07-28 the selected private environment accepted
+the restore setting and advanced past the former `FlagMustBeSetForRestore`
+validation. Its what-if preview then stopped at
+`ServerStoppedError` because PostgreSQL server `maffndpgv20722` is stopped.
+Starting that server is a separate operator action; it was not performed by
+this change.
+
+## Staged Foundry connection and private-endpoint recovery (2026-07-28)
+
+**Root cause.** A clean recovery created the Foundry account/project and
+attempted `orderresolutionruntimesecrets` and `ApplicationInsights` in the
+same deployment. Foundry had not finished propagating the restored project
+managed identity needed to store those protected connection credentials, so
+the platform reported an Azure Key Vault MSI-token failure. The same run
+encountered `OperationNotAllowedWhenLastOperationTypeIsDelete` while Azure was
+still deleting the prior PostgreSQL private endpoint.
+
+**Precise fix.** Core provisioning now sets
+`MANAGE_PROJECT_CONNECTIONS=false`, which preserves the private account,
+project, managed identity, endpoints, and pre-capability-host RBAC without
+attempting connection secrets. The deploy stage runs
+`make foundry-project-connections`, enabling the existing connection modules
+only after the project identity path exists. The project principal is sourced
+directly from `foundryProject`, pre-RBAC assignments now precede project
+connections, the runtime secret connection waits for completed project
+connections, and the project capability host waits for those connections.
+No connection, private endpoint, or security control was removed.
+
+**Retry handling.** A managed-identity/Key Vault token error remains a
+fail-closed signal to wait for propagation and retry
+`make foundry-project-connections`. A PostgreSQL private-endpoint delete-in-
+progress error likewise requires waiting for Azure to finish deletion and
+retrying the staged provision. Neither condition authorizes public access,
+firewall exceptions, administrator credentials, or connection removal.
+
+**Intended validation evidence.** Static validation verifies the staging
+targets, deploy ordering, direct project identity source, RBAC dependencies,
+and gated runtime/capability-host connections. Bicep compilation must pass
+before a future private-runner retry. No Azure provision was run for this fix.
+
 ## Monorepo deployment access blocker
 
 On 2026-07-27, an application-only deployment initiated from the operator host
@@ -51,6 +114,33 @@ registration default is checked for `foundry-private-v2`. An authorized future
 recovery must run the target, register the VM through Bastion, and pass the
 GitHub runner readiness check before any release dispatch. No Azure deployment
 was performed while applying this correction.
+
+## Soft-deleted Foundry account recovery (2026-07-28)
+
+**Root cause.** The intentionally deleted private Foundry account name was
+retained by Azure, so a clean recovery failed with
+`FlagMustBeSetForRestore`. The initial recovery configuration also retained the
+restore flag after the account became active, which would attempt an invalid
+second restore on a later provision retry.
+
+**Precise fix.** The account supports a parameterized restore property that is
+emitted only while `RESTORE_FOUNDRY_ACCOUNT=true`. The private defaults helper
+detects an already active account from the selected project endpoint and
+clears that environment flag before the next provision. This preserves the
+one-time soft-delete recovery while making subsequent core or staged
+connection provisions idempotent.
+
+## Connection-staging entrypoint correction (2026-07-28)
+
+The convenience `foundry-up` and runner-recovery targets called `azd`
+directly while project connections defaulted to enabled. That bypassed the
+connection-free core stage and could reproduce the Foundry Key Vault
+managed-identity timing failure during clean recovery.
+
+`foundry-up` now executes core provision, staged connections, and hosted-agent
+deploy in order. Runner recovery disables project connections because it only
+establishes private management access; the protected deployment workflow
+enables them after identity/RBAC propagation. No network control is weakened.
 
 ## Release automation correction (2026-07-28)
 
@@ -156,3 +246,16 @@ For private release-automation changes, run the sole applicable local gate:
 ```bash
 make test
 ```
+
+## Clean-runner E2E dependency correction (2026-07-28)
+
+GitHub Actions run `30370787132` failed the design-review browser gate on a
+clean hosted runner. The script installed Playwright but not the frontend Vite
+dependencies, so the local frontend never opened its dynamically selected
+port and the proxy readiness check failed.
+
+The private design-review and quick-validation CI jobs now install the
+frontend with `npm ci`; quick validation also installs Playwright and Chromium
+before it runs `make validate-quick`. The private deployed validation boundary
+is unchanged: this correction only makes the local clean-runner E2E harness
+reproducible.

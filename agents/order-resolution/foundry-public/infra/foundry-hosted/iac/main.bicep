@@ -12,8 +12,8 @@ param hostedAgentName string = 'order-resolution-hosted'
 @description('Public Foundry account name')
 param foundryAccountName string = 'maffndaibfscpfhjr7sp4'
 
-@description('Restore a soft-deleted Foundry account with this name when Azure reports one. Keep true for the deleted public lane; set false only after purging the account name.')
-param restoreFoundryAccount bool = true
+@description('Restore a soft-deleted Foundry account with this name. Set true only for the restore deployment; active-account and new-account provisions leave it false.')
+param restoreFoundryAccount bool = false
 
 @description('Public Azure Container Registry name')
 param containerRegistryName string = 'maffndacrbfscpfhjr7sp4'
@@ -121,10 +121,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   properties: {
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
-    networkRuleBypassOptions: 'AzureServices'
-    networkRuleSet: {
-      defaultAction: 'Allow'
-    }
   }
 }
 
@@ -246,12 +242,17 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   identity: {
     type: 'SystemAssigned'
   }
-  properties: {
+  properties: union({
     allowProjectManagement: true
     customSubDomainName: foundryAccountName
     publicNetworkAccess: 'Enabled'
-    restore: restoreFoundryAccount
-  }
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
+  }, restoreFoundryAccount ? {
+    restore: true
+  } : {})
 }
 
 resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
@@ -271,6 +272,9 @@ resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments
     raiPolicyName: 'Microsoft.Default'
     versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
   }
+  dependsOn: [
+    foundryEvaluationDeployment
+  ]
 }
 
 resource foundryEmbeddingsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
@@ -290,6 +294,9 @@ resource foundryEmbeddingsDeployment 'Microsoft.CognitiveServices/accounts/deplo
     raiPolicyName: 'Microsoft.Default'
     versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
   }
+  dependsOn: [
+    foundryChatDeployment
+  ]
 }
 
 resource foundryEvaluationDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
@@ -322,6 +329,9 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
     displayName: foundryProjectName
     description: 'MAF order resolution public managed-state hosted project'
   }
+  dependsOn: [
+    foundryEmbeddingsDeployment
+  ]
 }
 
 resource projectFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

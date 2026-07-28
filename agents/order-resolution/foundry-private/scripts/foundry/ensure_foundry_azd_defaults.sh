@@ -98,10 +98,12 @@ create_account_caphost_default="false"
 create_project_caphost_default="true"
 manage_project_connections_default="true"
 container_apps_default="true"
+restore_foundry_account_default="true"
 
 set_if_missing NETWORK_MODE "$mode"
 set_if_missing AI_SEARCH_LOCATION "${AI_SEARCH_LOCATION:-eastus}"
 set_if_missing FOUNDRY_PROJECT_NAME "${FOUNDRY_PROJECT_NAME:-order-resolution}"
+set_if_missing RESTORE_FOUNDRY_ACCOUNT "${RESTORE_FOUNDRY_ACCOUNT:-$restore_foundry_account_default}"
 set_if_missing HOSTED_AGENT_NAME "${HOSTED_AGENT_NAME:-order-resolution-hosted}"
 set_if_missing RUNTIME_DATABASE_URL "${RUNTIME_DATABASE_URL:-}"
 set_if_missing DATABASE_URL "${DATABASE_URL:-}"
@@ -144,6 +146,21 @@ set_if_missing OTEL_SERVICE_NAME "${OTEL_SERVICE_NAME:-maf-order-resolution-host
 set_if_missing OTEL_SERVICE_NAMESPACE "${OTEL_SERVICE_NAMESPACE:-maf-order-resolution}"
 set_if_missing OTEL_RECORD_CONTENT "${OTEL_RECORD_CONTENT:-false}"
 set_if_missing FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT "${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT:-false}"
+
+restore_foundry_account="$(get_env_value RESTORE_FOUNDRY_ACCOUNT)"
+foundry_project_endpoint="$(get_env_value FOUNDRY_PROJECTS_ENDPOINT)"
+azure_resource_group="$(get_env_value AZURE_RESOURCE_GROUP)"
+foundry_account_name="${foundry_project_endpoint#https://}"
+foundry_account_name="${foundry_account_name%%.*}"
+if [[ "$restore_foundry_account" == "true" && -n "$azure_resource_group" && -n "$foundry_account_name" ]] && \
+  az cognitiveservices account show \
+    --name "$foundry_account_name" \
+    --resource-group "$azure_resource_group" \
+    --query id \
+    --output tsv >/dev/null 2>&1; then
+  azd env set RESTORE_FOUNDRY_ACCOUNT false >/dev/null
+  echo "cleared RESTORE_FOUNDRY_ACCOUNT because $foundry_account_name is active"
+fi
 
 runtime_database_url_existing="$(get_env_value RUNTIME_DATABASE_URL)"
 create_postgres_server="$(get_env_value CREATE_POSTGRES_SERVER)"

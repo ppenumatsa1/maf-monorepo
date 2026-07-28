@@ -5,6 +5,9 @@
     "foundryAccountName": {
       "value": "${FOUNDRY_ACCOUNT_NAME}"
     },
+    "restoreFoundryAccount": {
+      "value": "${RESTORE_FOUNDRY_ACCOUNT=false}"
+    },
     "traceReaderPrincipalId": {
       "value": "${FOUNDRY_TRACE_READER_PRINCIPAL_ID}"
     },

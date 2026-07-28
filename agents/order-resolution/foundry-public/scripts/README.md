@@ -1,6 +1,9 @@
 # Scripts
 
 - `foundry/deploy_public_dev.sh`: authenticated local release sequence.
+- `foundry/ensure_foundry_azd_defaults.sh`: initializes the selected public
+  AZD environment and resets provision-time Container App images to the MCR
+  bootstrap image so deleted ACR tags cannot block infrastructure creation.
 - `foundry/hosted_e2e.sh`: Responses low-risk, approval, rejection, and
   duplicate-response regression.
 - `foundry/verify_telemetry.sh`: bounded Application Insights telemetry check.

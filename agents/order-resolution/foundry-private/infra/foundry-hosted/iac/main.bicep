@@ -22,6 +22,9 @@ param hostedAgentName string = 'order-resolution-hosted'
 @description('Optional override for Foundry account name')
 param foundryAccountName string = ''
 
+@description('Restore a soft-deleted Foundry account with this name when Azure reports one. Keep true for the intentional private-lane teardown; set false only after purging the account name.')
+param restoreFoundryAccount bool = true
+
 @description('Optional override for Storage account name')
 param storageAccountName string = ''
 
@@ -321,14 +324,14 @@ var foundryCognitiveZoneIndex = indexOf(privateDnsZoneNames, foundryCognitiveZon
 var foundryOpenAiZoneIndex = indexOf(privateDnsZoneNames, foundryOpenAiZoneName)
 var acrZoneIndex = indexOf(privateDnsZoneNames, 'privatelink.azurecr.io')
 var postgresZoneIndex = indexOf(effectivePrivateDnsZoneNames, 'privatelink.postgres.database.azure.com')
-var resolvedProjectPrincipalId = manageProjectConnections ? projectConnections!.outputs.projectPrincipalId : foundryProject.identity.principalId
+var resolvedProjectPrincipalId = foundryProject.identity.principalId
 var resolvedProjectWorkspaceId = manageProjectConnections ? projectConnections!.outputs.projectWorkspaceId : ''
 var resolvedCosmosConnectionName = manageProjectConnections ? projectConnections!.outputs.cosmosConnection : effectiveCosmosConnectionName
 var resolvedStorageConnectionName = manageProjectConnections ? projectConnections!.outputs.storageConnection : effectiveStorageConnectionName
 var resolvedAiSearchConnectionName = manageProjectConnections ? projectConnections!.outputs.aiSearchConnection : effectiveAiSearchConnectionName
 var resolvedApplicationInsightsConnectionName = manageProjectConnections ? projectConnections!.outputs.applicationInsightsConnection : 'ApplicationInsights'
 var resolvedApplicationInsightsConnectionId = manageProjectConnections ? projectConnections!.outputs.applicationInsightsConnectionId : resourceId('Microsoft.CognitiveServices/accounts/projects/connections', effectiveFoundryAccountName, foundryProjectName, 'ApplicationInsights')
-var resolvedRuntimeConnectionName = !empty(runtimeDatabaseUrl) ? runtimeConnection!.outputs.runtimeConnection : effectiveRuntimeConnectionName
+var resolvedRuntimeConnectionName = manageProjectConnections && !empty(runtimeDatabaseUrl) ? runtimeConnection!.outputs.runtimeConnection : effectiveRuntimeConnectionName
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: effectiveContainerRegistryName
@@ -463,7 +466,7 @@ resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' = {
   }
 }
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: effectiveFoundryAccountName
   location: location
   kind: 'AIServices'
@@ -473,7 +476,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   sku: {
     name: 'S0'
   }
-  properties: {
+  properties: union({
     allowProjectManagement: true
     customSubDomainName: effectiveFoundryAccountName
     disableLocalAuth: true
@@ -489,7 +492,9 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
     }
     publicNetworkAccess: privateNetworking ? 'Disabled' : 'Enabled'
     ...foundryNetworkInjectionProperties
-  }
+  }, restoreFoundryAccount ? {
+    restore: true
+  } : {})
   dependsOn: privateNetworking ? [
     virtualNetwork
   ] : []
@@ -1141,10 +1146,14 @@ module projectConnections './modules/foundry-project-existing-connections.bicep'
     aiSearch
     storage
     cosmosDB
+    storageAccountRoleAssignment
+    storageAccountRoleAssignmentFoundryAccountIdentity
+    cosmosAccountRoleAssignments
+    aiSearchRoleAssignments
   ]
 }
 
-module runtimeConnection './modules/foundry-project-runtime-secret-connection.bicep' = if (!empty(runtimeDatabaseUrl)) {
+module runtimeConnection './modules/foundry-project-runtime-secret-connection.bicep' = if (manageProjectConnections && !empty(runtimeDatabaseUrl)) {
   name: 'runtime-secret-connection-${suffix}'
   params: {
     accountName: effectiveFoundryAccountName
@@ -1154,7 +1163,7 @@ module runtimeConnection './modules/foundry-project-runtime-secret-connection.bi
     runtimeDatabaseUrl: runtimeDatabaseUrl
   }
   dependsOn: [
-    foundryProject
+    projectConnections
   ]
 }
 
@@ -1221,7 +1230,7 @@ module addAccountCapabilityHost './modules/add-account-capability-host.bicep' = 
   ] : []
 }
 
-module addProjectCapabilityHost './modules/add-project-capability-host.bicep' = if (createProjectCapabilityHost) {
+module addProjectCapabilityHost './modules/add-project-capability-host.bicep' = if (createProjectCapabilityHost && manageProjectConnections) {
   name: 'project-capability-host-${suffix}'
   params: {
     accountName: effectiveFoundryAccountName
@@ -1290,7 +1299,7 @@ output POSTGRES_SERVER_FQDN string = postgresFullyQualifiedDomainName
 output POSTGRES_PRIVATE_DNS_ZONE_NAME string = 'privatelink.postgres.database.azure.com'
 output POSTGRES_PRIVATE_ENDPOINT_NAME string = (enablePrivateEndpoints && enablePostgresPrivateEndpoint) ? postgresPrivateEndpoint!.outputs.name : ''
 output accountCapabilityHost string = createAccountCapabilityHost ? addAccountCapabilityHost!.outputs.accountCapabilityHostName : ''
-output projectCapabilityHost string = createProjectCapabilityHost ? addProjectCapabilityHost!.outputs.projectCapabilityHostName : ''
+output projectCapabilityHost string = (createProjectCapabilityHost && manageProjectConnections) ? addProjectCapabilityHost!.outputs.projectCapabilityHostName : ''
 output projectPrincipalId string = resolvedProjectPrincipalId
 output projectWorkspaceId string = resolvedProjectWorkspaceId
 output connectionNames object = {

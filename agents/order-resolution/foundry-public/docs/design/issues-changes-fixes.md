@@ -61,12 +61,67 @@ The first non-mutating preview found the deleted Foundry account retained as an
 Azure soft-deleted account, which requires the write-only `restore: true` flag.
 The managed account now sets that flag through the
 `restoreFoundryAccount` parameter (default `true`); this preserves the
-established account name without requiring an out-of-band purge.
+established account name without requiring an out-of-band purge. Set
+`RESTORE_FOUNDRY_ACCOUNT=false` after the account becomes active because Azure
+rejects restore on an active account.
 
 **Validation.** Bicep compilation and a non-mutating
 `AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --preview --no-prompt`
 must complete before any actual provision. No live provision or deployment is
 performed as part of this repair.
+
+## Provision retry corrections (2026-07-28)
+
+The clean-provision attempt created the Foundry account/project, monitoring,
+and PostgreSQL resources but exposed two template defects before the remaining
+resources could finish. A Standard SKU ACR rejected the configured network
+rule/bypass settings with `NetworkRuleNotSupported`; the public lane needs only
+public network access, so those unsupported settings were removed while
+retaining `publicNetworkAccess: 'Enabled'` and disabling the admin user.
+
+The evaluator deployment completed, but the chat and embeddings deployment
+requests overlapped on the same Foundry account and failed with
+`RequestConflict: Another operation is being performed on the parent Foundry
+account`. The template now serializes account mutations explicitly:
+evaluator -> chat -> embeddings -> project. This is an ordering correction,
+not a model substitution: all model-version parameters remain empty by default
+so Azure resolves the current regional default, including when the earlier
+`gpt-4o-mini` GlobalStandard availability warning is present.
+
+Validation for this correction is Bicep compilation and the same non-mutating
+AZD provision preview only; no retrying actual provision occurs in this change.
+
+## Foundry public-network ACL correction (2026-07-28)
+
+The next actual retry failed while updating the Foundry account with
+`BadRequest: NetworkAcls is required for this resource.` The account now
+declares the validated public-lane ACL shape on
+`Microsoft.CognitiveServices/accounts`: `defaultAction: 'Allow'` and
+`bypass: 'AzureServices'`, alongside `publicNetworkAccess: 'Enabled'`. These
+are Foundry account settings only; the unsupported ACR network-rule settings
+remain removed.
+
+The restore flag is now omitted from account properties unless
+`RESTORE_FOUNDRY_ACCOUNT=true`. Its source default is `false`, so normal
+creation and active-account re-provisions cannot request a restore. A
+soft-deleted account is restored by setting the flag to `true` for that single
+provision and resetting it to `false` once the account is active.
+
+## Container App bootstrap-image correction (2026-07-28)
+
+The next provision completed Foundry, models, project, monitoring, and
+PostgreSQL but failed creating Container Apps because the retained AZD
+environment supplied `SERVICE_BACKEND_IMAGE_NAME` with a deleted ACR image tag.
+Although Bicep defaults to the public MCR quickstart image, AZD environment
+values override that default.
+
+`ensure_foundry_azd_defaults.sh`, which is called by the public provision, up,
+and release paths, now resets both service image variables to
+`mcr.microsoft.com/k8se/quickstart:latest` before provisioning. This is the
+source-of-truth clean bootstrap and does not preserve or hard-code a stale ACR
+tag. The normal subsequent `azd deploy` replaces the bootstrap image with the
+freshly built backend and frontend images. Validation remains Bicep/static
+checks and a non-mutating provision preview only.
 
 ## Local E2E bootstrap correction
 
@@ -161,3 +216,27 @@ AppDependencies
 
 Open an end-to-end transaction for a returned `OperationId` to inspect the
 correlated Foundry, model, workflow, and HITL hierarchy.
+
+## Clean-runner E2E dependency correction (2026-07-28)
+
+GitHub Actions run `30370781990` failed the design-review browser gate because
+the job installed Playwright but not the frontend Vite dependencies. The
+isolated backend was ready, but Vite never opened its dynamic local port, so
+all browser scenarios received `ERR_CONNECTION_REFUSED`.
+
+The public design-review and quick-validation CI jobs now run `npm ci` for the
+frontend. Quick validation also installs the Playwright package and Chromium
+before it calls `make validate-quick`. Clean runner validation no longer
+depends on ignored local `node_modules` directories.
+
+## Provision image preservation correction (2026-07-28)
+
+The clean-provision helper initially reset every Container App image to the MCR
+bootstrap image. That is correct when apps are absent after teardown, but an
+infrastructure-only provision of an active environment would replace healthy
+application revisions before `azd deploy` republished them.
+
+The helper now reads each existing Container App's active image and preserves
+it in the selected AZD environment. It uses a bootstrap image only when that
+app is absent, retaining both safe active-environment reconciliation and clean
+teardown recovery.

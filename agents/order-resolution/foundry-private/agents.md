@@ -24,6 +24,10 @@ This file describes expected behavior for coding agents working in this reposito
   is followed by hosted E2E, enforced evaluation, and telemetry. Do not add
   optional agent-refresh, administrator-password, public-access, or firewall
   bypasses.
+- Core provisioning stages Foundry connections until the project managed
+  identity and service RBAC exist. The later private deploy stage enables those
+  connections; identity propagation and private-endpoint deletion failures
+  require a retry after Azure completes, never a security workaround.
 - Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
 - Event streaming: legacy SSE remains the stable contract; additive rich events are exposed for AG-UI-compatible clients.
 - Backend package boundaries:

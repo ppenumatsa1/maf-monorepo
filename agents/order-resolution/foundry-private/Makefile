@@ -5,7 +5,7 @@ COMPOSE_ENV_FILE ?= backend/.env
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
-	foundry-up foundry-preflight foundry-provision-preview foundry-provision foundry-deploy \
+	foundry-up foundry-preflight foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
 
 help:
@@ -34,7 +34,8 @@ help:
 	@echo "  foundry-up      - Self-contained Foundry hosted-agent azd up (BYO VNET + private deps)"
 	@echo "  foundry-preflight - Verify private release inputs without changing Azure"
 	@echo "  foundry-provision-preview - Preview private infrastructure changes without applying them"
-	@echo "  foundry-provision - Provision self-contained Foundry hosted-agent infra only"
+	@echo "  foundry-provision - Provision private core infrastructure without Foundry secret connections"
+	@echo "  foundry-project-connections - Provision Foundry connections after project identity propagation"
 	@echo "  foundry-deploy  - Deploy hosted agent to Foundry (after provision/up)"
 	@echo "  foundry-app-deploy - Deploy private backend and public frontend Container Apps"
 	@echo "  foundry-connectivity-proof - Record ACA and hosted-agent PostgreSQL connectivity proof"
@@ -228,8 +229,9 @@ validate-full:
 	./scripts/skills/design-review-skill.sh
 
 foundry-up:
-	./scripts/foundry/ensure_foundry_azd_defaults.sh
-	cd infra/foundry-hosted && azd up --no-prompt
+	$(MAKE) foundry-provision
+	$(MAKE) foundry-project-connections
+	$(MAKE) foundry-deploy
 
 foundry-preflight:
 	./scripts/foundry/preflight_private_release.sh
@@ -240,8 +242,17 @@ foundry-provision-preview: foundry-preflight
 
 foundry-provision:
 	$(MAKE) foundry-preflight
-	./scripts/foundry/ensure_foundry_azd_defaults.sh
-	cd infra/foundry-hosted && azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
+	cd infra/foundry-hosted && \
+		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS false && \
+		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+
+foundry-project-connections:
+	$(MAKE) foundry-preflight
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
+	cd infra/foundry-hosted && \
+		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS true && \
+		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
 foundry-deploy:
 	@test -f backend/agent.yaml
@@ -285,6 +296,7 @@ foundry-release:
 	$(MAKE) test
 	$(MAKE) foundry-provision-preview
 	$(MAKE) foundry-provision
+	$(MAKE) foundry-project-connections
 	$(MAKE) foundry-app-deploy
 	$(MAKE) foundry-deploy
 	$(MAKE) foundry-connectivity-proof
@@ -340,9 +352,11 @@ foundry-access-path:
 	}; \
 	cd infra/foundry-hosted; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}" --no-prompt; \
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $$(MAKE) -C ../.. foundry-preflight; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ../../scripts/foundry/ensure_foundry_azd_defaults.sh; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $(MAKE) -C ../.. foundry-preflight; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set CREATE_PRIVATE_RUNNER_ACCESS true; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set CREATE_RUNNER_VM true; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS false; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set RUNNER_VM_SSH_PUBLIC_KEY "$$runner_ssh_public_key"; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
 

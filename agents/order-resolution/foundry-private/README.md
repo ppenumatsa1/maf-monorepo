@@ -108,6 +108,19 @@ recorded target is
 `maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
 the AZD environment changes.
 
+The intentional private-lane teardown left the original Foundry account
+soft-deleted. `RESTORE_FOUNDRY_ACCOUNT` therefore defaults to `true` and is
+passed to the account resource during clean-room recovery. Set it to `false`
+only after that account name has been purged from Azure.
+
+Clean provisioning is staged: `make foundry-provision` creates the private
+account, project, identities, and RBAC without storing Foundry connection
+secrets. After the project identity has propagated, run
+`make foundry-project-connections`; the protected deploy workflow performs this
+stage before application deployment. If Azure reports that a private endpoint
+is still deleting, wait for that operation to finish and retry the same stage;
+do not open public access or remove the connection.
+
 ### Private runner recovery
 
 If the private runner VM or its GitHub registration is gone, an authorized

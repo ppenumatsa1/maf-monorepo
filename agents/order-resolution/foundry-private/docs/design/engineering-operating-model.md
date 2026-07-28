@@ -54,6 +54,12 @@ Hosted validation and deployment are private-lane-first in the current operating
   Foundry evaluation, and telemetry validation. Optional agent refresh,
   password repair, public-access, firewall, and administrator-user bypasses
   are not valid release paths.
+- **Foundry connection staging:** core provisioning creates the private
+  account/project identity and required service RBAC with
+  `MANAGE_PROJECT_CONNECTIONS=false`. The later private deploy stage enables
+  project connections only after that identity path exists; retries wait for
+  Azure identity or private-endpoint deletion propagation rather than weakening
+  network controls or removing the required connections.
 
 ## Inputs and authority
 

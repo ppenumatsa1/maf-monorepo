@@ -24,6 +24,28 @@ set_if_missing() {
   fi
 }
 
+set_provision_image() {
+  local key="$1"
+  local container_app_name="$2"
+  local bootstrap_image="$3"
+  local active_image
+  local resource_group
+
+  resource_group="$(get_env_value AZURE_RESOURCE_GROUP)"
+  active_image="$(az containerapp show \
+    --name "$container_app_name" \
+    --resource-group "$resource_group" \
+    --query 'properties.template.containers[0].image' \
+    --output tsv 2>/dev/null || true)"
+  if [[ -n "$active_image" ]]; then
+    azd env set "$key" "$active_image" >/dev/null
+    echo "preserved $key from active Container App $container_app_name"
+  else
+    azd env set "$key" "$bootstrap_image" >/dev/null
+    echo "set $key to the provision bootstrap image because $container_app_name is absent"
+  fi
+}
+
 set_if_missing FOUNDRY_ACCOUNT_NAME "${FOUNDRY_ACCOUNT_NAME:-maffndaibfscpfhjr7sp4}"
 set_if_missing CONTAINER_REGISTRY_NAME "${CONTAINER_REGISTRY_NAME:-maffndacrbfscpfhjr7sp4}"
 set_if_missing FOUNDRY_TRACE_READER_PRINCIPAL_ID "${FOUNDRY_TRACE_READER_PRINCIPAL_ID:-$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)}"
@@ -37,6 +59,14 @@ set_if_missing POSTGRES_ADMIN_USERNAME "${POSTGRES_ADMIN_USERNAME:-pgadmin}"
 set_if_missing POSTGRES_ADMIN_PASSWORD "${POSTGRES_ADMIN_PASSWORD:-}"
 set_if_missing POSTGRES_DATABASE_NAME "${POSTGRES_DATABASE_NAME:-maf_workflow}"
 set_if_missing POSTGRES_LOCATION "${POSTGRES_LOCATION:-centralus}"
+set_if_missing BACKEND_CONTAINER_APP_NAME "${BACKEND_CONTAINER_APP_NAME:-ora-public-dev2-backend}"
+set_if_missing FRONTEND_CONTAINER_APP_NAME "${FRONTEND_CONTAINER_APP_NAME:-ora-public-dev2-frontend}"
+
+# Provision must not depend on a prior azd deploy's ACR tag. New Container Apps
+# use bootstrap images; existing apps retain their active images until azd deploy
+# publishes a replacement.
+set_provision_image SERVICE_BACKEND_IMAGE_NAME "$(get_env_value BACKEND_CONTAINER_APP_NAME)" "mcr.microsoft.com/k8se/quickstart:latest"
+set_provision_image SERVICE_FRONTEND_IMAGE_NAME "$(get_env_value FRONTEND_CONTAINER_APP_NAME)" "mcr.microsoft.com/k8se/quickstart:latest"
 
 postgres_server_name="$(get_env_value POSTGRES_SERVER_NAME)"
 if az postgres flexible-server show \

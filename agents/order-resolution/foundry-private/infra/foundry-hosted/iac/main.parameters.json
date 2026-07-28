@@ -11,6 +11,9 @@
     "foundryProjectName": {
       "value": "${FOUNDRY_PROJECT_NAME}"
     },
+    "restoreFoundryAccount": {
+      "value": "${RESTORE_FOUNDRY_ACCOUNT}"
+    },
     "hostedAgentName": {
       "value": "${HOSTED_AGENT_NAME}"
     },

@@ -45,6 +45,12 @@ locks PostgreSQL only after explicit workflow confirmation, then runs hosted
 E2E, enforced evaluation, and telemetry. Do not add optional refresh,
 administrator-password, public-access, or firewall bypasses to that path.
 
+Clean private provisioning stages Foundry project connections behind
+`MANAGE_PROJECT_CONNECTIONS=false` until the project identity and required RBAC
+exist. Enable connections only in the later private deploy stage; on identity
+or private-endpoint deletion timing failures, retry after propagation rather
+than removing a connection or weakening network security.
+
 ## Workflow Guardrails
 
 - Keep API, application service, MAF runtime, and infrastructure concerns separated:

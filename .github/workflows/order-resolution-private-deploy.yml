@@ -72,6 +72,9 @@ jobs:
           agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
       - name: Verify the selected private deployment environment
         run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Provision staged Foundry project connections
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-project-connections
       - name: Verify private ACR deployment target
         run: |
           set -euo pipefail

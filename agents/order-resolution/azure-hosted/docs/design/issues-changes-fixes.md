@@ -2,11 +2,11 @@
 
 ## Current status
 
-**Not currently deployed.** The Azure-hosted resources were intentionally
-deleted on 2026-07-28. The prior release evidence in
-`.azure/deployment-plan.md` is historical only and cannot be used to claim a
-current deployment. A fresh provision, deployment, smoke, hosted Playwright,
-evaluation, and Application Insights HITL-correlation run is required.
+**Deployed and validated on 2026-07-28.** The Azure-hosted lane was
+reprovisioned from this package after the intentional teardown. The backend and
+frontend are live at the endpoints recorded in `.azure/deployment-plan.md`.
+Fresh smoke, hosted Playwright, Foundry evaluation, and Application Insights
+workflow/HITL evidence passed.
 
 ## Source-of-truth correction
 
@@ -32,12 +32,18 @@ Clean release validation must run preview, provision, backend/frontend deploy,
 smoke, hosted Playwright, evaluations, and telemetry against the newly assigned
 endpoints.
 
+The local `make eval-foundry` target correctly defaults to localhost for
+developer use. `make eval-foundry-deployed` now reads only the selected AZD
+environment's non-secret `API_URL` and passes it as `FOUNDRY_EVAL_API_URL`,
+making the deployed Foundry report a reproducible release gate.
+
 ## Validation record
 
 Keep the following evidence current for the deployed environment:
 
 - `make test`
 - `make eval-backend`
+- `make eval-foundry-deployed`
 - `make test-e2e`
 - `make docker-test`
 - `./scripts/skills/design-review-skill.sh`
@@ -45,3 +51,17 @@ Keep the following evidence current for the deployed environment:
 
 Do not retain historical deployment ledgers or references to retired hosting
 paths in this document.
+
+## Clean-runner E2E dependency correction (2026-07-28)
+
+GitHub Actions run `30370787270` failed the quick-validation E2E gate even
+though the same target passed on a prepared workstation. The job installed
+Node.js but did not install either the frontend Vite dependencies or the
+Playwright package/browser. Consequently, the local Vite process never opened
+its dynamically assigned port and the proxy readiness check failed.
+
+The design-review and quick-validation CI jobs now install the frontend with
+`npm ci`; quick validation also installs the Playwright package and Chromium
+before running `make validate-quick`. This makes the clean GitHub runner
+contract match the documented local E2E target without relying on ignored
+`node_modules` directories.

@@ -138,6 +138,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Install frontend dependencies
+        working-directory: agents/order-resolution/azure-hosted/frontend
+        run: npm ci
       - name: Run design-review gate
         run: agents/order-resolution/azure-hosted/scripts/skills/design-review-skill.sh
 
@@ -151,6 +154,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Install frontend dependencies
+        working-directory: agents/order-resolution/azure-hosted/frontend
+        run: npm ci
+      - name: Install Playwright dependencies
+        working-directory: agents/order-resolution/azure-hosted/scripts/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Run quick validation
         working-directory: agents/order-resolution/azure-hosted
         run: make validate-quick
