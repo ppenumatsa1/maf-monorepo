@@ -143,7 +143,7 @@ gates have current evidence.
 | Lane | Status | Current evidence | Pending gate / blocker |
 | --- | --- | --- | --- |
 | Azure-hosted | **Deployed and validated** | Backend and frontend redeployed from the monorepo; hosted UI passed all 7 Playwright flows; Foundry evaluation passed 2/2; 32 recent workflow/HITL dependency spans were recorded. | None. |
-| Foundry-public | **Deployed; smoke validated** | Infrastructure, backend, frontend, and hosted agent are deployed. `order-resolution-hosted` version 14 is active and completed the `ORD-1001` Responses smoke flow through Foundry Models and Azure PostgreSQL. | Hosted browser E2E, enforced Foundry evaluation, and telemetry validation are intentionally deferred. |
+| Foundry-public | **Deployed and validated** | Infrastructure, backend, frontend, and hosted agent are deployed. Version 14 passed Responses smoke; deployed browser E2E passed 7/7; hosted Responses E2E completed low- and high-risk flows; Foundry evaluation passed 2/2; telemetry found 51 correlated rows with no exception rows. | None. |
 | Foundry-private | **Prepared; deployment pending** | Recovery IaC, staged project-connection workflow, private-runner enforcement, and release-order validation are implemented and statically validated. | Recover/register the VNet-connected `foundry-private-v2` runner, complete staged provision, prove connectivity before PostgreSQL lockdown, then run hosted E2E, evaluation, and telemetry. |
 
 ### Public Foundry: remote source-build failure
@@ -193,6 +193,14 @@ completed `ORD-1001` in conversation
 `conv_ad0825e2b0ac6dc400W59cDlBuRk8Km64lb5pFzMYMaYWzoppD`. The active
 agent used `gpt-4o-mini` and the configured Azure PostgreSQL server; its smoke
 trace ID is `3ae160e935d56a643fd1d2204c2dcacf`.
+
+**Release-gate confirmation.** The current deployment also passed the seven
+deployed browser scenarios and hosted Responses E2E for low-risk,
+conversation-continuity, and approved high-risk requests. Foundry trace
+evaluation `eval_ba88f785636644758e0027e8be963ed2` /
+`evalrun_9f4964e7e8f14ebdbbec85eb549c4112` judged the two fresh E2E
+conversations as 2 passed, 0 failed, 0 errored. Application Insights found 51
+correlated telemetry rows and no exception rows for those conversations.
 
 For the detailed operational record, see:
 `agents/order-resolution/foundry-public/docs/design/issues-changes-fixes.md`.

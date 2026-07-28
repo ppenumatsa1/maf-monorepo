@@ -279,5 +279,33 @@ release then built
 `ORD-1001` through Foundry Models and the Azure PostgreSQL FQDN (conversation
 `conv_ad0825e2b0ac6dc400W59cDlBuRk8Km64lb5pFzMYMaYWzoppD`, trace
 `3ae160e935d56a643fd1d2204c2dcacf`). Disposable POC agents/images and the
-temporary blueprint role were deleted. Hosted browser E2E, Foundry evaluation,
-and telemetry remain pending by the agreed scope deferral.
+temporary blueprint role were deleted.
+
+## Public release gate completion (2026-07-28)
+
+The clean public release completed all required runtime gates with fresh
+evidence:
+
+- Deployed browser E2E passed all 7 scenarios, including low-risk completion,
+  high-risk approval/resume, rejection escalation, workflow history, and the
+  manual test panel.
+- Hosted Responses E2E completed low-risk, multi-turn continuity, and
+  high-risk approval/resume. The low-risk conversation was
+  `conv_533cb6371aeafb4300trdXELCjbKQzOJvW1bL6WTMKPoSOhm1V`; the approved
+  high-risk conversation was
+  `conv_a77ea962fae1664c00s4H2GgqB00zhP8tKJAGOqM14PJJ1QB1C`.
+- Enforced Foundry trace evaluation
+  `eval_ba88f785636644758e0027e8be963ed2` /
+  `evalrun_9f4964e7e8f14ebdbbec85eb549c4112` completed with 2 passed, 0
+  failed, and 0 errored conversations using `task_completion` and
+  `coherence` evaluators.
+- Application Insights telemetry validation found 51 correlated rows for the
+  two hosted E2E conversations and no exception rows.
+
+The obsolete remote source-build fallback was removed with `agent.yaml`. The
+remaining compatibility and resilience behavior is intentional and remains:
+the AgentServer header shim supports the deployed package combination; the
+deterministic model path supports local operation without Foundry settings; and
+the MCP/RAG fallbacks preserve hosted workflow behavior while no public remote
+MCP/RAG dependency is configured. Removing any of those paths would change a
+supported runtime contract rather than eliminate an unnecessary fallback.
