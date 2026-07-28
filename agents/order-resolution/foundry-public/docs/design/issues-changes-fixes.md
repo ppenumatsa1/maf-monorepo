@@ -252,3 +252,13 @@ code deployment had only `AcrPull`.
 The project ACR assignment now grants `AcrPush`, which includes read access and
 allows the project code build to publish the immutable hosted-agent runtime
 image before activation. The role remains scoped to this lane's registry.
+
+**Current validation boundary.** On 2026-07-28, both the project identity and
+the restored hosted agent's blueprint and instance identities were granted the
+required ACR roles. Backend and frontend remote builds published successfully,
+but the Foundry remote code deployment still returned `ImageError` and created
+no hosted-agent repository or manifest in ACR. This is a Foundry code-build
+platform failure before image publication, not a missing image tag, role, or
+network-policy workaround. Keep the public hosted deployment, hosted E2E,
+Foundry evaluation, and telemetry gates pending until the Foundry request IDs
+can be resolved by the service.
