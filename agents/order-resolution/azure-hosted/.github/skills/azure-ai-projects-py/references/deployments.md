@@ -132,3 +132,67 @@ for publisher, deployments in deployments_by_publisher.items():
     for d in deployments:
         print(f"  - {d.name} ({d.model_name} v{d.model_version})")
 ```
+
+## Order Resolution Delivery Status
+
+This is the current release record for the three Order Resolution deployment
+lanes after the intentional 2026-07-28 teardown and recovery work. A lane is
+only **validated** when its required smoke, E2E, evaluation, and telemetry
+gates have current evidence.
+
+| Lane | Status | Current evidence | Pending gate / blocker |
+| --- | --- | --- | --- |
+| Azure-hosted | **Deployed and validated** | Backend and frontend redeployed from the monorepo; hosted UI passed all 7 Playwright flows; Foundry evaluation passed 2/2; 32 recent workflow/HITL dependency spans were recorded. | None. |
+| Foundry-public | **Deployed; smoke validated** | Infrastructure, backend, frontend, and hosted agent are deployed. `order-resolution-hosted` version 14 is active and completed the `ORD-1001` Responses smoke flow through Foundry Models and Azure PostgreSQL. | Hosted browser E2E, enforced Foundry evaluation, and telemetry validation are intentionally deferred. |
+| Foundry-private | **Prepared; deployment pending** | Recovery IaC, staged project-connection workflow, private-runner enforcement, and release-order validation are implemented and statically validated. | Recover/register the VNet-connected `foundry-private-v2` runner, complete staged provision, prove connectivity before PostgreSQL lockdown, then run hosted E2E, evaluation, and telemetry. |
+
+### Public Foundry: remote source-build failure
+
+**Symptom.** After clean provisioning, the former hosted-agent source-code
+path (`dependency_resolution: remote_build`) failed before publishing any agent
+image to ACR:
+
+```text
+ImageError: Container image not found
+```
+
+The failure was reproduced with the unmodified official Microsoft Python
+hosted-agent sample through `AIProjectClient.create_version_from_code`. That
+ruled out the Order Resolution implementation, generated source folder, and
+legacy agent manifest as root causes.
+
+**What was verified.**
+
+1. The Foundry project managed identity needs `Container Registry Repository
+   Reader`, and ACR needs `azureADAuthenticationAsArmPolicy` enabled.
+2. The current Agent Service also requires `AcrPull` for this project: removing
+   it reproduced the explicit service error that the workspace managed identity
+   lacked `AcrPull`.
+3. An official sample image built in the same ACR activated immediately. The
+   unresolved platform boundary is therefore Foundry's remote source-build
+   path, not project-to-ACR image access.
+
+**Repository fix.** Public Foundry now deploys a container image rather than
+remote source code:
+
+1. `sync_hosted_source.sh` copies canonical backend source into the generated
+   hosted-agent build context.
+2. `backend/Dockerfile.hosted` starts the adapter as
+   `python -m foundry.main`, preserving the `/app` import root and hosted
+   `/readiness` behavior.
+3. `deploy_hosted_container.sh` builds that context in ACR.
+4. `deploy_hosted_container.py` creates and polls the hosted-agent version
+   with the non-reserved runtime settings, including the Azure PostgreSQL URL
+   and model deployment.
+5. The script updates the AZD agent-version metadata, so operational commands
+   resolve the active version correctly.
+
+**Live confirmation.** The release created
+`order-resolution-hosted` version `14` from the repository-built image and
+completed `ORD-1001` in conversation
+`conv_ad0825e2b0ac6dc400W59cDlBuRk8Km64lb5pFzMYMaYWzoppD`. The active
+agent used `gpt-4o-mini` and the configured Azure PostgreSQL server; its smoke
+trace ID is `3ae160e935d56a643fd1d2204c2dcacf`.
+
+For the detailed operational record, see:
+`agents/order-resolution/foundry-public/docs/design/issues-changes-fixes.md`.
