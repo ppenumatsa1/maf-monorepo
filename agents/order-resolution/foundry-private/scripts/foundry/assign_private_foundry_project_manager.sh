@@ -21,6 +21,16 @@ FOUNDRY_PROJECT_NAME="${TARGET_FOUNDRY_PROJECT:-order-resolution}"
 
 az account set --subscription "$SUBSCRIPTION_ID"
 
+container_registry_name="$(az acr list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+[[ -n "$container_registry_name" ]] || {
+  echo "Expected exactly one private ACR in the selected resource group."
+  exit 1
+}
+[[ "$(az acr list --resource-group "$RESOURCE_GROUP" --query 'length([])' --output tsv)" == "1" ]] || {
+  echo "Expected exactly one private ACR in the selected resource group."
+  exit 1
+}
+
 arm_token="$(az account get-access-token --resource https://management.azure.com --query accessToken --output tsv)"
 token_payload="$(cut -d. -f2 <<<"$arm_token")"
 token_payload="${token_payload//-/+}"
@@ -49,6 +59,7 @@ az deployment group create \
     deploymentPrincipalId="$deployment_principal_id" \
     foundryAccountName="$FOUNDRY_ACCOUNT_NAME" \
     foundryProjectName="$FOUNDRY_PROJECT_NAME" \
+    containerRegistryName="$container_registry_name" \
   --output none
 
-echo "Foundry Project Manager role is synchronized for the protected release identity."
+echo "Foundry Project Manager and private ACR push roles are synchronized for the protected release identity."

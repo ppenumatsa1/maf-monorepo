@@ -40,7 +40,7 @@ If someone starts from this README, this path should let them understand and run
 | Stage                | Status      | Runtime path                                                                                                 |
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
 | Local MAF            | Implemented | Shared MAF workflow (`backend/app/maf/workflows/order_resolution.py`)                                       |
-| Foundry hosted agent | Implemented (private VNet lane retained) | Shared workflow hosted at `backend/foundry/main.py` with Responses protocol conversation turns              |
+| Foundry hosted agent | Implemented (private VNet lane retained) | Shared workflow hosted at `backend/foundry/main.py` with Responses protocol conversation turns in an ACR-built hosted image |
 | Private web delivery | Requires fresh redeployment | External frontend ACA proxies same-origin `/api` and SSE to an internal FastAPI ACA, which calls private Foundry Responses and PostgreSQL. |
 
 MAF internals are split for maintainability into `backend/app/maf/prompts`,
@@ -241,15 +241,20 @@ Current default examples in checked-in templates use gpt-4.1-mini for chat deplo
 
 The hosted agent package is rooted at `backend/` and uses:
 
-- `backend/agent.yaml` (`protocol: responses`, `version: 2.0.0`)
+- `backend/Dockerfile.hosted` (Responses image entrypoint)
 - `backend/foundry/main.py` (thin Responses host around the shared workflow)
 - `backend/.foundry/agent-metadata.yaml` and `backend/eval.yaml` for hosted eval metadata
 - `infra/foundry-hosted/azure.yaml` service project path (`./agent`) generated from `backend/` via `scripts/foundry/sync_hosted_source.sh`
 
+`infra/foundry-hosted/azure.yaml` is the only supported AZD project for this
+lane. Use `make foundry-deploy`; it builds from the VNet runner and registers
+the tagged private-ACR image through the Foundry SDK rather than invoking
+Foundry's broken source builder.
+
 ## Troubleshooting
 
 - If parity fails with 429 session_quota_exceeded from Foundry, reduce test concurrency, add case delays, or clear/raise session quota.
-- If hosted responses fail, verify `backend/agent.yaml` protocol and pass `--protocol responses` on `azd ai agent invoke`.
+- If hosted responses fail, verify the active image version uses the Responses protocol and pass `--protocol responses` on `azd ai agent invoke`.
 
 ## Documentation Map
 

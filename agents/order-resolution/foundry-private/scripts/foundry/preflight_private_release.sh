@@ -23,8 +23,8 @@ require_bin jq
   echo "Backend and frontend container definitions are required."
   exit 1
 }
-[[ -f "${ROOT_DIR}/backend/agent.yaml" && -f "${ROOT_DIR}/backend/foundry/main.py" ]] || {
-  echo "Hosted-agent source is incomplete."
+[[ -f "${ROOT_DIR}/backend/Dockerfile.hosted" && -f "${ROOT_DIR}/backend/foundry/main.py" ]] || {
+  echo "Hosted-agent image source is incomplete."
   exit 1
 }
 

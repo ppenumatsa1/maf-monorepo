@@ -406,6 +406,47 @@ only the exact `AIServices/agents/read` authorization error with bounded
 failures. Connectivity proof, PostgreSQL lockdown, hosted E2E, evaluation,
 and telemetry remain blocked until that retry succeeds.
 
+## Hosted-agent source-build ImageError correction (2026-07-28)
+
+**Root cause.** Protected workflow
+[`30400533992`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30400533992)
+proved the GitHub release identity can create and read the hosted agent after
+the project-scoped Foundry Project Manager assignment. The service then waited
+for activation and failed with
+`[ImageError] Container image not found`. This is the same Foundry
+`remote_build` source-deployment failure previously isolated in the public
+lane: the platform did not produce a runnable image from the uploaded Python
+source. The private failure occurs after agent creation, so it is not the
+earlier OIDC/RBAC issue.
+
+**Precise fix.** The private lane now builds the generated
+`backend/Dockerfile.hosted` context locally on the in-VNet private runner,
+pushes it through the ACR private endpoint, then uses the supported
+`AIProjectClient.agents.create_version` image registration API with the
+Responses protocol and preserved private runtime environment. ACR Tasks are
+not used because their default build workers cannot reach an ACR with public
+network access disabled. The old `agent.yaml` `remote_build` definition is
+removed; the supported `make foundry-deploy` path cannot fall back to the
+broken source builder. Private Bicep enables ACR ARM Entra authentication and
+assigns only the Foundry project identity `AcrPull` and `Container Registry
+Repository Reader` at the private ACR scope. Those roles and the registry
+policy are provisioned before image registration; no registry public endpoint,
+admin user, or firewall exception is enabled. Source synchronization excludes
+all local Foundry checkpoints, memory, and result state before the image is
+built. The same Graph-free identity template assigns `AcrPush` at the private
+ACR scope to the protected deployment identity; image push retries only the
+new role's `unauthorized` or `denied` propagation state.
+
+**Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
+supports `HostedAgentDefinition` with a full tagged ACR
+`ContainerConfiguration.image` and polling the created version to `active`:
+https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent#deploy-using-the-python-sdk.
+Microsoft’s current hosted-agent deployment guidance also identifies project
+registry-reader access as required for image deployment. The next guarded
+workflow run must complete the ACR image build and agent activation before
+connectivity proof, PostgreSQL lockdown, hosted E2E, evaluation, and telemetry
+can proceed.
+
 **Core-stage confirmation.** Protected workflow
 [`30397620770`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30397620770)
 completed successfully on the recovered private runner. It recreated

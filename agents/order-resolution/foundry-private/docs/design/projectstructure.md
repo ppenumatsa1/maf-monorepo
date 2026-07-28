@@ -31,7 +31,7 @@ maf-order-resolution-agent/
       datasets/
       evaluators/
       suites/
-    agent.yaml
+    Dockerfile.hosted
     eval.yaml
   frontend/
     src/
@@ -52,4 +52,4 @@ maf-order-resolution-agent/
 - `backend/app/modules/order_resolution/*`: application service, domain models, ports, projections.
 - `backend/app/maf/*`: MAF runtime internals (prompts, agents, executors, workflow, runner).
 - `backend/app/infrastructure/*`: persistence and external adapters.
-- `backend/foundry/main.py`: Foundry-hosted Responses adapter that invokes the shared service/workflow path.
+- `backend/foundry/main.py`: Foundry-hosted Responses adapter that invokes the shared service/workflow path; `backend/Dockerfile.hosted` packages it for ACR image deployment.

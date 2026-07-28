@@ -5,7 +5,7 @@ This file describes expected behavior for coding agents working in this reposito
 ## Project Context
 
 - Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
-- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol via `backend/agent.yaml`).
+- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol in the ACR-built `backend/Dockerfile.hosted` image).
 - Current hosted gate posture is private-lane-first; use private Foundry for hosted validation/deployment unless the canonical operating model is explicitly revised.
 - Frontend: React + Vite, consumes SSE workflow events.
 - Private browser delivery: external frontend ACA proxies same-origin `/api` to

@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env
 
-.PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-test-postgres \
+.PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-foundry-deploy-env ensure-test-postgres \
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
@@ -61,6 +61,9 @@ install-frontend:
 ensure-backend-env:
 	test -d backend/.venv || $(MAKE) venv-backend
 	. backend/.venv/bin/activate && python -c "import pytest" >/dev/null 2>&1 || $(MAKE) install-backend
+
+ensure-foundry-deploy-env: ensure-backend-env
+	. backend/.venv/bin/activate && python -c "import azure.ai.projects" >/dev/null 2>&1 || $(MAKE) install-backend
 
 ensure-test-postgres:
 	@DATABASE_URL="$${DATABASE_URL:-$${FOUNDRY_RUNTIME_DATABASE_URL:-$${RUNTIME_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/maf_workflow?sslmode=disable}}}" \
@@ -254,33 +257,12 @@ foundry-project-connections:
 		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS true && \
 		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
-foundry-deploy:
-	@test -f backend/agent.yaml
+foundry-deploy: ensure-foundry-deploy-env
+	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
+	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	@./scripts/foundry/sync_hosted_source.sh
-	@agent_name="$${FOUNDRY_HOSTED_AGENT_NAME:-order-resolution-hosted}"; \
-	cd infra/foundry-hosted && \
-	set -a && eval "$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-values)" && set +a && \
-	deploy_output=""; \
-	for retry_delay in 0 15 30 60 120; do \
-		if [[ "$$retry_delay" -gt 0 ]]; then \
-			echo "Waiting $${retry_delay}s for Foundry Project Manager role propagation."; \
-			sleep "$$retry_delay"; \
-		fi; \
-		if deploy_output="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy "$$agent_name" --no-prompt --timeout "$${FOUNDRY_DEPLOY_TIMEOUT_SECONDS:-1800}" 2>&1)"; then \
-			printf '%s\n' "$$deploy_output"; \
-			break; \
-		fi; \
-		printf '%s\n' "$$deploy_output" >&2; \
-		if [[ "$$deploy_output" != *'Microsoft.CognitiveServices/accounts/AIServices/agents/read'* ]]; then \
-			exit 1; \
-		fi; \
-	done; \
-	[[ -n "$$deploy_output" && "$$deploy_output" != *'Microsoft.CognitiveServices/accounts/AIServices/agents/read'* ]] || { \
-		echo "Foundry Project Manager role did not propagate before the deployment retry limit."; \
-		exit 1; \
-	}; \
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent show "$$agent_name" --output json --no-prompt >/dev/null
+	@./scripts/foundry/deploy_hosted_container.sh
 
 foundry-app-deploy:
 	@test -f backend/Dockerfile

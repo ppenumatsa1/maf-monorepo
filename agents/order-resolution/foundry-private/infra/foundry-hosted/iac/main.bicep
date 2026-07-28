@@ -345,6 +345,14 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   }
 }
 
+resource containerRegistryAzureAdAuthenticationAsArmPolicy 'Microsoft.ContainerRegistry/registries/policies@2023-07-01' = {
+  parent: containerRegistry
+  name: 'azureADAuthenticationAsArmPolicy'
+  properties: {
+    status: 'enabled'
+  }
+}
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: take('${namePrefix}-mon-${suffix}-law', 63)
   location: location
@@ -555,6 +563,26 @@ resource projectFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignmen
   scope: foundryAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: foundryProject.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource projectAcrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, foundryProject.id, 'project-acr-pull')
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: foundryProject.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource projectAcrRepositoryReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, foundryProject.id, 'project-acr-repository-reader')
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b93aa761-3e63-49ed-ac28-beffa264f7ac')
     principalId: foundryProject.identity.principalId
     principalType: 'ServicePrincipal'
   }

@@ -5,7 +5,7 @@
 | Stage | Status | Runtime behavior |
 | --- | --- | --- |
 | Local FastAPI host | Implemented | Runs the shared MAF workflow and exposes stable API/SSE/HITL contracts. |
-| Foundry hosted agent | Implemented (private VNet lane retained) | `backend/foundry/main.py` hosts the same workflow with Responses protocol (`backend/agent.yaml`). |
+| Foundry hosted agent | Implemented (private VNet lane retained) | `backend/foundry/main.py` hosts the same workflow with Responses protocol in the ACR-built `Dockerfile.hosted` image. |
 | Private ACA wrapper | Implemented locally; private-release validation pending | Internal FastAPI Container App uses managed identity to dispatch to private Foundry Responses and tails persisted workflow events for SSE. |
 
 There is one business workflow path rooted at `backend/app/maf/workflows/order_resolution.py`,

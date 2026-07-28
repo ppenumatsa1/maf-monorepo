@@ -52,7 +52,7 @@ Evidence: `backend/app/api/v1/routers/chat.py`, `backend/app/modules/order_resol
 ## 5. Authentication flow
 
 - Foundry model calls use `DefaultAzureCredential` in runtime (`backend/app/maf/clients.py:62-71`).
-- Hosted Foundry entrypoint depends on environment-provided model/database variables from `agent.yaml` (`backend/agent.yaml:10-33`).
+- Hosted Foundry entrypoint depends on environment-provided model/database variables from the image-release definition (`scripts/foundry/deploy_hosted_container.py`).
 - API layer currently has no auth dependency for chat/HITL routes (`backend/app/api/v1/routers/chat.py`, `backend/app/api/v1/routers/hitl.py`), and CORS is open to all origins (`backend/app/main.py:19-24`).
 
 ## 6. External dependencies

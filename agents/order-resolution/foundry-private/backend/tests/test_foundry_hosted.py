@@ -155,30 +155,22 @@ def _fake_responses_types() -> tuple[
     )
 
 
-def test_hosted_manifest_uses_private_safe_environment_settings() -> None:
-    manifest = Path(__file__).parents[1] / "agent.yaml"
-    manifest_text = manifest.read_text()
+def test_hosted_image_release_uses_private_safe_environment_settings() -> None:
+    release_script = (
+        Path(__file__).parents[2] / "scripts/foundry/deploy_hosted_container.py"
+    )
+    release_text = release_script.read_text()
 
-    assert "name: FOUNDRY_DEPLOYMENT_PROFILE" not in manifest_text
-    assert "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" not in manifest_text
-    assert (
-        'name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT\n      value: "false"'
-        in manifest_text
-    )
-    assert (
-        "name: FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT\n"
-        "      value: ${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT}"
-    ) in manifest_text
-    assert "name: APPLICATIONINSIGHTS_CONNECTION_STRING" not in manifest_text
-    assert "APPINSIGHTS_CONNECTION_STRING" not in manifest_text
-    assert "MAF_APPINSIGHTS_" not in manifest_text
-    assert "MAF_MONITOR_" not in manifest_text
-    assert "name: FOUNDRY_PROJECTS_ENDPOINT\n      value: ${FOUNDRY_PROJECTS_ENDPOINT}" in (
-        manifest_text
-    )
-    assert (
-        "name: FOUNDRY_MODEL_DEPLOYMENT_NAME\n      value: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
-    ) in manifest_text
+    assert '"FOUNDRY_DEPLOYMENT_PROFILE"' not in release_text
+    assert "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" not in release_text
+    assert '"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false"' in release_text
+    assert '"FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT": require(' in release_text
+    assert "APPLICATIONINSIGHTS_CONNECTION_STRING" not in release_text
+    assert "APPINSIGHTS_CONNECTION_STRING" not in release_text
+    assert "MAF_APPINSIGHTS_" not in release_text
+    assert "MAF_MONITOR_" not in release_text
+    assert '"FOUNDRY_PROJECTS_ENDPOINT": endpoint' in release_text
+    assert '"FOUNDRY_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
     assert not hasattr(foundry_main, "setup_observability")
 
 

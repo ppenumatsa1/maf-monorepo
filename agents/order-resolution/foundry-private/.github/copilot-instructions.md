@@ -8,7 +8,8 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - Deterministic triage fallback is allowed only when Foundry Models env vars are
   absent; do not add a separate deterministic fallback orchestration path.
 - Keep Foundry hosting Responses-native through `backend/foundry/main.py` and
-  `backend/agent.yaml`; do not reintroduce legacy invocations adapter paths.
+  the ACR-built `backend/Dockerfile.hosted` image; do not reintroduce legacy
+  invocations adapter paths.
 - Keep HITL behavior deterministic and testable.
 - Keep API response contracts stable for frontend and Playwright tests.
 - Keep the legacy SSE event stream stable; expose richer AG-UI-compatible events only as additive surfaces.
