@@ -33,6 +33,41 @@ evidence was retained without a teardown status transition. The README and this
 ledger now identify deleted resources and require fresh evidence before a live
 deployment is claimed.
 
+## Clean-provision repair (2026-07-28)
+
+**RCA.** `infra/foundry-hosted/iac/main.bicep` declared the parent Foundry
+account, ACR, Log Analytics workspace, and Application Insights component as
+`existing`. After the intentional lane teardown, the deployment therefore
+failed before it could create the project, role assignments, connections,
+Container Apps, storage, PostgreSQL, or agent prerequisites. The evaluator also
+pinned `gpt-4o-mini` / `GlobalStandard` / `2024-07-18`; the provision warning
+showed that this pinned offering could not be resolved in the target region.
+
+**Fix.** The template now manages those four named resources, creates the chat
+and embeddings deployments that the hosted configuration names, and orders
+their consumers through resource references: Foundry account -> deployments and
+project -> roles/connections; Log Analytics -> Application Insights -> Container
+Apps environment/apps; ACR -> pull identities/roles/apps; and PostgreSQL ->
+database/firewall -> generated backend connection string. Existing names and
+parameter overrides are preserved. Evaluator/chat/embeddings model-version
+parameters now default to empty so Azure selects its current regional default;
+the model name, deployment name, and capacity remain configurable. On
+2026-07-28, `az cognitiveservices model list --location eastus2` reported the
+current catalog's `gpt-4o-mini` `GlobalStandard` offering and
+`text-embedding-3-small` version `1`; the version is deliberately not
+hard-coded because the earlier pin was the failure mode.
+
+The first non-mutating preview found the deleted Foundry account retained as an
+Azure soft-deleted account, which requires the write-only `restore: true` flag.
+The managed account now sets that flag through the
+`restoreFoundryAccount` parameter (default `true`); this preserves the
+established account name without requiring an out-of-band purge.
+
+**Validation.** Bicep compilation and a non-mutating
+`AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --preview --no-prompt`
+must complete before any actual provision. No live provision or deployment is
+performed as part of this repair.
+
 ## Local E2E bootstrap correction
 
 The local Foundry-public E2E target referenced the ignored `backend/.env`

@@ -42,7 +42,7 @@ help:
 	@echo "  foundry-evidence - Collect hosted E2E, evaluation, and telemetry evidence"
 	@echo "  foundry-release - Test, provision, deploy apps and hosted agent, proof, lockdown, evidence"
 	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
-	@echo "  foundry-access-path - Deploy private runner/Bastion access path via Bicep"
+	@echo "  foundry-access-path - Recreate the private runner VM/Bastion through the selected AZD environment"
 	@echo "  clean           - Remove caches and test artifacts"
 
 bootstrap: install-backend install-frontend
@@ -323,11 +323,28 @@ foundry-smoke:
 	exit 1
 
 foundry-access-path:
-	cd infra/foundry-hosted && az deployment group create \
-		--resource-group "$${FOUNDRY_ACCESS_RG:-rg-maf-ora-ni-eus-07080910}" \
-		--template-file iac/access-path.bicep \
-		--parameters @iac/access-path.parameters.json \
-		--parameters runnerVmSshPublicKey="$$(cat "$${RUNNER_SSH_PUBKEY_PATH:-$$HOME/.ssh/id_rsa.pub}")"
+	@set -euo pipefail; \
+	key_path="$${RUNNER_SSH_PUBKEY_PATH:-}"; \
+	[[ -n "$$key_path" ]] || { \
+		echo "RUNNER_SSH_PUBKEY_PATH is required and must point to the runner VM SSH public key."; \
+		exit 1; \
+	}; \
+	[[ -f "$$key_path" ]] || { \
+		echo "RUNNER_SSH_PUBKEY_PATH does not exist: $$key_path"; \
+		exit 1; \
+	}; \
+	runner_ssh_public_key="$$(tr -d '\r\n' < "$$key_path")"; \
+	[[ -n "$$runner_ssh_public_key" ]] || { \
+		echo "RUNNER_SSH_PUBKEY_PATH is empty: $$key_path"; \
+		exit 1; \
+	}; \
+	cd infra/foundry-hosted; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}" --no-prompt; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $$(MAKE) -C ../.. foundry-preflight; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set CREATE_PRIVATE_RUNNER_ACCESS true; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set CREATE_RUNNER_VM true; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set RUNNER_VM_SSH_PUBLIC_KEY "$$runner_ssh_public_key"; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +

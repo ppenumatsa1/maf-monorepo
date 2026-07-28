@@ -146,6 +146,48 @@ def validate() -> None:
     if repair_script.exists():
         raise AssertionError("Private release retains a PostgreSQL admin-password repair path.")
 
+    access_path_body = makefile.split("foundry-access-path:\n", maxsplit=1)[1].split(
+        "\n\nclean:", maxsplit=1
+    )[0]
+    require(
+        access_path_body,
+        "RUNNER_SSH_PUBKEY_PATH is required",
+        "foundry-access-path Make target",
+    )
+    require(
+        access_path_body,
+        'azd env select "$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}" --no-prompt',
+        "foundry-access-path Make target",
+    )
+    require(
+        access_path_body,
+        "$(MAKE) -C ../.. foundry-preflight",
+        "foundry-access-path Make target",
+    )
+    for value in (
+        "azd env set CREATE_PRIVATE_RUNNER_ACCESS true",
+        "azd env set CREATE_RUNNER_VM true",
+        "azd env set RUNNER_VM_SSH_PUBLIC_KEY",
+        "azd provision --no-prompt",
+        "AZURE_DEV_USER_AGENT=microsoft_foundry_skill",
+    ):
+        require(access_path_body, value, "foundry-access-path Make target")
+    forbid(
+        access_path_body,
+        "iac/access-path.bicep",
+        "foundry-access-path Make target",
+    )
+    forbid(access_path_body, "FOUNDRY_ACCESS_RG", "foundry-access-path Make target")
+
+    register_runner = (
+        Path(PRIVATE_PREFIX) / "scripts/github/register_vm_runner.sh"
+    ).read_text()
+    require(
+        register_runner,
+        'RUNNER_LABEL="${RUNNER_LABEL:-foundry-private-v2}"',
+        "register_vm_runner.sh",
+    )
+
     provision_name = "order-resolution-private-provision.yml"
     provision = (WORKFLOWS / provision_name).read_text()
     require(provision, "make foundry-provision", provision_name)

@@ -12,6 +12,9 @@ param hostedAgentName string = 'order-resolution-hosted'
 @description('Public Foundry account name')
 param foundryAccountName string = 'maffndaibfscpfhjr7sp4'
 
+@description('Restore a soft-deleted Foundry account with this name when Azure reports one. Keep true for the deleted public lane; set false only after purging the account name.')
+param restoreFoundryAccount bool = true
+
 @description('Public Azure Container Registry name')
 param containerRegistryName string = 'maffndacrbfscpfhjr7sp4'
 
@@ -45,11 +48,37 @@ param traceReaderPrincipalId string = ''
 @description('Foundry chat deployment name')
 param foundryChatDeploymentName string = 'gpt-4o-mini'
 
+@description('Foundry chat model name')
+param foundryChatModelName string = 'gpt-4o-mini'
+
+@description('Optional Foundry chat model version. Leave empty to use the current Azure default version in the deployment region.')
+param foundryChatModelVersion string = ''
+
+@minValue(1)
+@description('Foundry chat deployment capacity in thousands of tokens per minute')
+param foundryChatDeploymentCapacity int = 1
+
 @description('Foundry embeddings deployment name')
 param foundryEmbeddingsDeploymentName string = 'text-embedding-3-small'
 
+@description('Foundry embeddings model name')
+param foundryEmbeddingsModelName string = 'text-embedding-3-small'
+
+@description('Optional Foundry embeddings model version. Leave empty to use the current Azure default version in the deployment region.')
+param foundryEmbeddingsModelVersion string = ''
+
+@minValue(1)
+@description('Foundry embeddings deployment capacity in thousands of tokens per minute')
+param foundryEmbeddingsDeploymentCapacity int = 1
+
 @description('Dedicated Foundry evaluator deployment name')
 param foundryEvaluationDeploymentName string = 'gpt-4o-mini-evaluation'
+
+@description('Foundry evaluator model name')
+param foundryEvaluationModelName string = 'gpt-4o-mini'
+
+@description('Optional Foundry evaluator model version. Leave empty to use the current Azure default version in the deployment region.')
+param foundryEvaluationModelVersion string = ''
 
 @minValue(1)
 @description('Dedicated evaluator deployment capacity in thousands of tokens per minute')
@@ -80,17 +109,49 @@ param postgresLocation string = 'centralus'
 
 var foundryProjectEndpoint = 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
 var foundryHostedResponsesUrl = '${foundryProjectEndpoint}/agents/${hostedAgentName}/endpoint/protocols/openai/responses?api-version=v1'
+var generatedRuntimeDatabaseUrl = createPostgresServer ? 'postgresql://${postgresAdminUsername}:${postgresAdminPassword}@${postgresServer!.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require' : ''
+var resolvedRuntimeDatabaseUrl = createPostgresServer ? generatedRuntimeDatabaseUrl : runtimeDatabaseUrl
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: containerRegistryName
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    adminUserEnabled: false
+    publicNetworkAccess: 'Enabled'
+    networkRuleBypassOptions: 'AzureServices'
+    networkRuleSet: {
+      defaultAction: 'Allow'
+    }
+  }
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: applicationInsightsName
-}
-
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
+  location: location
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+    features: {
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+  }
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: applicationInsightsName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalyticsWorkspace.id
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
+  }
 }
 
 resource logAnalyticsReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
@@ -175,8 +236,60 @@ resource postgresWorkflowDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/dat
   }
 }
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: foundryAccountName
+  location: location
+  kind: 'AIServices'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    allowProjectManagement: true
+    customSubDomainName: foundryAccountName
+    publicNetworkAccess: 'Enabled'
+    restore: restoreFoundryAccount
+  }
+}
+
+resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
+  parent: foundryAccount
+  name: foundryChatDeploymentName
+  sku: {
+    name: 'GlobalStandard'
+    capacity: foundryChatDeploymentCapacity
+  }
+  properties: {
+    model: union({
+      format: 'OpenAI'
+      name: foundryChatModelName
+    }, empty(foundryChatModelVersion) ? {} : {
+      version: foundryChatModelVersion
+    })
+    raiPolicyName: 'Microsoft.Default'
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+}
+
+resource foundryEmbeddingsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
+  parent: foundryAccount
+  name: foundryEmbeddingsDeploymentName
+  sku: {
+    name: 'Standard'
+    capacity: foundryEmbeddingsDeploymentCapacity
+  }
+  properties: {
+    model: union({
+      format: 'OpenAI'
+      name: foundryEmbeddingsModelName
+    }, empty(foundryEmbeddingsModelVersion) ? {} : {
+      version: foundryEmbeddingsModelVersion
+    })
+    raiPolicyName: 'Microsoft.Default'
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
 }
 
 resource foundryEvaluationDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
@@ -187,11 +300,12 @@ resource foundryEvaluationDeployment 'Microsoft.CognitiveServices/accounts/deplo
     capacity: foundryEvaluationDeploymentCapacity
   }
   properties: {
-    model: {
+    model: union({
       format: 'OpenAI'
-      name: 'gpt-4o-mini'
-      version: '2024-07-18'
-    }
+      name: foundryEvaluationModelName
+    }, empty(foundryEvaluationModelVersion) ? {} : {
+      version: foundryEvaluationModelVersion
+    })
     raiPolicyName: 'Microsoft.Default'
     versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
   }
@@ -286,6 +400,10 @@ resource projectApplicationInsightsConnection 'Microsoft.CognitiveServices/accou
       ResourceId: applicationInsights.id
     }
   }
+  dependsOn: [
+    projectTraceReaderApplicationInsightsRoleAssignment
+    projectTraceReaderLogAnalyticsRoleAssignment
+  ]
 }
 
 resource evaluationStorageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
@@ -348,6 +466,10 @@ resource evaluationStorageAccountConnection 'Microsoft.CognitiveServices/account
       purpose: 'foundry-evaluation-artifacts'
     }
   }
+  dependsOn: [
+    foundryAccountEvaluationStorageRoleAssignment
+    foundryProjectEvaluationStorageRoleAssignment
+  ]
 }
 
 resource runtimeStorageConnection 'Microsoft.CognitiveServices/accounts/connections@2025-04-01-preview' = {
@@ -365,6 +487,10 @@ resource runtimeStorageConnection 'Microsoft.CognitiveServices/accounts/connecti
       purpose: 'foundry-runtime-artifacts'
     }
   }
+  dependsOn: [
+    foundryAccountEvaluationStorageRoleAssignment
+    foundryProjectEvaluationStorageRoleAssignment
+  ]
 }
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
@@ -421,7 +547,7 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         {
           name: 'database-url'
-          value: runtimeDatabaseUrl
+          value: resolvedRuntimeDatabaseUrl
         }
         {
           name: 'application-insights-connection-string'
@@ -563,6 +689,9 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
   dependsOn: [
     containerAppsRegistryPullRoleAssignment
+    postgresAzureServicesFirewall
+    postgresWorkflowDatabase
+    projectApplicationInsightsConnection
   ]
 }
 

@@ -33,7 +33,7 @@
       "value": "${SERVICE_FRONTEND_IMAGE_NAME=mcr.microsoft.com/k8se/quickstart:latest}"
     },
     "createPostgresServer": {
-      "value": "${CREATE_POSTGRES_SERVER}"
+      "value": "${CREATE_POSTGRES_SERVER=true}"
     },
     "postgresServerName": {
       "value": "${POSTGRES_SERVER_NAME}"

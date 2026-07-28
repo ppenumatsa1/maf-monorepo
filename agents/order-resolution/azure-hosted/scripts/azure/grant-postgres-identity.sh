@@ -37,6 +37,27 @@ PGPASSWORD="$(az account get-access-token \
 
 admin_uri="host=${AZURE_POSTGRES_HOST} port=5432 dbname=postgres user=${POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME} sslmode=require"
 
+wait_for_entra_admin() {
+  local attempt
+  local max_attempts="${POSTGRES_ENTRA_ADMIN_READY_ATTEMPTS:-18}"
+  local retry_seconds="${POSTGRES_ENTRA_ADMIN_READY_RETRY_SECONDS:-10}"
+
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if psql "$admin_uri" --set=ON_ERROR_STOP=1 --command='SELECT 1' >/dev/null 2>&1; then
+      return
+    fi
+    if ((attempt < max_attempts)); then
+      echo "Waiting for PostgreSQL Entra administrator propagation (${attempt}/${max_attempts})..." >&2
+      sleep "$retry_seconds"
+    fi
+  done
+
+  echo "PostgreSQL Entra administrator did not accept token authentication after ${max_attempts} attempts." >&2
+  exit 1
+}
+
+wait_for_entra_admin
+
 psql "$admin_uri" \
   --set=ON_ERROR_STOP=1 \
   --set=backend_principal="$AZURE_POSTGRES_USER" \

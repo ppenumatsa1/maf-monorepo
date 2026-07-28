@@ -39,7 +39,7 @@ Provisioning now reads `iac/main.parameters.json`, which maps AZD environment ke
 ## Private release flow
 
 PR validation is credential-free through
-`.github/workflows/foundry-private-validation.yml`. Authenticated infrastructure
+`.github/workflows/order-resolution-private-validation.yml`. Authenticated infrastructure
 and application deployment is available only by manually dispatching
 `order-resolution-private-provision.yml` or
 `order-resolution-private-deploy.yml`; both are protected by the
@@ -95,7 +95,24 @@ environment are authoritative if the canonical server changes.
 
 ## Private runner bootstrap
 
-Prepare and register/start the private self-hosted runner on the VM with:
+If the private runner VM has been deleted, first use the management-plane
+recovery target from an authorized operator shell:
+
+```bash
+RUNNER_SSH_PUBKEY_PATH=/secure/path/id_ed25519.pub make foundry-access-path
+```
+
+The target fails before any Azure command when the key path is absent, missing,
+or empty. It selects `foundry-private-env`, runs private-release preflight, and
+sets `CREATE_PRIVATE_RUNNER_ACCESS=true`, `CREATE_RUNNER_VM=true`, and
+`RUNNER_VM_SSH_PUBLIC_KEY` in the retained AZD environment before invoking
+`azd provision`. This uses the existing resource-group-scoped `main.bicep`
+private-runner module; do not use a separate access resource group or a
+nonexistent standalone access-path template. It creates no public ACR or
+PostgreSQL firewall exception.
+
+After the VM is available, use Bastion to prepare and register/start the
+private self-hosted runner:
 
 ```bash
 ./scripts/github/bootstrap_vm_runner_host.sh
@@ -109,13 +126,14 @@ Required environment variables include:
 
 Optional defaults:
 
-- `RUNNER_LABEL` (active target: `foundry-private-v2`)
+- `RUNNER_LABEL` (default and required release target: `foundry-private-v2`)
 - `RUNNER_VERSION` (default: `2.328.0`)
 
 The private runner is the only GitHub Actions host permitted to run the manual
 provision/deployment lane and remains an in-VNet operator host for the local
-release flow. Dispatch provision before application deployment; use the local
-release flow for the full proof and PostgreSQL lockdown sequence.
+release flow. Runner recovery is an explicit management-plane prerequisite,
+not a release deployment path. Do not dispatch provision or deploy until the
+runner readiness check reports `foundry-private-v2` online.
 
 ## Runner readiness check
 

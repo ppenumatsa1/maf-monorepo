@@ -108,6 +108,26 @@ recorded target is
 `maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
 the AZD environment changes.
 
+### Private runner recovery
+
+If the private runner VM or its GitHub registration is gone, an authorized
+management-plane operator must recreate the in-VNet runner before dispatching
+any release workflow:
+
+```bash
+RUNNER_SSH_PUBKEY_PATH=/secure/path/id_ed25519.pub make foundry-access-path
+```
+
+The target rejects an absent, missing, or empty public-key file. It selects the
+retained `foundry-private-env`, validates its existing private target, enables
+the existing `main.bicep` private-runner/VM parameters, and provisions that
+same resource group; it does not use a separate access resource group or
+public ACR/firewall exception. Connect to the recreated VM through Bastion,
+then run `scripts/github/bootstrap_vm_runner_host.sh` and
+`scripts/github/register_vm_runner.sh`. Registration defaults to the required
+`foundry-private-v2` label. Only after GitHub reports that label online may a
+private release be dispatched.
+
 For release automation changes, the only local private validation is:
 
 ```bash

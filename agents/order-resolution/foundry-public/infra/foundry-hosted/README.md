@@ -7,9 +7,10 @@ Container App.
 
 ## What Bicep manages
 
-- The existing public Foundry account, ACR, Log Analytics, and Application
-  Insights component are referenced in the named public development resource
-  group.
+- A clean public Foundry account, Standard ACR, Log Analytics workspace, and
+  workspace-based Application Insights component. The established names remain
+  parameters, so an existing deployment is reconciled by name rather than
+  requiring a rename or a separate template.
 - The template creates the `order-resolution-public-managed-dev2` project with
   Microsoft-managed agent state and its system-assigned identity.
 - A project-scoped `ApplicationInsights` connection is created with the
@@ -26,9 +27,12 @@ Container App.
   Foundry connects through an Entra ID account connection, which materializes
   the project connection; only the Foundry account and project managed identities have `Storage Blob Data
   Owner` on that account, as required by the Foundry evaluator.
-- A dedicated `gpt-4o-mini-evaluation` deployment with 10K TPM capacity. It
-  is used only as the Foundry trace-evaluation judge, preventing the evaluator
-  from competing with the hosted agent's 1K TPM chat deployment.
+- A 1K TPM chat deployment, 1K TPM embeddings deployment, and dedicated
+  `gpt-4o-mini-evaluation` deployment with 10K TPM capacity. The model-version
+  parameters intentionally default to empty, which asks Azure to resolve the
+  current regional default instead of pinning a model version that may no
+  longer be offered. Set a version parameter only after verifying it with
+  `az cognitiveservices model list --location <location>`.
 - Foundry User assignments for the project identity and optional Log Analytics
   Reader assignments for the release operator.
 
@@ -106,3 +110,14 @@ Compile before a deployment:
 ```bash
 az bicep build --file infra/foundry-hosted/iac/main.bicep
 ```
+
+For a deleted public lane, use the normal selected AZD environment and ensure
+`CREATE_POSTGRES_SERVER=true` (the checked-in parameter default). Bicep derives
+the backend connection string from the newly created server in that mode. Set
+`CREATE_POSTGRES_SERVER=false` only when deliberately reusing a separately
+managed PostgreSQL server and supplying `RUNTIME_DATABASE_URL`.
+
+Foundry account names are soft-deleted by Azure. `restoreFoundryAccount`
+defaults to `true`, so the established account name is restored during a clean
+lane recovery. Set it to `false` only if the soft-deleted account was purged
+first and the same name is being created anew.

@@ -7,7 +7,7 @@ set -euo pipefail
 #   - REPO in owner/name form
 # Optional:
 #   - RUNNER_VERSION (default: 2.328.0)
-#   - RUNNER_LABEL (default: foundry-private)
+#   - RUNNER_LABEL (default: foundry-private-v2)
 #   - RUNNER_NAME_PREFIX (default: vm-${HOSTNAME})
 #   - RUNNER_WORKDIR (default: /mnt/actions-runner)
 #   - SKIP_VM_BOOTSTRAP=1 to skip package/tool bootstrap
@@ -28,7 +28,7 @@ require_bin sudo
 : "${REPO:?REPO is required (owner/repo)}"
 
 RUNNER_VERSION="${RUNNER_VERSION:-2.328.0}"
-RUNNER_LABEL="${RUNNER_LABEL:-foundry-private}"
+RUNNER_LABEL="${RUNNER_LABEL:-foundry-private-v2}"
 RUNNER_WORKDIR="${RUNNER_WORKDIR:-/mnt/actions-runner}"
 RUNNER_HOME="${RUNNER_HOME:-$RUNNER_WORKDIR/home}"
 RUNNER_NAME_PREFIX="${RUNNER_NAME_PREFIX:-vm-$(hostname)}"

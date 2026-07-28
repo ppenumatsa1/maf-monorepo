@@ -2,7 +2,8 @@
 
 The only Azure deployment path is
 [Foundry hosted](foundry-hosted/README.md). It provisions the public Foundry
-project and shared observability/data dependencies, deploys an external frontend
+account, project, model deployments, ACR, and shared observability/data
+dependencies from an empty resource group, deploys an external frontend
 Container App and an internal FastAPI wrapper Container App, and hosts the
 Responses-native MAF agent.
 

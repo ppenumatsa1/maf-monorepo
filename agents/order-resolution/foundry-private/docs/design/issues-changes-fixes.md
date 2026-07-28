@@ -24,6 +24,34 @@ The private monorepo deployment must run from the VNet-connected
 selected `foundry-private-env` AZD environment. No ACR firewall exception,
 public endpoint, or admin-user workaround is permitted.
 
+## Private runner recovery correction (2026-07-28)
+
+**Root cause.** The clean-room recovery target `make foundry-access-path`
+referenced `iac/access-path.bicep` and an `rg-maf-ora-ni-eus-07080910` default
+that no longer exist. The retained `rg-maf-ora-foundry-v2` environment already
+contains the source-of-truth `main.bicep` integration for
+`private-runner-access.bicep`, but the target did not use its selected AZD
+environment or parameters. In addition, the registration script defaulted to
+the obsolete `foundry-private` label rather than the release-only
+`foundry-private-v2` label.
+
+**Precise fix.** `foundry-access-path` now requires an explicit nonempty
+`RUNNER_SSH_PUBKEY_PATH`, selects and preflights `foundry-private-env`, writes
+the existing private-runner/VM and SSH-key AZD parameters, and executes
+resource-group-scoped `azd provision` through `main.bicep`. It no longer
+references a missing template or separate resource group. The recreated VM is
+private, reached through Bastion, and must register with the
+`foundry-private-v2` label before it can dispatch releases. No public
+ACR/firewall exception was added.
+
+**Intended validation evidence.** Static validation confirms the target's
+explicit key guard, selected environment, preflight, private-runner parameters,
+and absence of the stale template/resource-group references. The runner
+registration default is checked for `foundry-private-v2`. An authorized future
+recovery must run the target, register the VM through Bastion, and pass the
+GitHub runner readiness check before any release dispatch. No Azure deployment
+was performed while applying this correction.
+
 ## Release automation correction (2026-07-28)
 
 **Root cause.** The private provision, deployment, and observability workflows

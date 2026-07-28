@@ -168,7 +168,10 @@ configuration is read from the backend environment:
 - FOUNDRY_EVAL_MODEL (the dedicated judge deployment used by `make eval-foundry`)
 
 The public hosted configuration uses `gpt-4o-mini` for the agent and
-`gpt-4o-mini-evaluation` as the evaluator judge.
+`gpt-4o-mini-evaluation` as the evaluator judge. The hosted IaC does not pin a
+model version by default: Azure resolves the current available regional default
+when creating its chat, embeddings, and evaluator deployments. Pin an explicit
+version only after checking that region with `az cognitiveservices model list`.
 
 ## Foundry-Hosted Wiring
 
