@@ -11,6 +11,7 @@ from evals.foundry_eval_runner import (
     _build_conversation_trace_testing_criteria,
     _load_hosted_e2e_evidence,
     _parse_hosted_e2e_evidence,
+    _trace_ingestion_wait_seconds,
 )
 
 _NOW = datetime(2026, 7, 23, 15, 0, tzinfo=timezone.utc)
@@ -119,6 +120,26 @@ def test_load_hosted_e2e_evidence_rejects_malformed_json() -> None:
             max_age_seconds=3600,
             now=_NOW,
         )
+
+
+def test_trace_ingestion_waits_for_minimum_delay() -> None:
+    generated_at = datetime(2026, 7, 23, 14, 58, tzinfo=timezone.utc)
+
+    assert _trace_ingestion_wait_seconds(
+        generated_at,
+        minimum_delay_seconds=300,
+        now=_NOW,
+    ) == 180
+
+
+def test_trace_ingestion_wait_is_zero_after_minimum_delay() -> None:
+    generated_at = datetime(2026, 7, 23, 14, 50, tzinfo=timezone.utc)
+
+    assert _trace_ingestion_wait_seconds(
+        generated_at,
+        minimum_delay_seconds=300,
+        now=_NOW,
+    ) == 0
 
 
 def test_conversation_trace_criteria_use_messages_mapping() -> None:

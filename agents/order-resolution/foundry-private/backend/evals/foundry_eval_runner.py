@@ -123,6 +123,21 @@ def _load_hosted_e2e_evidence(
     )
 
 
+def _trace_ingestion_wait_seconds(
+    generated_at: datetime,
+    *,
+    minimum_delay_seconds: float,
+    now: datetime | None = None,
+) -> float:
+    if minimum_delay_seconds < 0:
+        raise ValueError("Trace ingestion delay must not be negative")
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        raise ValueError("Current time used for trace ingestion must include a timezone")
+    elapsed = (current_time.astimezone(timezone.utc) - generated_at).total_seconds()
+    return max(0.0, minimum_delay_seconds - max(0.0, elapsed))
+
+
 def _build_conversation_trace_testing_criteria(
     evaluators: list[str],
     judge_model: str,
@@ -173,6 +188,12 @@ async def run_foundry_eval() -> None:
             "backend/eval.yaml trace_evaluation.max_traces must cover all required scenarios"
         )
     max_evidence_age = float(trace_cfg.get("max_evidence_age_seconds", 21600))
+    trace_ingestion_delay = float(
+        os.getenv(
+            "FOUNDRY_TRACE_INGESTION_DELAY_SECONDS",
+            trace_cfg.get("ingestion_delay_seconds", 300),
+        )
+    )
 
     evaluator_values = foundry_cfg.get("evaluators")
     if not isinstance(evaluator_values, list) or not all(
@@ -191,6 +212,16 @@ async def run_foundry_eval() -> None:
         evidence_path,
         max_age_seconds=max_evidence_age,
     )
+    ingestion_wait = _trace_ingestion_wait_seconds(
+        generated_at,
+        minimum_delay_seconds=trace_ingestion_delay,
+    )
+    if ingestion_wait:
+        print(
+            f"Waiting {ingestion_wait:.0f}s for Application Insights trace ingestion "
+            "before submitting Foundry evaluation."
+        )
+        await asyncio.sleep(ingestion_wait)
     report_path = foundry_root / "results" / "foundry-report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
@@ -300,6 +331,12 @@ async def run_foundry_eval() -> None:
         if errored > int(max_errored):
             raise RuntimeError(
                 f"Foundry trace eval produced {errored} errored items; maximum is {max_errored}"
+            )
+    if enforce_pass and isinstance(result_counts, dict):
+        total = int(result_counts.get("total", 0))
+        if total < len(conversation_ids):
+            raise RuntimeError(
+                "Foundry trace eval did not produce a result for every hosted E2E conversation"
             )
 
 

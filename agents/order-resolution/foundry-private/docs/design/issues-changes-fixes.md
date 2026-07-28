@@ -561,6 +561,34 @@ The next guarded workflow must return a version and then poll it to `active`;
 only then may the existing proof, lockdown, E2E, evaluation, and telemetry
 gates proceed.
 
+## Foundry trace-ingestion evaluation correction (2026-07-28)
+
+**Root cause.** Protected workflow
+[`30407177196`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30407177196)
+passed hosted-agent deployment, fresh ACA/hosted-agent PostgreSQL connectivity
+proof, PostgreSQL lockdown, and all three hosted Responses E2E conversations.
+It then submitted the trace evaluation immediately after E2E. Foundry returned
+`failed` with zero result rows and no evaluator error. The project managed
+identity already has source-controlled **Log Analytics Reader** assignments on
+both Application Insights and its workspace, so the absence of rows directly
+after E2E is Application Insights ingestion timing, not missing RBAC.
+
+**Precise fix.** `backend/eval.yaml` now requires a five-minute
+`ingestion_delay_seconds` before the trace evaluation is submitted. The
+runner computes the remaining delay from the fresh E2E evidence timestamp, so
+it waits only as long as necessary and never reuses stale evidence. Enforced
+evaluation now additionally requires a completed run to return at least one
+result for each of the three recorded conversations; a completed but empty
+evaluation cannot satisfy the release gate.
+
+**Authority and retry boundary.** Microsoft’s conversation-trace evaluation
+guidance states that Application Insights ingestion can delay trace
+availability and directs operators to wait a few minutes before retrying:
+https://learn.microsoft.com/azure/foundry/how-to/develop/cloud-evaluation#conversation-level-evaluation-preview.
+The next protected release waits before one clean submission; any later
+non-completed or incomplete result remains a fail-closed release failure for
+investigation.
+
 ## Hosted-agent release token-lifetime correction (2026-07-28)
 
 **Root cause.** Protected workflow
