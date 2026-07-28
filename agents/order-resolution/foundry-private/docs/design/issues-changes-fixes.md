@@ -259,3 +259,75 @@ frontend with `npm ci`; quick validation also installs Playwright and Chromium
 before it runs `make validate-quick`. The private deployed validation boundary
 is unchanged: this correction only makes the local clean-runner E2E harness
 reproducible.
+
+## Private release readiness findings (2026-07-28)
+
+Read-only preflight against the recreated private environment found three
+release blockers before an application deployment was attempted:
+
+1. The existing VM `vm-maffnd-runner` is running, but its
+   `foundry-private-v2` runner registration is offline and belongs to the
+   retired `ppenumatsa1/maf-order-resolution-agent` repository. The protected
+   workflows are in `ppenumatsa1/maf-monorepo`, so the VM must be re-registered
+   there through Bastion with the `foundry-private-v2` label. The readiness
+   helper also retained the obsolete `foundry-private` default label; it now
+   defaults to `foundry-private-v2`. The registration helper now supports
+   `FORCE_RECONFIGURE=1`, which stops and replaces a local registration before
+   configuring the required repository; this keeps that repair repeatable
+      instead of relying on an ad-hoc VM change. It accepts a short-lived
+      GitHub runner registration token, so recovery does not copy a long-lived
+      personal access token onto the private VM.
+
+   The first Bastion SSH attempt then exposed a separate IaC mismatch:
+   `bas-maffnd` was Basic SKU and Azure rejected native-client SSH. Microsoft
+   requires Standard SKU with native-client tunneling for `az network bastion
+   ssh`. The runner-access module now declares Standard plus
+   `enableTunneling: true`; the existing host is upgraded in place before
+   runner re-registration. This changes the management-plane access feature
+   only; the runner VM remains private and no public workload endpoint or
+   database access is enabled.
+2. PostgreSQL private endpoint
+   `mafprv0722v3-postgres-pe-4aiw7fw5gjdo4` is `Failed` after the previous
+   delete operation. Azure continues to return
+   `OperationNotAllowedWhenLastOperationTypeIsDelete`, and the PostgreSQL
+   private DNS zone has no A record. Core provision must not resume until Azure
+   accepts private-endpoint reconciliation; no public database access or
+   firewall exception is permitted.
+3. The Foundry project/runtime-secret connection still reports a Key Vault
+   managed-identity token failure. This remains an expected post-restore
+   propagation condition: run core provisioning without project connections,
+   then retry only the staged `foundry-project-connections` target after the
+   project identity can acquire its Key Vault token.
+
+The Foundry account is active with public network access disabled and default
+network action deny. The source-level private gate also passed on this revision:
+Ruff completed cleanly and `make test` passed all 112 tests.
+
+## Declarative GitHub OIDC identity correction (2026-07-28)
+
+The first private release recovery used CLI to create the monorepo GitHub
+environment and a federated credential on the historical deployment
+application. That was immediately replaced with a source-controlled
+`infra/github-actions-identity` Bicep stack and tracked bootstrap script. The
+stack creates a dedicated application, its
+`repo:ppenumatsa1/maf-monorepo:environment:foundry-private-env` federated
+credential, and only the two resource-group roles needed by the protected
+workflow: Contributor and User Access Administrator. The bootstrap command
+then synchronizes the resulting non-secret client, tenant, and subscription
+IDs to the declared GitHub environment.
+
+The first IaC deployment reached application/service-principal creation but
+its immediate role assignments failed with `PrincipalNotFound` while Entra
+replicated the new principal. The role assignments now explicitly set
+`principalType: 'ServicePrincipal'`, which is Azure's documented first-run
+replication-safe form. No RBAC assignment or OIDC trust is created manually
+after this correction. The bootstrap also removes the temporary monorepo
+federated credential from the historical application after the replacement
+stack succeeds, leaving one active private-release trust.
+
+During verification, the initial role-definition constant was found to resolve
+to `Managed Identity Operator`, not `User Access Administrator`. The identity
+stack now uses Azure's `User Access Administrator`
+`18d7d88d-d35e-4fb5-a5c3-7773c20a72d9` definition. The bootstrap removes only
+the superseded assignment matching the incorrect role definition after the
+correct declarative assignment exists.

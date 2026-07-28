@@ -201,7 +201,11 @@ resource bastionPublicIp 'Microsoft.Network/publicIPAddresses@2023-09-01' = if (
 resource bastionHost 'Microsoft.Network/bastionHosts@2023-09-01' = if (enabled && createBastion) {
   name: bastionName
   location: location
+  sku: {
+    name: 'Standard'
+  }
   properties: {
+    enableTunneling: true
     ipConfigurations: [
       {
         name: 'bastion-ipcfg'

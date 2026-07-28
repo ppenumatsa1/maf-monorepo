@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Verify that a GitHub self-hosted runner with the required label is online.
 # Usage:
-#   REPO=owner/repo RUNNER_LABEL=foundry-private ./scripts/github/verify_foundry_runner_ready.sh
+#   REPO=owner/repo RUNNER_LABEL=foundry-private-v2 ./scripts/github/verify_foundry_runner_ready.sh
 
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -16,7 +16,7 @@ require_bin gh
 require_bin jq
 
 REPO="${REPO:-}"
-RUNNER_LABEL="${RUNNER_LABEL:-foundry-private}"
+RUNNER_LABEL="${RUNNER_LABEL:-foundry-private-v2}"
 
 if [[ -z "$REPO" ]]; then
   remote_url="$(git remote get-url origin 2>/dev/null || true)"

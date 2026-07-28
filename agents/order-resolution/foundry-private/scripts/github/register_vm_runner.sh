@@ -3,14 +3,15 @@ set -euo pipefail
 
 # Idempotent bootstrap for a self-hosted GitHub Actions runner on a private VM.
 # Requires:
-#   - GH_RUNNER_PAT with repo admin/workflow scope
 #   - REPO in owner/name form
+#   - GH_RUNNER_REGISTRATION_TOKEN, or GH_RUNNER_PAT with repository runner-management access
 # Optional:
 #   - RUNNER_VERSION (default: 2.328.0)
 #   - RUNNER_LABEL (default: foundry-private-v2)
 #   - RUNNER_NAME_PREFIX (default: vm-${HOSTNAME})
 #   - RUNNER_WORKDIR (default: /mnt/actions-runner)
 #   - SKIP_VM_BOOTSTRAP=1 to skip package/tool bootstrap
+#   - FORCE_RECONFIGURE=1 to replace an existing registration for a different repository
 
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -24,7 +25,6 @@ require_bin jq
 require_bin tar
 require_bin sudo
 
-: "${GH_RUNNER_PAT:?GH_RUNNER_PAT is required}"
 : "${REPO:?REPO is required (owner/repo)}"
 
 RUNNER_VERSION="${RUNNER_VERSION:-2.328.0}"
@@ -69,15 +69,30 @@ if [[ ! -x ./config.sh ]]; then
   rm -f "$archive"
 fi
 
-token="$(
-  curl -fsSL -X POST \
-    -H "Authorization: token ${GH_RUNNER_PAT}" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO}/actions/runners/registration-token" | jq -r '.token'
-)"
+token="${GH_RUNNER_REGISTRATION_TOKEN:-}"
+if [[ -z "$token" ]]; then
+  : "${GH_RUNNER_PAT:?GH_RUNNER_REGISTRATION_TOKEN or GH_RUNNER_PAT is required}"
+  token="$(
+    curl -fsSL -X POST \
+      -H "Authorization: token ${GH_RUNNER_PAT}" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/${REPO}/actions/runners/registration-token" | jq -r '.token'
+  )"
+fi
 if [[ -z "$token" || "$token" == "null" ]]; then
   echo "Failed to fetch registration token for $REPO"
   exit 1
+fi
+
+if [[ -f .runner && "${FORCE_RECONFIGURE:-0}" == "1" ]]; then
+  echo "Replacing the existing runner registration."
+  if sudo ./svc.sh status 2>/dev/null | grep -Eq 'active|running'; then
+    sudo ./svc.sh stop
+  fi
+  if ! ./config.sh remove --token "$token"; then
+    echo "Existing runner deregistration was not acknowledged; replacing its local configuration."
+  fi
+  rm -f .runner .credentials .credentials_rsaparams
 fi
 
 if [[ -f .runner ]]; then
