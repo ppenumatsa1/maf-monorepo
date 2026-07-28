@@ -263,3 +263,11 @@ platform failure before image publication, not a missing image tag, role, or
 network-policy workaround. Keep the public hosted deployment, hosted E2E,
 Foundry evaluation, and telemetry gates pending until the Foundry request IDs
 can be resolved by the service.
+
+An isolated POC using the official Python hosted-agent quickstart was also
+uploaded directly through `AIProjectClient.create_version_from_code` to the
+same public project. The unmodified basic sample failed immediately on version
+1 with the identical `ImageError`; its failed version was deleted. This
+eliminates the Order Resolution source tree, its azd manifest, and its release
+scripts as causes. The failure is scoped to the recreated public Foundry
+project/account code-build path and requires Foundry service investigation.

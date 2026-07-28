@@ -50,6 +50,7 @@
 
 # Local deployment progress reports and operational evidence.
 /deployment-reports/
+/poc/
 
 # Editor and operating-system files
 .vscode/
