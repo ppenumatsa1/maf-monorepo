@@ -286,6 +286,12 @@ release blockers before an application deployment was attempted:
    runner re-registration. This changes the management-plane access feature
    only; the runner VM remains private and no public workload endpoint or
    database access is enabled.
+
+   The first registration attempt then found the rebuilt VM did not have
+   `jq`. The runner helper required `jq` before calling its own host-bootstrap
+   script, even though that bootstrap installs the required command. The
+   helper now validates only bootstrap prerequisites first and validates
+   `git`, Docker, Azure CLI, AZD, `jq`, and `tar` after bootstrap completes.
 2. PostgreSQL private endpoint
    `mafprv0722v3-postgres-pe-4aiw7fw5gjdo4` is `Failed` after the previous
    delete operation. Azure continues to return

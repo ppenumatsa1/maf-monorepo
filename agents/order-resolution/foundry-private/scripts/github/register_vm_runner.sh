@@ -20,10 +20,9 @@ require_bin() {
   }
 }
 
-require_bin curl
-require_bin jq
-require_bin tar
-require_bin sudo
+for required_cmd in curl sudo; do
+  require_bin "$required_cmd"
+done
 
 : "${REPO:?REPO is required (owner/repo)}"
 
@@ -42,7 +41,7 @@ if [[ "${SKIP_VM_BOOTSTRAP:-0}" != "1" ]]; then
   "${script_dir}/bootstrap_vm_runner_host.sh"
 fi
 
-for required_cmd in git docker az azd; do
+for required_cmd in git docker az azd jq tar; do
   require_bin "$required_cmd"
 done
 
