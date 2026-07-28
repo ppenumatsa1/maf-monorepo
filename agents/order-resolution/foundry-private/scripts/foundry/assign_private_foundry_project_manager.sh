@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_bin() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing required binary: $1"
+    exit 1
+  }
+}
+
+require_bin az
+require_bin base64
+require_bin jq
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TEMPLATE_FILE="${ROOT_DIR}/infra/github-actions-identity/foundry-project-manager.bicep"
+SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-4f18d577-3506-4a11-85e5-a83b14727a84}"
+RESOURCE_GROUP="${TARGET_RESOURCE_GROUP:-rg-maf-ora-foundry-v2}"
+FOUNDRY_ACCOUNT_NAME="${FOUNDRY_ACCOUNT_NAME:-mafprv0722v3ai4aiw7fw5gjdo4}"
+FOUNDRY_PROJECT_NAME="${TARGET_FOUNDRY_PROJECT:-order-resolution}"
+
+az account set --subscription "$SUBSCRIPTION_ID"
+
+arm_token="$(az account get-access-token --resource https://management.azure.com --query accessToken --output tsv)"
+token_payload="$(cut -d. -f2 <<<"$arm_token")"
+token_payload="${token_payload//-/+}"
+token_payload="${token_payload//_/\/}"
+case $((${#token_payload} % 4)) in
+  2) token_payload+='==' ;;
+  3) token_payload+='=' ;;
+  0) ;;
+  *)
+    echo "Azure ARM token payload is invalid."
+    exit 1
+    ;;
+esac
+
+deployment_principal_id="$(printf '%s' "$token_payload" | base64 --decode | jq -r '.oid // empty')"
+[[ "$deployment_principal_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
+  echo "Azure ARM token does not identify a service principal object ID."
+  exit 1
+}
+
+az deployment group create \
+  --name order-resolution-private-foundry-project-manager \
+  --resource-group "$RESOURCE_GROUP" \
+  --template-file "$TEMPLATE_FILE" \
+  --parameters \
+    deploymentPrincipalId="$deployment_principal_id" \
+    foundryAccountName="$FOUNDRY_ACCOUNT_NAME" \
+    foundryProjectName="$FOUNDRY_PROJECT_NAME" \
+  --output none
+
+echo "Foundry Project Manager role is synchronized for the protected release identity."

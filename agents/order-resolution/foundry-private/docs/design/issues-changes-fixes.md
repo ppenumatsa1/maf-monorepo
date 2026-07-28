@@ -380,18 +380,18 @@ source-controlled role deployment but do not grant Foundry data-plane agent
 permissions.
 
 **Precise fix.** The existing declarative
-`infra/github-actions-identity/main.bicep` stack now conditionally assigns
-the documented **Foundry Project Manager** role
+`infra/github-actions-identity/foundry-project-manager.bicep` stack now
+assigns the documented **Foundry Project Manager** role
 (`eadc314b-1a2d-4efa-be10-5d325db5065e`) to the GitHub deployment service
-principal at the exact `order-resolution` Foundry project scope. The
-assignment is intentionally disabled during initial identity bootstrap, so
-the GitHub OIDC identity can be created before a clean environment contains a
-Foundry project. The protected deploy workflow enables the assignment only
-after its staged project-connection provision and before hosted-agent
-deployment. It invokes the tracked bootstrap with GitHub-environment
-synchronization and one-time legacy-identity retirement disabled; no workflow
-token receives GitHub-environment or Microsoft Graph admin permissions and no
-role is granted through an ad-hoc CLI command.
+principal at the exact `order-resolution` Foundry project scope. The dedicated
+template is intentionally Graph-free, so initial identity bootstrap can create
+the GitHub OIDC application before a clean environment contains a Foundry
+project, while the protected deploy workflow applies the project assignment
+only after staged project-connection provision and before hosted-agent
+deployment. The tracked deployment helper derives the signed-in service
+principal object ID from its ARM token and invokes the Bicep template; no
+workflow token receives GitHub-environment or Microsoft Graph admin
+permissions and no role is granted through an ad-hoc CLI command.
 
 **Authority and retry boundary.** Microsoft’s current hosted-agent deployment
 guidance requires Foundry Project Manager at project scope to create, update,
@@ -400,9 +400,11 @@ https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent#prer
 The correction adds only that project-scoped Foundry role; it does not enable
 public access, widen the OIDC federation, or add Foundry Owner at resource
 group/account scope. Re-run the protected deployment workflow after this
-declarative identity stack is applied. Connectivity proof, PostgreSQL
-lockdown, hosted E2E, evaluation, and telemetry remain blocked until that
-retry succeeds.
+declarative identity stack is applied. The hosted-agent deploy target retries
+only the exact `AIServices/agents/read` authorization error with bounded
+15/30/60/120-second propagation waits; all other failures remain immediate
+failures. Connectivity proof, PostgreSQL lockdown, hosted E2E, evaluation,
+and telemetry remain blocked until that retry succeeds.
 
 **Core-stage confirmation.** Protected workflow
 [`30397620770`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30397620770)

@@ -260,9 +260,27 @@ foundry-deploy:
 	@./scripts/foundry/sync_hosted_source.sh
 	@agent_name="$${FOUNDRY_HOSTED_AGENT_NAME:-order-resolution-hosted}"; \
 	cd infra/foundry-hosted && \
-	set -a && eval "$$(azd env get-values)" && set +a && \
-	azd deploy "$$agent_name" --no-prompt --timeout "$${FOUNDRY_DEPLOY_TIMEOUT_SECONDS:-1800}" && \
-	azd ai agent show "$$agent_name" --output json --no-prompt >/dev/null
+	set -a && eval "$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-values)" && set +a && \
+	deploy_output=""; \
+	for retry_delay in 0 15 30 60 120; do \
+		if [[ "$$retry_delay" -gt 0 ]]; then \
+			echo "Waiting $${retry_delay}s for Foundry Project Manager role propagation."; \
+			sleep "$$retry_delay"; \
+		fi; \
+		if deploy_output="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy "$$agent_name" --no-prompt --timeout "$${FOUNDRY_DEPLOY_TIMEOUT_SECONDS:-1800}" 2>&1)"; then \
+			printf '%s\n' "$$deploy_output"; \
+			break; \
+		fi; \
+		printf '%s\n' "$$deploy_output" >&2; \
+		if [[ "$$deploy_output" != *'Microsoft.CognitiveServices/accounts/AIServices/agents/read'* ]]; then \
+			exit 1; \
+		fi; \
+	done; \
+	[[ -n "$$deploy_output" && "$$deploy_output" != *'Microsoft.CognitiveServices/accounts/AIServices/agents/read'* ]] || { \
+		echo "Foundry Project Manager role did not propagate before the deployment retry limit."; \
+		exit 1; \
+	}; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent show "$$agent_name" --output json --no-prompt >/dev/null
 
 foundry-app-deploy:
 	@test -f backend/Dockerfile
