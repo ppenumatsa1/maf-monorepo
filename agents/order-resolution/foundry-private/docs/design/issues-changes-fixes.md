@@ -534,6 +534,33 @@ The next protected release must reach an active agent version before
 connectivity proof, PostgreSQL lockdown, E2E, evaluation, or telemetry can
 run.
 
+## Hosted-agent version-creation timeout correction (2026-07-28)
+
+**Root cause.** The next protected workflow
+[`30404960681`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30404960681)
+accepted the corrected payload and completed the private ACR image push, but
+the Foundry `create_version` request ended after roughly two minutes with an
+HTTP 5xx `Timeout`. The service did not return an agent version or emit agent
+container diagnostics, so this was a transient control-plane failure before
+the activation polling loop rather than an application, image, ACR, or
+connectivity failure.
+
+**Precise fix.** The SDK release now retries only HTTP 5xx
+`create_version` failures on a bounded `0/30/60`-second schedule. Client
+validation, authorization, and all non-5xx errors still fail immediately.
+Each attempt uses the same immutable image and version definition; a retry can
+create additional immutable versions, but the workflow records and invokes
+only the returned active version. No Azure role, network setting, secret, or
+OIDC configuration changed.
+
+**Authority and retry boundary.** Microsoft’s Python SDK guidance for
+`HttpResponseError` identifies HTTP 5xx responses as transient service errors
+appropriate for retry:
+https://learn.microsoft.com/azure/developer/python/sdk/fundamentals/errors#common-error-scenarios.
+The next guarded workflow must return a version and then poll it to `active`;
+only then may the existing proof, lockdown, E2E, evaluation, and telemetry
+gates proceed.
+
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
 `ContainerConfiguration.image` and polling the created version to `active`:

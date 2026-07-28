@@ -10,6 +10,7 @@ from azure.ai.projects.models import (
     HostedAgentDefinition,
     ProtocolVersionRecord,
 )
+from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 
 
@@ -45,18 +46,40 @@ environment_variables = {
     ),
 }
 
-with AIProjectClient(endpoint=endpoint, credential=DefaultAzureCredential()) as project:
-    created = project.agents.create_version(
-        agent_name=agent_name,
-        description="Order Resolution private hosted workflow agent.",
-        definition=HostedAgentDefinition(
-            cpu="0.5",
-            memory="1Gi",
-            container_configuration=ContainerConfiguration(image=image),
-            environment_variables=environment_variables,
-            protocol_versions=[ProtocolVersionRecord(protocol="responses", version="2.0.0")],
-        ),
+
+def create_version_with_transient_retry(project: AIProjectClient) -> object:
+    definition = HostedAgentDefinition(
+        cpu="0.5",
+        memory="1Gi",
+        container_configuration=ContainerConfiguration(image=image),
+        environment_variables=environment_variables,
+        protocol_versions=[ProtocolVersionRecord(protocol="responses", version="2.0.0")],
     )
+    for attempt, retry_delay in enumerate((0, 30, 60), start=1):
+        if retry_delay:
+            print(
+                f"Waiting {retry_delay}s before retrying the Foundry "
+                f"hosted-agent version creation ({attempt}/3)."
+            )
+            time.sleep(retry_delay)
+        try:
+            return project.agents.create_version(
+                agent_name=agent_name,
+                description="Order Resolution private hosted workflow agent.",
+                definition=definition,
+            )
+        except HttpResponseError as error:
+            if not 500 <= (error.status_code or 0) < 600 or attempt == 3:
+                raise
+            print(
+                f"Foundry create_version returned transient HTTP "
+                f"{error.status_code}; retrying."
+            )
+    raise RuntimeError("Foundry hosted-agent version creation exhausted retries.")
+
+
+with AIProjectClient(endpoint=endpoint, credential=DefaultAzureCredential()) as project:
+    created = create_version_with_transient_retry(project)
     print(f"Created {agent_name} version {created.version} from {image}.")
 
     for attempt in range(60):
