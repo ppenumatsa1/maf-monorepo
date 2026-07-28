@@ -12,6 +12,32 @@ require_bin az
 require_bin base64
 require_bin jq
 
+get_arm_token() {
+  local output=""
+  local exit_code=0
+  local retry_delay=0
+  for retry_delay in 0 15 30; do
+    if [[ "$retry_delay" -gt 0 ]]; then
+      echo "Waiting ${retry_delay}s before retrying the ARM token exchange."
+      sleep "$retry_delay"
+    fi
+    set +e
+    output="$(az account get-access-token --resource https://management.azure.com --query accessToken --output tsv 2>&1)"
+    exit_code=$?
+    set -e
+    if [[ "$exit_code" -eq 0 ]]; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    if [[ "$output" != *"Connection reset by peer"* ]]; then
+      printf '%s\n' "$output" >&2
+      return "$exit_code"
+    fi
+  done
+  printf '%s\n' "$output" >&2
+  return "$exit_code"
+}
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEMPLATE_FILE="${ROOT_DIR}/infra/github-actions-identity/foundry-project-manager.bicep"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-4f18d577-3506-4a11-85e5-a83b14727a84}"
@@ -31,7 +57,7 @@ container_registry_name="$(az acr list --resource-group "$RESOURCE_GROUP" --quer
   exit 1
 }
 
-arm_token="$(az account get-access-token --resource https://management.azure.com --query accessToken --output tsv)"
+arm_token="$(get_arm_token)"
 token_payload="$(cut -d. -f2 <<<"$arm_token")"
 token_payload="${token_payload//-/+}"
 token_payload="${token_payload//_/\/}"

@@ -626,6 +626,23 @@ identity. A future run must complete role synchronization and hosted-agent
 activation before it can advance to proof, lockdown, E2E, evaluation, and
 telemetry.
 
+## Private ARM token-exchange transport retry (2026-07-28)
+
+**Root cause.** Protected workflow
+[`30408929591`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30408929591)
+reached the fresh identity stage but the Azure CLI ARM-token request in the
+declarative project-role synchronization helper failed with
+`Connection reset by peer`. The retry followed a successful OIDC login, and
+the same helper had completed in earlier runs, so this is a transient
+transport reset rather than an RBAC, OIDC-subject, or Bicep failure.
+
+**Precise fix.** The tracked helper retries only an ARM token exchange whose
+output contains that exact reset error, using bounded `0/15/30`-second
+delays. It immediately surfaces every other Azure CLI error and then uses the
+derived ARM-token object ID with the existing Bicep role-assignment template.
+No Azure CLI login, manually created role assignment, persistent secret, or
+identity scope is added.
+
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
 `ContainerConfiguration.image` and polling the created version to `active`:
