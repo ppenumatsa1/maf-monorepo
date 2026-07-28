@@ -365,6 +365,45 @@ environment context from the canonical resource names and requires only
 secret-migration command copies that existing secret into the monorepo
 environment without displaying or committing it.
 
+## Hosted-agent deployment RBAC correction (2026-07-28)
+
+**Root cause.** Protected deployment workflow
+[`30398046137`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30398046137)
+successfully provisioned project connections and deployed both Container Apps
+from the private ACR, but `azd deploy order-resolution-hosted` stopped before
+agent creation with HTTP 403:
+`Identity(object id: c1998355-d834-494f-8fdf-bdc37239b599) does not have
+permissions for Microsoft.CognitiveServices/accounts/AIServices/agents/read`.
+The dedicated GitHub identity had Contributor and User Access Administrator at
+the resource-group scope, which cover Azure resource management and
+source-controlled role deployment but do not grant Foundry data-plane agent
+permissions.
+
+**Precise fix.** The existing declarative
+`infra/github-actions-identity/main.bicep` stack now conditionally assigns
+the documented **Foundry Project Manager** role
+(`eadc314b-1a2d-4efa-be10-5d325db5065e`) to the GitHub deployment service
+principal at the exact `order-resolution` Foundry project scope. The
+assignment is intentionally disabled during initial identity bootstrap, so
+the GitHub OIDC identity can be created before a clean environment contains a
+Foundry project. The protected deploy workflow enables the assignment only
+after its staged project-connection provision and before hosted-agent
+deployment. It invokes the tracked bootstrap with GitHub-environment
+synchronization and one-time legacy-identity retirement disabled; no workflow
+token receives GitHub-environment or Microsoft Graph admin permissions and no
+role is granted through an ad-hoc CLI command.
+
+**Authority and retry boundary.** Microsoft’s current hosted-agent deployment
+guidance requires Foundry Project Manager at project scope to create, update,
+and read hosted agents and to create needed platform identity assignments:
+https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent#prerequisites.
+The correction adds only that project-scoped Foundry role; it does not enable
+public access, widen the OIDC federation, or add Foundry Owner at resource
+group/account scope. Re-run the protected deployment workflow after this
+declarative identity stack is applied. Connectivity proof, PostgreSQL
+lockdown, hosted E2E, evaluation, and telemetry remain blocked until that
+retry succeeds.
+
 **Core-stage confirmation.** Protected workflow
 [`30397620770`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30397620770)
 completed successfully on the recovered private runner. It recreated

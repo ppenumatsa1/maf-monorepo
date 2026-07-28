@@ -8,9 +8,15 @@ require_bin() {
   }
 }
 
-require_bin az
-require_bin gh
-require_bin jq
+require_boolean() {
+  case "$2" in
+    true|false) ;;
+    *)
+      echo "$1 must be true or false."
+      exit 1
+      ;;
+  esac
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IDENTITY_DIR="${ROOT_DIR}/infra/github-actions-identity"
@@ -20,11 +26,27 @@ RESOURCE_GROUP="${TARGET_RESOURCE_GROUP:-rg-maf-ora-foundry-v2}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-ppenumatsa1/maf-monorepo}"
 GITHUB_ENVIRONMENT="${GITHUB_ENVIRONMENT:-foundry-private-env}"
 AZURE_TENANT_ID="${AZURE_TENANT_ID:-5a591fcf-3aaf-4a22-92a3-6871a34fa158}"
+FOUNDRY_ACCOUNT_NAME="${FOUNDRY_ACCOUNT_NAME:-mafprv0722v3ai4aiw7fw5gjdo4}"
+FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_NAME:-order-resolution}"
+ASSIGN_FOUNDRY_PROJECT_MANAGER="${ASSIGN_FOUNDRY_PROJECT_MANAGER:-false}"
+SYNC_GITHUB_ENVIRONMENT="${SYNC_GITHUB_ENVIRONMENT:-true}"
+RETIRE_LEGACY_IDENTITY="${RETIRE_LEGACY_IDENTITY:-true}"
 DEPLOYMENT_NAME="order-resolution-private-github-identity"
 LOCATION="${AZURE_LOCATION:-eastus2}"
 LEGACY_APPLICATION_ID="${LEGACY_APPLICATION_ID:-d4b2e92f-2555-4565-aca3-290cbe6a97f1}"
 LEGACY_FEDERATED_CREDENTIAL_NAME="github-maf-monorepo-foundry-private-env"
 INCORRECT_MANAGED_IDENTITY_OPERATOR_ROLE_ID="f1a07417-d97a-45cb-824c-7a7467783830"
+
+require_bin az
+require_bin jq
+
+require_boolean ASSIGN_FOUNDRY_PROJECT_MANAGER "$ASSIGN_FOUNDRY_PROJECT_MANAGER"
+require_boolean SYNC_GITHUB_ENVIRONMENT "$SYNC_GITHUB_ENVIRONMENT"
+require_boolean RETIRE_LEGACY_IDENTITY "$RETIRE_LEGACY_IDENTITY"
+
+if [[ "$SYNC_GITHUB_ENVIRONMENT" == true ]]; then
+  require_bin gh
+fi
 
 az account set --subscription "$SUBSCRIPTION_ID"
 
@@ -35,6 +57,9 @@ deployment_json="$(
     --template-file "${IDENTITY_DIR}/main.bicep" \
     --parameters \
       githubRepository="$GITHUB_REPOSITORY" \
+      foundryAccountName="$FOUNDRY_ACCOUNT_NAME" \
+      foundryProjectName="$FOUNDRY_PROJECT_NAME" \
+      assignFoundryProjectManager="$ASSIGN_FOUNDRY_PROJECT_MANAGER" \
     --output json
 )"
 
@@ -44,22 +69,26 @@ client_id="$(jq -r '.properties.outputs.githubActionsClientId.value // empty' <<
   exit 1
 }
 
-gh api --method PUT "repos/${GITHUB_REPOSITORY}/environments/${GITHUB_ENVIRONMENT}" --silent
-gh variable set AZURE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$client_id"
-gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$AZURE_TENANT_ID"
-gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$SUBSCRIPTION_ID"
+if [[ "$SYNC_GITHUB_ENVIRONMENT" == true ]]; then
+  gh api --method PUT "repos/${GITHUB_REPOSITORY}/environments/${GITHUB_ENVIRONMENT}" --silent
+  gh variable set AZURE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$client_id"
+  gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$AZURE_TENANT_ID"
+  gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$SUBSCRIPTION_ID"
+fi
 
-legacy_credential_id="$(
-  az ad app federated-credential list \
-    --id "$LEGACY_APPLICATION_ID" \
-    --query "[?name=='${LEGACY_FEDERATED_CREDENTIAL_NAME}'].id | [0]" \
-    --output tsv
-)"
-if [[ -n "$legacy_credential_id" ]]; then
-  az ad app federated-credential delete \
-    --id "$LEGACY_APPLICATION_ID" \
-    --federated-credential-id "$legacy_credential_id"
-  echo "Retired the temporary legacy monorepo federated credential."
+if [[ "$RETIRE_LEGACY_IDENTITY" == true ]]; then
+  legacy_credential_id="$(
+    az ad app federated-credential list \
+      --id "$LEGACY_APPLICATION_ID" \
+      --query "[?name=='${LEGACY_FEDERATED_CREDENTIAL_NAME}'].id | [0]" \
+      --output tsv
+  )"
+  if [[ -n "$legacy_credential_id" ]]; then
+    az ad app federated-credential delete \
+      --id "$LEGACY_APPLICATION_ID" \
+      --federated-credential-id "$legacy_credential_id"
+    echo "Retired the temporary legacy monorepo federated credential."
+  fi
 fi
 
 incorrect_role_assignment_ids="$(
@@ -75,4 +104,4 @@ while IFS= read -r incorrect_role_assignment_id; do
   echo "Removed the superseded Managed Identity Operator assignment."
 done <<<"$incorrect_role_assignment_ids"
 
-echo "Private GitHub Actions identity and environment configuration are synchronized."
+echo "Private GitHub Actions identity is synchronized."

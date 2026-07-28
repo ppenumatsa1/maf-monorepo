@@ -114,6 +114,12 @@ jobs:
               exit 1
             }
           done
+      - name: Synchronize Foundry hosted-agent deployment role
+        env:
+          ASSIGN_FOUNDRY_PROJECT_MANAGER: 'true'
+          SYNC_GITHUB_ENVIRONMENT: 'false'
+          RETIRE_LEGACY_IDENTITY: 'false'
+        run: agents/order-resolution/foundry-private/scripts/github/bootstrap_private_release_identity.sh
       - name: Deploy hosted agent from current source
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-deploy
