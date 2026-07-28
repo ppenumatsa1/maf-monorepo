@@ -69,7 +69,11 @@ def validate_deployment_workflow(name: str) -> None:
     forbid(text, "pull_request:", name)
     forbid(text, "push:", name)
     forbid(text, "workflow_call:", name)
-    forbid(text, "secrets.", name)
+    require(text, "secrets.POSTGRES_ADMIN_PASSWORD", name)
+    if text.count("secrets.") != 1:
+        raise AssertionError(
+            f"{name} may reference only the PostgreSQL admin password secret."
+        )
     for target in EXPECTED_TARGETS:
         require(text, target, name)
 
@@ -93,6 +97,8 @@ def validate() -> None:
     require(deploy, "make foundry-connectivity-proof", deploy_name)
     require(deploy, "make foundry-postgres-lockdown", deploy_name)
     require(deploy, "make foundry-evidence", deploy_name)
+    require(deploy, "uses: actions/setup-python@v5", deploy_name)
+    require(deploy, 'python-version: "3.12"', deploy_name)
     require(deploy, "postgres_lockdown_confirmation:", deploy_name)
     require(
         deploy,

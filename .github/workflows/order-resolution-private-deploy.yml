@@ -46,6 +46,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
+      - name: Set up Python for hosted-agent deployment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Clean workspace while retaining the private azd environment
         run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
       - name: Authenticate with the runner's federated Azure identity

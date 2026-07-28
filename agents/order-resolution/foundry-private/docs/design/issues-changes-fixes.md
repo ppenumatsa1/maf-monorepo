@@ -452,12 +452,51 @@ before image build.
 
 **Precise fix.** The private ACR now declares
 `policies.azureADAuthenticationAsArmPolicy.status: enabled` directly on the
-registry resource and no longer deploys the problematic child policy resource.
+registry resource through
+`Microsoft.ContainerRegistry/registries@2023-08-01-preview`, the first schema
+that exposes this policy property, and no longer deploys the problematic child
+policy resource. The prior `2023-07-01` registry schema did not recognize the
+inline property; using it would have silently omitted the setting. The selected
+schema compiles with the policy present.
 This preserves the required ARM-token ACR authentication as IaC while avoiding
 the provider's invalid child-resource polling path. No registry network,
 admin-user, or RBAC control is weakened. The next guarded release reruns the
 staged connection provision, then proceeds to image deployment only if it
 succeeds.
+
+**Validation outcome.** Protected workflow
+[`30403325196`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30403325196)
+completed staged project connections, application deployment, ACR-target
+validation, and role synchronization after the lifecycle correction. This
+proves the ACR policy is now provisioned declaratively without the former ARM
+polling failure. The later hosted-agent deployment failure is recorded
+separately below.
+
+## Private runner Python runtime correction (2026-07-28)
+
+**Root cause.** The same protected workflow reached the new image-release
+target but failed before Docker build or Foundry registration. The restored
+self-hosted runner's system Python lacks Debian's `ensurepip`, so
+`python3 -m venv backend/.venv` failed with the documented
+`python3-venv` prerequisite error. The release depended on an untracked
+machine package despite the workflow owning the Python SDK deployment step.
+
+**Precise fix.** The protected deployment workflow now installs the
+source-controlled GitHub `actions/setup-python@v5` Python 3.12 runtime before
+any Make target creates the backend virtual environment. This makes `venv`,
+the Azure AI Projects SDK, and the deployment scripts available independently
+of the base image's `python3-venv` package. No runner package was installed
+manually, no Azure role or OIDC configuration changed, and the later
+connectivity, lockdown, E2E, evaluation, and telemetry gates remain blocked
+until the agent image becomes active.
+
+**Static-contract correction.** The credential-free workflow validator had a
+contradictory blanket ban on `secrets.` while the provision workflow
+intentionally passes exactly `POSTGRES_ADMIN_PASSWORD` from the protected
+environment to reconstruct the retained AZD environment. It now requires that
+single documented reference in each protected provision and deployment workflow
+and rejects every other secret reference. This is validation-only and does not
+alter secret storage, access, or Azure permissions.
 
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
