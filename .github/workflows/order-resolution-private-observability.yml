@@ -46,8 +46,10 @@ jobs:
           azd config set auth.useAzCliAuth true
           azd ext install azure.ai.agents --no-prompt
           azd ext install azure.ai.connections --no-prompt
-          cd agents/order-resolution/foundry-private/infra/foundry-hosted
-          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+      - name: Reconstruct private AZD environment
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: agents/order-resolution/foundry-private/scripts/foundry/bootstrap_private_azd_environment.sh
       - name: Validate private runner target
         run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
       - name: Diagnose hosted telemetry injection

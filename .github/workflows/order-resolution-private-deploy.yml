@@ -62,6 +62,10 @@ jobs:
           azd config set auth.useAzCliAuth true
           azd ext install azure.ai.agents --no-prompt
           azd ext install azure.ai.connections --no-prompt
+      - name: Reconstruct private AZD environment
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: agents/order-resolution/foundry-private/scripts/foundry/bootstrap_private_azd_environment.sh
       - name: Initialize missing private release defaults
         run: |
           set -euo pipefail

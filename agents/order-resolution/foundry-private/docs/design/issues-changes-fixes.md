@@ -274,9 +274,9 @@ release blockers before an application deployment was attempted:
    defaults to `foundry-private-v2`. The registration helper now supports
    `FORCE_RECONFIGURE=1`, which stops and replaces a local registration before
    configuring the required repository; this keeps that repair repeatable
-      instead of relying on an ad-hoc VM change. It accepts a short-lived
-      GitHub runner registration token, so recovery does not copy a long-lived
-      personal access token onto the private VM.
+   instead of relying on an ad-hoc VM change. It accepts a short-lived GitHub
+   runner registration token, so recovery does not copy a long-lived personal
+   access token onto the private VM.
 
    The first Bastion SSH attempt then exposed a separate IaC mismatch:
    `bas-maffnd` was Basic SKU and Azure rejected native-client SSH. Microsoft
@@ -353,3 +353,12 @@ which includes immutable owner and repository IDs rather than the conventional
 `repo:owner/repository` string. The identity Bicep now declares that exact
 emitted subject. This is the narrow trust required by the protected
 environment; no wildcard subject or broader repository trust was added.
+
+The next provision retry authenticated successfully but the rebuilt VM had no
+local `.azure/foundry-private-env` state. The old VM had retained that local
+state; relying on it made the release non-reproducible. Every protected private
+workflow now runs a tracked AZD bootstrap that recreates the non-secret
+environment context from the canonical resource names and requires only
+`POSTGRES_ADMIN_PASSWORD` from the protected GitHub environment. A tracked
+secret-migration command copies that existing secret into the monorepo
+environment without displaying or committing it.
