@@ -296,9 +296,11 @@ release blockers before an application deployment was attempted:
    `mafprv0722v3-postgres-pe-4aiw7fw5gjdo4` is `Failed` after the previous
    delete operation. Azure continues to return
    `OperationNotAllowedWhenLastOperationTypeIsDelete`, and the PostgreSQL
-   private DNS zone has no A record. Core provision must not resume until Azure
-   accepts private-endpoint reconciliation; no public database access or
-   firewall exception is permitted.
+   private DNS zone has no A record. Diagnostics confirmed that the PostgreSQL
+   server was healthy while this endpoint remained failed, so the failed
+   endpoint was deleted by its exact resource name. The next core provision
+   owns recreating the endpoint and private DNS state. No public database
+   access or firewall exception was permitted.
 3. The Foundry project/runtime-secret connection still reports a Key Vault
    managed-identity token failure. This remains an expected post-restore
    propagation condition: run core provisioning without project connections,
