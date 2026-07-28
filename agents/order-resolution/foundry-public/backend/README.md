@@ -2,7 +2,7 @@
 
 The local FastAPI host and public Foundry hosted agent invoke the same MAF
 business workflow. FastAPI owns the stable API/SSE/UI contract; Foundry uses the
-Responses protocol through `foundry/main.py` and `agent.yaml`.
+Responses protocol through `foundry/main.py` and `Dockerfile.hosted`.
 
 ## Local runtime
 
@@ -32,8 +32,10 @@ make foundry-release
 refreshed from canonical `backend/` source before every deployment.
 The public hosted project uses Microsoft-managed Foundry agent state; PostgreSQL
 continues to own the workflow, checkpoint, approval, and audit records.
-The release runs local gates, `azd up`, hosted smoke/E2E, Foundry evaluation,
-and Application Insights validation.
+The release provisions with `azd`, deploys Container Apps with `azd`, builds
+the hosted Docker image in ACR, registers the image with Foundry through the
+SDK, then runs hosted smoke/E2E, Foundry evaluation, and Application Insights
+validation.
 
 The hosted browser path is external frontend Container App -> same-origin
 `/api` proxy -> internal FastAPI wrapper -> managed-identity Foundry Responses.

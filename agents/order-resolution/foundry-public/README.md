@@ -140,8 +140,11 @@ POSTGRES_ADMIN_PASSWORD="<postgres-admin-password>" \
 make foundry-release
 ```
 
-The script executes `azd up`, combined hosted smoke/E2E, Foundry evaluation, and App
-Insights validation. To invoke manually after deployment:
+The script provisions with `azd`, deploys the Container Apps with `azd`, then
+builds the hosted-agent Docker image in ACR and registers it through the
+Foundry SDK with its runtime environment. It then runs combined hosted
+smoke/E2E, Foundry evaluation, and App Insights validation. To invoke manually
+after deployment:
 
 ```bash
 azd ai agent show order-resolution-hosted --output json
@@ -177,7 +180,8 @@ version only after checking that region with `az cognitiveservices model list`.
 
 The hosted agent package is rooted at `backend/` and uses:
 
-- `backend/agent.yaml` (`protocol: responses`, `version: 2.0.0`)
+- `backend/Dockerfile.hosted` (`python -m foundry.main` on port 8088)
+- `infra/foundry-hosted/azure.yaml` (Responses protocol and hosted container settings)
 - `backend/foundry/main.py` (thin Responses host around the shared workflow)
 - `backend/.foundry/agent-metadata.yaml` and `backend/eval.yaml` for hosted eval metadata
 - `infra/foundry-hosted/azure.yaml` service project path (`./agent`), generated
@@ -186,7 +190,9 @@ The hosted agent package is rooted at `backend/` and uses:
 ## Troubleshooting
 
 - If parity fails with 429 session_quota_exceeded from Foundry, reduce test concurrency, add case delays, or clear/raise session quota.
-- If hosted responses fail, verify `backend/agent.yaml` protocol and pass `--protocol responses` on `azd ai agent invoke`.
+- If hosted responses fail, verify the `azure.yaml` Responses protocol and the
+  active image/runtime environment, then pass `--protocol responses` on
+  `azd ai agent invoke`.
 
 ## Documentation Map
 

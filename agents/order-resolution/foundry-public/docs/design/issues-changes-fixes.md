@@ -241,33 +241,43 @@ it in the selected AZD environment. It uses a bootstrap image only when that
 app is absent, retaining both safe active-environment reconciliation and clean
 teardown recovery.
 
-## Hosted-agent clean-rebuild investigation (2026-07-28)
+## Hosted-agent remote-build failure and container release fix (2026-07-28)
 
-After clean provisioning, `azd deploy order-resolution-hosted` failed with
-Foundry `ImageError: Container image not found`. The recreated ACR contained
-the backend and frontend artifacts but no hosted-agent image.
+**RCA.** After clean provisioning, Foundry source-code deployment
+(`dependency_resolution: remote_build`) consistently failed with
+`ImageError: Container image not found`, before creating a hosted-agent
+repository or manifest in ACR. The same failure reproduced with the unmodified
+official Python hosted-agent quickstart uploaded through
+`AIProjectClient.create_version_from_code`, so it was not caused by Order
+Resolution source, the legacy agent manifest, or its release script.
 
-Comparison with the known-good
-`ppenumatsa1/maf-order-resolution-agent` branch
-`feature/foundry-public` shows the same hosted-agent manifest and deployment
-script, with the Foundry project scoped to `AcrPull` only. The monorepo
-therefore retains that least-privilege, proven role shape; `AcrPush` is not a
-known requirement for this deployment path.
+The current hosted-agent troubleshooting guidance requires the Foundry project
+identity to have `Container Registry Repository Reader` and ACR to enable
+`azureADAuthenticationAsArmPolicy`. The public template declares both, plus
+`AcrPull`: removing `AcrPull` caused a fresh image version to fail with the
+service's explicit `workspace managed identity has AcrPull` error. This is a
+current Agent Service compatibility requirement. These settings did not repair
+the Foundry remote source-build path, but a known-present image of the official
+sample immediately reached `active`. This isolates the remaining failure to
+the platform source-build path, not project image pull access.
 
-**Current validation boundary.** On 2026-07-28, both the project identity and
-the restored hosted agent's blueprint and instance identities were granted the
-required pull roles. Backend and frontend remote builds published successfully,
-but the Foundry remote code deployment still returned `ImageError` and created
-no hosted-agent repository or manifest in ACR. This is a Foundry code-build
-platform failure before image publication, not a missing image tag, role, or
-network-policy workaround. Keep the public hosted deployment, hosted E2E,
-Foundry evaluation, and telemetry gates pending until the Foundry request IDs
-can be resolved by the service.
+**Fix.** The public lane now uses a reproducible container release:
+`sync_hosted_source.sh` creates the generated agent context,
+`Dockerfile.hosted` starts the adapter as `python -m foundry.main`, ACR builds
+that context, and `deploy_hosted_container.py` creates the Foundry version with
+the image and required non-reserved environment variables. `make foundry-up`
+uses `azd` only for infrastructure and Container Apps, then invokes this image
+release. The deployment script writes the active SDK version to the AZD
+environment so `azd ai agent show` remains accurate. The standalone
+`agent.yaml` source-build definition was removed.
 
-An isolated POC using the official Python hosted-agent quickstart was also
-uploaded directly through `AIProjectClient.create_version_from_code` to the
-same public project. The unmodified basic sample failed immediately on version
-1 with the identical `ImageError`; its failed version was deleted. This
-eliminates the Order Resolution source tree, its azd manifest, and its release
-scripts as causes. The failure is scoped to the recreated public Foundry
-project/account code-build path and requires Foundry service investigation.
+**Validation.** The direct official source-code POC still failed as expected;
+the direct image POC became active and completed `ORD-1001`. The repository
+release then built
+`maffndacrpubdev2eus2.azurecr.io/order-resolution-hosted` and activated
+`order-resolution-hosted` version `14`. A Responses smoke request completed
+`ORD-1001` through Foundry Models and the Azure PostgreSQL FQDN (conversation
+`conv_ad0825e2b0ac6dc400W59cDlBuRk8Km64lb5pFzMYMaYWzoppD`, trace
+`3ae160e935d56a643fd1d2204c2dcacf`). Disposable POC agents/images and the
+temporary blueprint role were deleted. Hosted browser E2E, Foundry evaluation,
+and telemetry remain pending by the agreed scope deferral.

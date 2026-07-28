@@ -124,6 +124,14 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   }
 }
 
+resource containerRegistryAzureAdAuthenticationAsArmPolicy 'Microsoft.ContainerRegistry/registries/policies@2023-07-01' = {
+  parent: containerRegistry
+  name: 'azureADAuthenticationAsArmPolicy'
+  properties: {
+    status: 'enabled'
+  }
+}
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
@@ -162,6 +170,11 @@ resource acrPullRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existi
 
 resource acrPushRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   name: '8311e382-0749-4cb8-b61a-304f252e45ec'
+  scope: resourceGroup()
+}
+
+resource acrRepositoryReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  name: 'b93aa761-3e63-49ed-ac28-beffa264f7ac'
   scope: resourceGroup()
 }
 
@@ -369,6 +382,16 @@ resource foundryProjectAcrPullRoleAssignment 'Microsoft.Authorization/roleAssign
   scope: containerRegistry
   properties: {
     roleDefinitionId: acrPullRole.id
+    principalId: foundryProject.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectAcrRepositoryReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, foundryProject.id, acrRepositoryReaderRole.id)
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: acrRepositoryReaderRole.id
     principalId: foundryProject.identity.principalId
     principalType: 'ServicePrincipal'
   }

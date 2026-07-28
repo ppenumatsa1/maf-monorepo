@@ -13,6 +13,10 @@ Container App.
   requiring a rename or a separate template.
 - The template creates the `order-resolution-public-managed-dev2` project with
   Microsoft-managed agent state and its system-assigned identity.
+- The project identity receives `Container Registry Repository Reader` and
+  `AcrPull`, and ACR enables Azure AD authentication as ARM. The current
+  public Agent Service requires both roles for image pulls despite the newer
+  guidance naming Repository Reader.
 - A project-scoped `ApplicationInsights` connection is created with the
   configured component as its target. This connection is required by Foundry
   trace evaluation; runtime environment variables alone are insufficient.
@@ -62,10 +66,12 @@ POSTGRES_ADMIN_PASSWORD="<postgres-admin-password>" \
 make foundry-release
 ```
 
-The release script validates local gates, executes `azd up --no-prompt`, invokes
-the hosted agent for low-risk and HITL cases, runs the enforced Foundry
-evaluation, and waits for Application Insights telemetry. Follow it with hosted
-browser validation:
+The release script validates local gates, provisions with `azd`, deploys the
+Container Apps with `azd`, builds the hosted-agent Docker image in ACR, and
+registers it through the Foundry SDK with the runtime database configuration.
+It then invokes the hosted agent for low-risk and HITL cases, runs the enforced
+Foundry evaluation, and waits for Application Insights telemetry. Follow it
+with hosted browser validation:
 
 ```bash
 PLAYWRIGHT_BASE_URL="https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io" \

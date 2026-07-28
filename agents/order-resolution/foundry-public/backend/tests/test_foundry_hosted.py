@@ -152,20 +152,18 @@ def _fake_responses_types() -> tuple[
 
 
 def test_hosted_manifest_configures_responses_and_model_settings() -> None:
-    manifest = Path(__file__).parents[1] / "agent.yaml"
+    manifest = Path(__file__).parents[2] / "infra" / "foundry-hosted" / "azure.yaml"
     manifest_text = manifest.read_text()
 
     assert "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" not in manifest_text
-    assert (
-        'name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT\n      value: "false"'
-        in manifest_text
-    )
-    assert "name: FOUNDRY_PROJECTS_ENDPOINT\n      value: ${FOUNDRY_PROJECTS_ENDPOINT}" in (
+    assert 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"' in manifest_text
+    assert "language: docker" in manifest_text
+    assert "AZURE_AI_MODEL_DEPLOYMENT_NAME: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}" in manifest_text
+    assert "TRACE_EVALUATION_RECORD_CONTENT: ${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT}" in (
         manifest_text
     )
-    assert (
-        "name: FOUNDRY_MODEL_DEPLOYMENT_NAME\n      value: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
-    ) in manifest_text
+    assert "FOUNDRY_PROJECTS_ENDPOINT:" not in manifest_text
+    assert "FOUNDRY_RUNTIME_DATABASE_URL:" not in manifest_text
     assert not hasattr(foundry_main, "setup_observability")
 
 
@@ -571,7 +569,7 @@ async def test_run_from_responses_records_genai_messages_for_trace_evaluation(
         status="completed",
         output_message="Resolution complete.",
     )
-    monkeypatch.setenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "true")
+    monkeypatch.setenv("TRACE_EVALUATION_RECORD_CONTENT", "true")
     monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
     monkeypatch.setattr(foundry_main, "order_resolution_service", service)
     monkeypatch.setattr(foundry_main, "get_tracer", lambda _: tracer)

@@ -187,35 +187,37 @@ validate-full:
 	./scripts/skills/design-review-skill.sh
 
 foundry-up:
-	./scripts/foundry/ensure_foundry_azd_defaults.sh
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	./scripts/foundry/sync_hosted_source.sh
-	cd infra/foundry-hosted && azd up --no-prompt
-	cd infra/foundry-hosted && ../../scripts/foundry/verify_project_appinsights_connection.sh
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $(MAKE) foundry-deploy
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill ../../scripts/foundry/verify_project_appinsights_connection.sh
 
 foundry-provision:
-	./scripts/foundry/ensure_foundry_azd_defaults.sh
-	cd infra/foundry-hosted && azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
-foundry-deploy:
-	@test -f backend/agent.yaml
+foundry-deploy: ensure-backend-env
+	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
+	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	@./scripts/foundry/sync_hosted_source.sh
-	@agent_name="$${FOUNDRY_HOSTED_AGENT_NAME:-order-resolution-hosted}"; \
-	cd infra/foundry-hosted && azd deploy "$$agent_name" --no-prompt --timeout "$${FOUNDRY_DEPLOY_TIMEOUT_SECONDS:-1800}" && \
-	azd ai agent show "$$agent_name" --output json --no-prompt >/dev/null
+	@./scripts/foundry/deploy_hosted_container.sh
 
 foundry-smoke:
 	@if [[ -n "$${SMOKE_THREAD_ID:-}" ]]; then \
-		cd infra/foundry-hosted && azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --conversation-id "$${SMOKE_THREAD_ID}" --no-prompt; \
+		cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --conversation-id "$${SMOKE_THREAD_ID}" --no-prompt; \
 	else \
-		cd infra/foundry-hosted && azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --new-conversation --new-session --no-prompt; \
+		cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --new-conversation --new-session --no-prompt; \
 	fi
 
 foundry-postgres-readiness:
 	./scripts/foundry/check_public_postgres_readiness.sh
 
 foundry-release:
-	./scripts/foundry/deploy_public_dev.sh
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_public_dev.sh
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +

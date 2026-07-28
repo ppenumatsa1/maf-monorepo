@@ -90,11 +90,11 @@ fi
 set_if_missing foundryProjectName "$(get_env_value FOUNDRY_PROJECT_NAME)"
 set_if_missing hostedAgentName "$(get_env_value HOSTED_AGENT_NAME)"
 
-# Keep legacy telemetry env aliases populated because agent.yaml references both names.
+# Preserve the application telemetry alias used by the backend and Container Apps.
 appinsights_connection_string="$(get_env_value APPLICATIONINSIGHTS_CONNECTION_STRING)"
 if [[ -n "$appinsights_connection_string" ]]; then
   set_if_missing APPINSIGHTS_CONNECTION_STRING "$appinsights_connection_string"
 fi
 set_if_missing OTEL_SERVICE_NAMESPACE "${OTEL_SERVICE_NAMESPACE:-maf-order-resolution}"
-# agent.yaml references this key; default to empty to avoid unresolved variable placeholders.
+# The hosted deployment forwards this optional OTLP endpoint when configured.
 set_if_missing OTEL_EXPORTER_OTLP_TRACES_ENDPOINT "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}"

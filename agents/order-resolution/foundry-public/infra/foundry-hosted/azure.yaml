@@ -19,11 +19,32 @@ services:
     order-resolution-hosted:
         project: ./agent
         host: azure.ai.agent
-        language: python
+        language: docker
+        env:
+            APP_ENV: ${APP_ENV}
+            AZURE_AI_MODEL_DEPLOYMENT_NAME: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}
+            DATABASE_URL: ${DATABASE_URL}
+            ENABLE_INSTRUMENTATION: ${ENABLE_INSTRUMENTATION}
+            ENABLE_TELEMETRY: ${ENABLE_TELEMETRY}
+            OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"
+            OTEL_RECORD_CONTENT: ${OTEL_RECORD_CONTENT}
+            OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME}
+            OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE}
+            RUNTIME_DATABASE_URL: ${RUNTIME_DATABASE_URL}
+            STORE_PROVIDER: ${STORE_PROVIDER}
+            TRACE_EVALUATION_RECORD_CONTENT: ${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT}
         container:
             resources:
                 cpu: "0.5"
                 memory: 1Gi
+        description: Order Resolution hosted workflow agent.
+        kind: hosted
+        name: order-resolution-hosted
+        protocols:
+            - protocol: responses
+              version: 2.0.0
+        startupCommand: python -m foundry.main
 infra:
     provider: bicep
     path: ./iac

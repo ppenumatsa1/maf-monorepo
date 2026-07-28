@@ -48,8 +48,8 @@ if [[ "$RUNTIME_DATABASE_URL" != *"${POSTGRES_SERVER_NAME}.postgres.database.azu
   echo "RUNTIME_DATABASE_URL must target ${POSTGRES_SERVER_NAME}.postgres.database.azure.com."
   exit 1
 fi
-if [[ ! -f backend/agent.yaml || ! -f backend/foundry/main.py ]]; then
-  echo "Hosted source validation failed: backend/agent.yaml and backend/foundry/main.py are required."
+if [[ ! -f backend/Dockerfile.hosted || ! -f backend/foundry/main.py ]]; then
+  echo "Hosted source validation failed: backend/Dockerfile.hosted and backend/foundry/main.py are required."
   exit 1
 fi
 

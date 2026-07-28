@@ -32,7 +32,7 @@ maf-order-resolution-agent/
       datasets/
       evaluators/
       suites/
-    agent.yaml
+    Dockerfile.hosted
     eval.yaml
   frontend/
     src/

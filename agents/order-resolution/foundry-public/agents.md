@@ -5,7 +5,8 @@ This file describes expected behavior for coding agents working in this reposito
 ## Project Context
 
 - Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
-- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol via `backend/agent.yaml`).
+- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol,
+  packaged by `backend/Dockerfile.hosted`).
 - Public Foundry in `rg-maf-ora-foundry-public-dev2` is the hosted lane. GitHub
   Actions remains credential-free CI; authenticated Azure execution is local via
   `make foundry-release`.

@@ -41,8 +41,8 @@ this branch.
 - Foundry evaluation judges the exact conversations emitted by hosted E2E only
   after the configured minimum trace age, mitigating incomplete HITL-resume
   conversations reaching conversation-level evaluators.
-- Foundry hosting remains Responses-native through `backend/agent.yaml` and
-  `backend/foundry/main.py`.
+- Foundry hosting remains Responses-native through `backend/Dockerfile.hosted`
+  and `backend/foundry/main.py`.
 - The browser never receives a Foundry endpoint credential or token. Native SSE
   event names remain stable; wrapper-mode SSE tails persisted events because the
   hosted agent and API wrapper run in separate processes.
@@ -56,7 +56,7 @@ this branch.
 | --- | --- | --- |
 | Application behavior | `make test`, `make eval-backend`, `make test-e2e` | None unless hosted behavior changes |
 | HITL or persistence | Local gates plus targeted resume/idempotency coverage | ORD-1001, ORD-1009, approval, rejection, duplicate-response E2E |
-| Foundry runtime, IaC, release script | Local gates plus Bicep/script validation | Azure validation, `azd up`, smoke, hosted E2E, Foundry eval, telemetry |
+| Foundry runtime, IaC, release script | Local gates plus Bicep/script validation | Azure validation, provision + ACA deploy through `azd`, image registration, smoke, hosted E2E, Foundry eval, telemetry |
 | Documentation | Link and command accuracy checks | Update execution evidence when operations change |
 
 GitHub Actions is credential-free CI only. It runs repository checks on
@@ -70,8 +70,9 @@ POSTGRES_ADMIN_PASSWORD="<password>" \
 make foundry-release
 ```
 
-It runs local gates, `azd up --no-prompt`, combined hosted smoke/E2E, enforced Foundry
-evaluation, and Application Insights verification.
+It runs local gates, provisions and deploys Container Apps through `azd`,
+builds and registers the hosted-agent image, then runs combined hosted
+smoke/E2E, enforced Foundry evaluation, and Application Insights verification.
 
 ## Evidence handoff
 
@@ -80,7 +81,7 @@ For every deployment-impacting change, record in
 
 - commit and changed surfaces;
 - local gate results;
-- `azd up` result and hosted version/conversation IDs;
+- provision/Container App deployment and hosted image version/conversation IDs;
 - Foundry evaluation ID/run/result counts;
 - App Insights trace/dependency/exception evidence;
 - known deferrals.

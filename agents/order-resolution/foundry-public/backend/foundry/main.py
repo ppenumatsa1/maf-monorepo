@@ -402,7 +402,11 @@ def _set_span_attribute(span: Any, key: str, value: Any) -> None:
 
 
 def _trace_evaluation_content_enabled() -> bool:
-    return os.getenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "false").strip().lower() in {
+    value = os.getenv(
+        "TRACE_EVALUATION_RECORD_CONTENT",
+        os.getenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "false"),
+    )
+    return value.strip().lower() in {
         "1",
         "true",
         "yes",
