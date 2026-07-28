@@ -241,21 +241,22 @@ it in the selected AZD environment. It uses a bootstrap image only when that
 app is absent, retaining both safe active-environment reconciliation and clean
 teardown recovery.
 
-## Hosted-agent code-build registry permission correction (2026-07-28)
+## Hosted-agent clean-rebuild investigation (2026-07-28)
 
 After clean provisioning, `azd deploy order-resolution-hosted` failed with
 Foundry `ImageError: Container image not found`. The recreated ACR contained
-the backend and frontend artifacts but no hosted-agent image. The Foundry
-account had `AcrPush`, while the Foundry project identity that performs the
-code deployment had only `AcrPull`.
+the backend and frontend artifacts but no hosted-agent image.
 
-The project ACR assignment now grants `AcrPush`, which includes read access and
-allows the project code build to publish the immutable hosted-agent runtime
-image before activation. The role remains scoped to this lane's registry.
+Comparison with the known-good
+`ppenumatsa1/maf-order-resolution-agent` branch
+`feature/foundry-public` shows the same hosted-agent manifest and deployment
+script, with the Foundry project scoped to `AcrPull` only. The monorepo
+therefore retains that least-privilege, proven role shape; `AcrPush` is not a
+known requirement for this deployment path.
 
 **Current validation boundary.** On 2026-07-28, both the project identity and
 the restored hosted agent's blueprint and instance identities were granted the
-required ACR roles. Backend and frontend remote builds published successfully,
+required pull roles. Backend and frontend remote builds published successfully,
 but the Foundry remote code deployment still returned `ImageError` and created
 no hosted-agent repository or manifest in ACR. This is a Foundry code-build
 platform failure before image publication, not a missing image tag, role, or

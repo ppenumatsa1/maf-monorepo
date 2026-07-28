@@ -364,11 +364,11 @@ resource foundryAccountAcrPushRoleAssignment 'Microsoft.Authorization/roleAssign
   }
 }
 
-resource foundryProjectAcrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, foundryProject.id, acrPushRole.id)
+resource foundryProjectAcrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, foundryProject.id, acrPullRole.id)
   scope: containerRegistry
   properties: {
-    roleDefinitionId: acrPushRole.id
+    roleDefinitionId: acrPullRole.id
     principalId: foundryProject.identity.principalId
     principalType: 'ServicePrincipal'
   }
