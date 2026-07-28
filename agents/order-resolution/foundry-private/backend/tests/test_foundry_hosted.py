@@ -164,13 +164,16 @@ def test_hosted_image_release_uses_private_safe_environment_settings() -> None:
     assert '"FOUNDRY_DEPLOYMENT_PROFILE"' not in release_text
     assert "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" not in release_text
     assert '"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false"' in release_text
-    assert '"FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT": require(' in release_text
+    assert '"TRACE_EVALUATION_RECORD_CONTENT": require(' in release_text
     assert "APPLICATIONINSIGHTS_CONNECTION_STRING" not in release_text
     assert "APPINSIGHTS_CONNECTION_STRING" not in release_text
     assert "MAF_APPINSIGHTS_" not in release_text
     assert "MAF_MONITOR_" not in release_text
-    assert '"FOUNDRY_PROJECTS_ENDPOINT": endpoint' in release_text
-    assert '"FOUNDRY_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
+    assert '"FOUNDRY_PROJECTS_ENDPOINT":' not in release_text
+    assert '"FOUNDRY_RUNTIME_DATABASE_URL":' not in release_text
+    assert '"FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT":' not in release_text
+    assert '"AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
+    assert "connections.orderresolutionruntimesecrets.credentials.database_url" in release_text
     assert not hasattr(foundry_main, "setup_observability")
 
 
@@ -252,6 +255,17 @@ def test_runtime_database_url_override_prefers_foundry_runtime_key(
 
     assert os.getenv("DATABASE_URL", "").startswith(
         "postgresql://user:pass@preferred.postgres.database.azure.com"
+    )
+
+
+def test_trace_evaluation_content_uses_custom_hosted_agent_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "false")
+    monkeypatch.setenv("TRACE_EVALUATION_RECORD_CONTENT", "true")
+
+    assert foundry_main._trace_evaluation_content_enabled(
+        {"metadata": {"trace_evaluation_record_content": True}}, None
     )
 
 

@@ -416,7 +416,10 @@ def _trace_evaluation_requested(create_response: Any, context: Any | None) -> bo
 
 
 def _trace_evaluation_content_enabled(create_response: Any, context: Any | None) -> bool:
-    enabled = os.getenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "false").strip().lower() in {
+    enabled = os.getenv(
+        "TRACE_EVALUATION_RECORD_CONTENT",
+        os.getenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "false"),
+    ).strip().lower() in {
         "1",
         "true",
         "yes",

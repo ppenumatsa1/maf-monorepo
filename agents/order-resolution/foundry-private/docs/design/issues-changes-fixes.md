@@ -498,6 +498,42 @@ single documented reference in each protected provision and deployment workflow
 and rejects every other secret reference. This is validation-only and does not
 alter secret storage, access, or Azure permissions.
 
+## Hosted-agent reserved environment-variable correction (2026-07-28)
+
+**Root cause.** Protected workflow
+[`30403945918`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30403945918)
+proved the VNet runner can build the `linux/amd64` image and push it to the
+private ACR. Foundry then rejected `create_version` with `invalid_payload`
+before it created a version because the release payload explicitly supplied
+`FOUNDRY_PROJECTS_ENDPOINT`, `FOUNDRY_MODEL_DEPLOYMENT_NAME`,
+`FOUNDRY_RUNTIME_DATABASE_URL`, and
+`FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT`. Current Foundry reserves all
+`FOUNDRY_*` and `AGENT_*` variable names and injects platform-owned values
+into hosted containers.
+
+**Precise fix.** The image release passes only custom variables:
+`AZURE_AI_MODEL_DEPLOYMENT_NAME` and `TRACE_EVALUATION_RECORD_CONTENT`. Its
+`DATABASE_URL` is the supported
+`${{connections.orderresolutionruntimesecrets.credentials.database_url}}`
+placeholder for the existing source-controlled `CustomKeys` project
+connection, rather than a deployment-time secret value. The platform injects
+`FOUNDRY_PROJECT_ENDPOINT`; the existing backend startup alias maps that
+value and the Azure model variable to the application’s established local
+configuration names. Trace-evaluation logic reads the custom variable first
+while retaining the old name as a local compatibility fallback. The
+application receives no project endpoint or database secret through its image
+or agent-version API payload, and no Foundry-reserved variable is included in
+the SDK payload.
+
+**Authority and retry boundary.** Microsoft’s hosted-agent container
+requirements state that the platform injects `FOUNDRY_PROJECT_ENDPOINT` and
+reserves all `FOUNDRY_*` and `AGENT_*` names; custom configuration belongs in
+the SDK `create_version` environment map:
+https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent#container-requirements.
+The next protected release must reach an active agent version before
+connectivity proof, PostgreSQL lockdown, E2E, evaluation, or telemetry can
+run.
+
 **Authority and retry boundary.** Microsoft’s hosted-agent SDK documentation
 supports `HostedAgentDefinition` with a full tagged ACR
 `ContainerConfiguration.image` and polling the created version to `active`:

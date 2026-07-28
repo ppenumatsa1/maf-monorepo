@@ -23,14 +23,10 @@ def require(name: str) -> str:
 endpoint = require("FOUNDRY_PROJECT_ENDPOINT")
 agent_name = require("FOUNDRY_HOSTED_AGENT_NAME")
 image = require("FOUNDRY_IMAGE")
-runtime_database_url = require("RUNTIME_DATABASE_URL")
 
 environment_variables = {
-    "FOUNDRY_PROJECTS_ENDPOINT": endpoint,
-    "FOUNDRY_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME"),
-    "DATABASE_URL": runtime_database_url,
-    "FOUNDRY_RUNTIME_DATABASE_URL": runtime_database_url,
-    "RUNTIME_DATABASE_URL": runtime_database_url,
+    "AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME"),
+    "DATABASE_URL": "${{connections.orderresolutionruntimesecrets.credentials.database_url}}",
     "APP_ENV": require("APP_ENV"),
     "STORE_PROVIDER": require("STORE_PROVIDER"),
     "MEMORY_PROVIDER": require("MEMORY_PROVIDER"),
@@ -44,7 +40,7 @@ environment_variables = {
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": os.getenv(
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""
     ),
-    "FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT": require(
+    "TRACE_EVALUATION_RECORD_CONTENT": require(
         "FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT"
     ),
 }
