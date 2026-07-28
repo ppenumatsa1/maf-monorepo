@@ -35,7 +35,6 @@ deployment_json="$(
     --template-file "${IDENTITY_DIR}/main.bicep" \
     --parameters \
       githubRepository="$GITHUB_REPOSITORY" \
-      githubEnvironment="$GITHUB_ENVIRONMENT" \
     --output json
 )"
 

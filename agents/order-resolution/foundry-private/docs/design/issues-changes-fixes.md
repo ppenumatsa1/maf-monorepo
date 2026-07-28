@@ -345,3 +345,11 @@ exactly Contributor plus User Access Administrator at
 `bas-maffnd` is Standard with native tunneling enabled, and the rebuilt runner
 `vm-vm-maffnd-runner-foundry-private-v2` is online in
 `ppenumatsa1/maf-monorepo` with the required `foundry-private-v2` label.
+
+The first protected workflow then reached Azure OIDC login but failed with
+`AADSTS700213`. GitHub emitted the actual subject
+`repo:ppenumatsa1@37847579/maf-monorepo@1314177122:environment:foundry-private-env`,
+which includes immutable owner and repository IDs rather than the conventional
+`repo:owner/repository` string. The identity Bicep now declares that exact
+emitted subject. This is the narrow trust required by the protected
+environment; no wildcard subject or broader repository trust was added.

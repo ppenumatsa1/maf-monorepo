@@ -5,8 +5,8 @@ extension microsoftGraphV1
 @description('GitHub owner/repository trusted by the deployment identity.')
 param githubRepository string = 'ppenumatsa1/maf-monorepo'
 
-@description('GitHub environment required by protected private-release workflows.')
-param githubEnvironment string = 'foundry-private-env'
+@description('Exact GitHub OIDC subject emitted for the protected private-release environment.')
+param githubSubject string = 'repo:ppenumatsa1@37847579/maf-monorepo@1314177122:environment:foundry-private-env'
 
 @description('Immutable Microsoft Graph alternate key for the deployment application.')
 param applicationUniqueName string = 'maf-ora-github-private-v2'
@@ -14,7 +14,6 @@ param applicationUniqueName string = 'maf-ora-github-private-v2'
 var applicationDisplayName = 'maf-ora-github-private-v2'
 var federatedCredentialName = 'github-maf-monorepo-foundry-private-env'
 var githubIssuer = 'https://token.actions.githubusercontent.com'
-var githubSubject = 'repo:${githubRepository}:environment:${githubEnvironment}'
 var azureTokenExchangeAudience = 'api://AzureADTokenExchange'
 
 resource githubActionsApplication 'Microsoft.Graph/applications@v1.0' = {
