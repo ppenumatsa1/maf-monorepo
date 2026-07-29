@@ -19,6 +19,7 @@ foundry:
     - coherence
   trace_evaluation:
     evidence_file: .foundry/results/hosted-e2e-evidence.json
+    telemetry_file: .foundry/results/telemetry-verification.json
     max_traces: 10
     max_evidence_age_seconds: 21600
     ingestion_delay_seconds: 300

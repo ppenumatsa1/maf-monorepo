@@ -85,6 +85,27 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
 EOF
 )
 
+trace_ids_query=$(cat <<EOF
+let e2eStartedAt = todatetime('${started_at}');
+let conversationIds = dynamic(${conversation_ids_json});
+let expectedAgentId = '${FOUNDRY_EVALUATION_AGENT_ID}';
+union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
+| where timestamp between (e2eStartedAt .. now())
+| extend dimensions = tostring(customDimensions)
+| extend genAiConversationId = tostring(parse_json(dimensions)["gen_ai.conversation.id"])
+| extend genAiAgentId = tostring(parse_json(dimensions)["gen_ai.agent.id"])
+| mv-expand conversationId = conversationIds
+| where dimensions has tostring(conversationId)
+| where dimensions has '"gen_ai.operation.name":"invoke_agent"'
+    and dimensions has 'gen_ai.input.messages'
+    and dimensions has 'gen_ai.output.messages'
+    and genAiConversationId == tostring(conversationId)
+    and genAiAgentId == expectedAgentId
+| summarize operation_Id = arg_max(timestamp, operation_Id) by conversationId
+| summarize evaluation_trace_ids = make_set(operation_Id)
+EOF
+)
+
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   result="$(
     az monitor app-insights query \
@@ -103,12 +124,24 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   evaluation_trace_conversation_count="$(echo "$row" | jq -r '.[6] // 0')"
   evaluation_trace_rows="$(echo "$row" | jq -r '.[7] // 0')"
   status="waiting"
+  evaluation_trace_ids='[]'
   if [[ "$telemetry_rows" -gt 0 \
     && "$matched_count" -eq "${#conversation_ids[@]}" \
     && "$evaluation_trace_conversation_count" -eq "${#conversation_ids[@]}" \
     && "$evaluation_trace_rows" -gt 0 \
     && "$exception_rows" -eq 0 ]]; then
-    status="passed"
+    trace_ids_result="$(
+      az monitor app-insights query \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --app "$APPLICATION_INSIGHTS_NAME" \
+        --analytics-query "$trace_ids_query" \
+        -o json
+    )"
+    evaluation_trace_ids="$(echo "$trace_ids_result" | jq -c \
+      '(.tables[0].rows[0][0] // []) | map(select(type == "string" and length > 0)) | unique')"
+    if [[ "$(echo "$evaluation_trace_ids" | jq 'length')" -eq "${#conversation_ids[@]}" ]]; then
+      status="passed"
+    fi
   fi
 
   jq -n \
@@ -126,6 +159,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     --argjson exception_rows "$exception_rows" \
     --argjson evaluation_trace_conversation_count "$evaluation_trace_conversation_count" \
     --argjson evaluation_trace_rows "$evaluation_trace_rows" \
+    --argjson evaluation_trace_ids "$evaluation_trace_ids" \
     '{
       status: $status,
       generated_at: $generated_at,
@@ -140,7 +174,8 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
       request_rows: $request_rows,
       exception_rows: $exception_rows,
       evaluation_trace_conversation_count: $evaluation_trace_conversation_count,
-      evaluation_trace_rows: $evaluation_trace_rows
+      evaluation_trace_rows: $evaluation_trace_rows,
+      evaluation_trace_ids: $evaluation_trace_ids
     }' >"$RESULT_FILE"
 
   if [[ "$status" == "passed" ]]; then

@@ -319,12 +319,24 @@ def validate() -> None:
     for value in (
         "FOUNDRY_EVALUATION_AGENT_ID",
         "evaluation_trace_conversation_count",
+        "evaluation_trace_ids",
+        "arg_max(timestamp, operation_Id)",
         "gen_ai.conversation.id",
         "gen_ai.agent.id",
         "gen_ai.input.messages",
         "gen_ai.output.messages",
     ):
         require(telemetry_verification, value, "private telemetry verification")
+    eval_runner = (
+        Path(PRIVATE_PREFIX) / "backend/evals/foundry_eval_runner.py"
+    ).read_text()
+    for value in (
+        '"type": "azure_ai_traces"',
+        '"trace_ids": trace_ids',
+        '"query": "{{item.query}}"',
+        '"response": "{{item.response}}"',
+    ):
+        require(eval_runner, value, "private trace evaluation runner")
     evidence_collection = (
         Path(PRIVATE_PREFIX) / "scripts/foundry/collect_private_release_evidence.sh"
     ).read_text()

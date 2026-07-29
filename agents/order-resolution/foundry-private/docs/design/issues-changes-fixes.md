@@ -289,6 +289,24 @@ telemetry collection. The release remains fail-closed: missing active agent
 identity still stops evidence before invoking the agent or evaluator. No Azure
 resource, RBAC, OIDC, network, firewall, or secret was changed.
 
+## Exact trace-source evaluation correction (2026-07-29)
+
+**Root cause.** Protected retry `30467829865` proved the corrected
+`name:version` identity and all three content-bearing `invoke_agent` spans in
+Application Insights, but the preview `conversation_id_source` evaluation
+still returned zero items without a service error. The Foundry trace-evaluation
+contract documents `gen_ai.conversation.id` as a correlation attribute, while
+its exact-selection alternative is Application Insights `operation_Id`.
+
+**Precise fix.** Telemetry verification now selects one eligible
+`operation_Id` per required E2E conversation and persists those three IDs.
+The evaluator uses Foundry's documented `azure_ai_traces` source with the
+persisted IDs and trace-level `query`/`response` mappings. This remains
+fail-closed: telemetry must prove all scenario conversations and unique trace
+IDs before evaluation, and Foundry must return a result for every selected
+trace. The change does not alter private topology, RBAC, OIDC, firewall,
+public access, or content-redaction behavior.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a

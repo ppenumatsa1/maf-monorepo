@@ -108,8 +108,10 @@ HITL pause/resume crosses HTTP requests, so the checkpoint state stores a saniti
 
 Private hosted E2E records low-risk, high-risk approval/resume, and damaged-item
 approval/resume conversation IDs in
-`backend/.foundry/results/hosted-e2e-evidence.json`. Foundry evaluation judges
-those exact traces, and `scripts/foundry/verify_telemetry.sh` requires all three
-conversation IDs to have content-bearing `invoke_agent` spans in Application
-Insights with no correlated exceptions. The release artifact also includes
-`foundry-report.json` and `telemetry-verification.json`.
+`backend/.foundry/results/hosted-e2e-evidence.json`.
+`scripts/foundry/verify_telemetry.sh` requires every conversation to have a
+content-bearing `invoke_agent` span with the active `name:version` agent
+identity and writes one exact `operation_Id` per conversation to
+`telemetry-verification.json`. Foundry evaluates only those three persisted
+trace IDs using trace-level query/response mappings, with no correlated
+exceptions. The release artifact also includes `foundry-report.json`.

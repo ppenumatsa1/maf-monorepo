@@ -123,6 +123,32 @@ def _load_hosted_e2e_evidence(
     )
 
 
+def _load_telemetry_trace_ids(
+    path: Path,
+    *,
+    required_count: int,
+) -> list[str]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Telemetry evidence is required: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Telemetry evidence must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Telemetry evidence must be a JSON object")
+    trace_ids = payload.get("evaluation_trace_ids")
+    if not isinstance(trace_ids, list) or not all(
+        isinstance(trace_id, str) and trace_id and trace_id == trace_id.strip()
+        for trace_id in trace_ids
+    ):
+        raise ValueError("Telemetry evidence requires non-empty evaluation_trace_ids")
+    if len(trace_ids) != required_count or len(set(trace_ids)) != len(trace_ids):
+        raise ValueError(
+            "Telemetry evidence must contain one unique evaluation trace ID per hosted E2E conversation"
+        )
+    return list(trace_ids)
+
+
 def _trace_ingestion_wait_seconds(
     generated_at: datetime,
     *,
@@ -138,7 +164,7 @@ def _trace_ingestion_wait_seconds(
     return max(0.0, minimum_delay_seconds - max(0.0, elapsed))
 
 
-def _build_conversation_trace_testing_criteria(
+def _build_trace_testing_criteria(
     evaluators: list[str],
     judge_model: str,
 ) -> list[dict[str, object]]:
@@ -148,24 +174,24 @@ def _build_conversation_trace_testing_criteria(
             "name": evaluator_name,
             "evaluator_name": f"builtin.{evaluator_name}",
             "initialization_parameters": {"model": judge_model},
-            "data_mapping": {"messages": "{{item.messages}}"},
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+            },
         }
         for evaluator_name in evaluators
     ]
 
 
-def _build_conversation_trace_run(
-    conversation_ids: list[str],
+def _build_exact_trace_run(
+    trace_ids: list[str],
 ) -> dict[str, object]:
     return {
         "data_source": {
-            "type": "azure_ai_trace_data_source_preview",
-            "trace_source": {
-                "type": "conversation_id_source",
-                "conversation_ids": conversation_ids,
-            },
+            "type": "azure_ai_traces",
+            "trace_ids": trace_ids,
+            "lookback_hours": 24,
         },
-        "extra_body": {"evaluation_level": "conversation"},
     }
 
 
@@ -182,6 +208,9 @@ async def run_foundry_eval() -> None:
     evidence_uri = trace_cfg.get("evidence_file")
     if not isinstance(evidence_uri, str) or not evidence_uri:
         raise ValueError("backend/eval.yaml trace_evaluation.evidence_file is required")
+    telemetry_uri = trace_cfg.get("telemetry_file")
+    if not isinstance(telemetry_uri, str) or not telemetry_uri:
+        raise ValueError("backend/eval.yaml trace_evaluation.telemetry_file is required")
     max_traces = int(trace_cfg.get("max_traces", 10))
     if max_traces < len(_REQUIRED_CONVERSATION_FIELDS):
         raise ValueError(
@@ -212,6 +241,10 @@ async def run_foundry_eval() -> None:
         evidence_path,
         max_age_seconds=max_evidence_age,
     )
+    trace_ids = _load_telemetry_trace_ids(
+        root / telemetry_uri,
+        required_count=len(conversation_ids),
+    )
     ingestion_wait = _trace_ingestion_wait_seconds(
         generated_at,
         minimum_delay_seconds=trace_ingestion_delay,
@@ -229,6 +262,7 @@ async def run_foundry_eval() -> None:
         "provider": "foundry-trace",
         "evaluators": evaluators,
         "conversation_ids": conversation_ids,
+        "trace_ids": trace_ids,
         "e2e_started_at": started_at.isoformat(),
         "e2e_generated_at": generated_at.isoformat(),
     }
@@ -252,7 +286,7 @@ async def run_foundry_eval() -> None:
             eval_object = await openai_client.evals.create(
                 name=f"{eval_name}-trace",
                 data_source_config={"type": "azure_ai_source", "scenario": "traces"},
-                testing_criteria=_build_conversation_trace_testing_criteria(
+                testing_criteria=_build_trace_testing_criteria(
                     evaluators,
                     judge_model,
                 ),
@@ -264,8 +298,9 @@ async def run_foundry_eval() -> None:
                     "e2e_started_at": started_at.isoformat(),
                     "e2e_generated_at": generated_at.isoformat(),
                     "conversation_count": str(len(conversation_ids)),
+                    "trace_count": str(len(trace_ids)),
                 },
-                **_build_conversation_trace_run(conversation_ids),
+                **_build_exact_trace_run(trace_ids),
             )
             start = asyncio.get_running_loop().time()
             while str(eval_run.status) not in _TERMINAL_EVAL_STATUSES:
@@ -290,6 +325,7 @@ async def run_foundry_eval() -> None:
             "conversation_count": len(conversation_ids),
             "evaluators": evaluators,
             "conversation_ids": conversation_ids,
+            "trace_ids": trace_ids,
             "e2e_started_at": started_at.isoformat(),
             "e2e_generated_at": generated_at.isoformat(),
             "result_counts": _to_jsonable(getattr(eval_run, "result_counts", None)),
@@ -335,9 +371,9 @@ async def run_foundry_eval() -> None:
             )
     if enforce_pass and isinstance(result_counts, dict):
         total = int(result_counts.get("total", 0))
-        if total < len(conversation_ids):
+        if total < len(trace_ids):
             raise RuntimeError(
-                "Foundry trace eval did not produce a result for every hosted E2E conversation"
+                "Foundry trace eval did not produce a result for every selected E2E trace"
             )
 
 

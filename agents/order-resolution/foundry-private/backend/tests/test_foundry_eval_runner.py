@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -7,9 +8,10 @@ from unittest.mock import patch
 import pytest
 from evals.foundry_eval_runner import (
     _TERMINAL_EVAL_STATUSES,
-    _build_conversation_trace_run,
-    _build_conversation_trace_testing_criteria,
+    _build_exact_trace_run,
+    _build_trace_testing_criteria,
     _load_hosted_e2e_evidence,
+    _load_telemetry_trace_ids,
     _parse_hosted_e2e_evidence,
     _trace_ingestion_wait_seconds,
 )
@@ -142,8 +144,8 @@ def test_trace_ingestion_wait_is_zero_after_minimum_delay() -> None:
     ) == 0
 
 
-def test_conversation_trace_criteria_use_messages_mapping() -> None:
-    criteria = _build_conversation_trace_testing_criteria(["coherence"], "gpt-4o-mini")
+def test_trace_criteria_use_query_response_mapping() -> None:
+    criteria = _build_trace_testing_criteria(["coherence"], "gpt-4o-mini")
 
     assert criteria == [
         {
@@ -151,27 +153,51 @@ def test_conversation_trace_criteria_use_messages_mapping() -> None:
             "name": "coherence",
             "evaluator_name": "builtin.coherence",
             "initialization_parameters": {"model": "gpt-4o-mini"},
-            "data_mapping": {"messages": "{{item.messages}}"},
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+            },
         }
     ]
 
 
-def test_trace_run_reuses_exact_conversations_at_conversation_level() -> None:
-    conversation_ids = ["conv-low", "conv-high", "conv-damaged"]
+def test_trace_run_reuses_exact_e2e_trace_ids() -> None:
+    trace_ids = ["trace-low", "trace-high", "trace-damaged"]
 
-    trace_run = _build_conversation_trace_run(conversation_ids)
+    trace_run = _build_exact_trace_run(trace_ids)
 
     assert trace_run == {
         "data_source": {
-            "type": "azure_ai_trace_data_source_preview",
-            "trace_source": {
-                "type": "conversation_id_source",
-                "conversation_ids": conversation_ids,
-            },
+            "type": "azure_ai_traces",
+            "trace_ids": trace_ids,
+            "lookback_hours": 24,
         },
-        "extra_body": {"evaluation_level": "conversation"},
     }
     assert "target" not in trace_run["data_source"]
+
+
+def test_load_telemetry_trace_ids_requires_unique_coverage(
+    tmp_path: Path,
+) -> None:
+    telemetry_path = tmp_path / "telemetry-verification.json"
+    telemetry_path.write_text(
+        json.dumps(
+            {
+                "evaluation_trace_ids": [
+                    "trace-low",
+                    "trace-high",
+                    "trace-damaged",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_telemetry_trace_ids(telemetry_path, required_count=3) == [
+        "trace-low",
+        "trace-high",
+        "trace-damaged",
+    ]
 
 
 def test_terminal_eval_statuses_use_openai_canceled_spelling() -> None:
