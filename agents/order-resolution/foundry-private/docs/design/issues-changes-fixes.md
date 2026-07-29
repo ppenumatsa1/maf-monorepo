@@ -677,6 +677,34 @@ dependent evidence job and the exact release order. A new protected release
 must finish the final evaluation with one or more results for every fresh E2E
 conversation; earlier releases remain failed evidence.
 
+## Foundry trace-content marker correction (2026-07-29)
+
+**Root cause.** The split workflow
+[`30458177108`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30458177108)
+completed its dependent `deploy` job, then passed hosted E2E, generic telemetry
+correlation (88 rows), and the restored 272-second remaining ingestion wait in
+its `evidence` job. Foundry nevertheless returned zero evaluation results.
+The direct Application Insights inspection for the three E2E conversations
+showed the root `request` spans had `gen_ai.operation.name=invoke_agent` but
+empty `gen_ai.input.messages` and `gen_ai.output.messages`. The E2E helper put
+the record-content marker in `metadata`; the hosted Responses protocol strips
+that unsupported field before it reaches the handler, so the application
+correctly preserved content redaction.
+
+**Precise fix.** Every private hosted E2E request now uses the Responses
+protocol's `structured_inputs.trace_evaluation_record_content=true` field,
+which the hosted handler explicitly reads. The telemetry gate now requires
+every recorded conversation to have a root `request` span with
+`invoke_agent`, `gen_ai.input.messages`, and `gen_ai.output.messages`; generic
+correlation alone can no longer advance to evaluation. This retains content
+redaction for non-validation traffic and changes no RBAC, OIDC, network,
+database, or retry behavior.
+
+**Validation required.** Run the focused hosted telemetry tests and shell
+syntax validation, then a fresh protected release. It must show three
+content-bearing evaluation spans before it submits evaluation, and Foundry
+must return result coverage for all fresh E2E conversations.
+
 ## Hosted-agent release token-lifetime correction (2026-07-28)
 
 **Root cause.** Protected workflow

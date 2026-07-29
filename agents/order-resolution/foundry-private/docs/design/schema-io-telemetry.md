@@ -91,11 +91,11 @@ Hosted invocation spans emit `gen_ai.operation.name`,
 evaluation additionally requires `gen_ai.input.messages` and
 `gen_ai.output.messages`; those content attributes are emitted only when the
 private validation agent is deployed with
-`FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT=true` **and** the individual request
-contains the pass-through header
-`x-client-trace-evaluation-record-content: true`. The hosted E2E script marks
-only its validation requests, so later ordinary hosted traffic remains
-redacted. Global
+`TRACE_EVALUATION_RECORD_CONTENT=true` **and** the individual Responses
+request contains
+`structured_inputs.trace_evaluation_record_content=true`. The hosted E2E
+script marks only its validation requests, so later ordinary hosted traffic
+remains redacted. Global
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` and `OTEL_RECORD_CONTENT`
 remain disabled.
 
@@ -107,6 +107,6 @@ Private hosted E2E records low-risk, high-risk approval/resume, and damaged-item
 approval/resume conversation IDs in
 `backend/.foundry/results/hosted-e2e-evidence.json`. Foundry evaluation judges
 those exact traces, and `scripts/foundry/verify_telemetry.sh` requires all three
-conversation IDs to appear in Application Insights with no correlated
-exceptions. The release artifact also includes
+conversation IDs to have content-bearing `invoke_agent` request spans in
+Application Insights with no correlated exceptions. The release artifact also includes
 `foundry-report.json` and `telemetry-verification.json`.

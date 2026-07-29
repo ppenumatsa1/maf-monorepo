@@ -290,6 +290,28 @@ def validate() -> None:
         "../../scripts/foundry/ensure_foundry_azd_defaults.sh",
         "foundry-access-path Make target",
     )
+    hosted_e2e = (
+        Path(PRIVATE_PREFIX) / "scripts/github/foundry_hosted_e2e.sh"
+    ).read_text()
+    require(
+        hosted_e2e,
+        "structured_inputs: {trace_evaluation_record_content: true}",
+        "private hosted E2E",
+    )
+    forbid(
+        hosted_e2e,
+        "metadata: {trace_evaluation_record_content: true}",
+        "private hosted E2E",
+    )
+    telemetry_verification = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/verify_telemetry.sh"
+    ).read_text()
+    for value in (
+        "evaluation_trace_conversation_count",
+        "gen_ai.input.messages",
+        "gen_ai.output.messages",
+    ):
+        require(telemetry_verification, value, "private telemetry verification")
 
     core_provision_body = makefile.split("foundry-provision:\n", maxsplit=1)[1].split(
         "\n\nfoundry-project-connections:", maxsplit=1

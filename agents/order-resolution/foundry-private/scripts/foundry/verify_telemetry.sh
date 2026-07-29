@@ -62,7 +62,20 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
     trace_rows = countif(itemType == "trace"),
     dependency_rows = countif(itemType == "dependency"),
     request_rows = countif(itemType == "request"),
-    exception_rows = countif(itemType == "exception")
+    exception_rows = countif(itemType == "exception"),
+    evaluation_trace_conversation_count = dcountif(
+        tostring(conversationId),
+        itemType == "request"
+            and dimensions has '"gen_ai.operation.name":"invoke_agent"'
+            and dimensions has 'gen_ai.input.messages'
+            and dimensions has 'gen_ai.output.messages'
+    ),
+    evaluation_trace_rows = countif(
+        itemType == "request"
+            and dimensions has '"gen_ai.operation.name":"invoke_agent"'
+            and dimensions has 'gen_ai.input.messages'
+            and dimensions has 'gen_ai.output.messages'
+    )
 EOF
 )
 
@@ -74,15 +87,21 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
       --analytics-query "$query" \
       -o json
   )"
-  row="$(echo "$result" | jq -c '.tables[0].rows[0] // [0, 0, 0, 0, 0, 0]')"
+  row="$(echo "$result" | jq -c '.tables[0].rows[0] // [0, 0, 0, 0, 0, 0, 0, 0]')"
   matched_count="$(echo "$row" | jq -r '.[0] // 0')"
   telemetry_rows="$(echo "$row" | jq -r '.[1] // 0')"
   trace_rows="$(echo "$row" | jq -r '.[2] // 0')"
   dependency_rows="$(echo "$row" | jq -r '.[3] // 0')"
   request_rows="$(echo "$row" | jq -r '.[4] // 0')"
   exception_rows="$(echo "$row" | jq -r '.[5] // 0')"
+  evaluation_trace_conversation_count="$(echo "$row" | jq -r '.[6] // 0')"
+  evaluation_trace_rows="$(echo "$row" | jq -r '.[7] // 0')"
   status="waiting"
-  if [[ "$telemetry_rows" -gt 0 && "$matched_count" -eq "${#conversation_ids[@]}" && "$exception_rows" -eq 0 ]]; then
+  if [[ "$telemetry_rows" -gt 0 \
+    && "$matched_count" -eq "${#conversation_ids[@]}" \
+    && "$evaluation_trace_conversation_count" -eq "${#conversation_ids[@]}" \
+    && "$evaluation_trace_rows" -gt 0 \
+    && "$exception_rows" -eq 0 ]]; then
     status="passed"
   fi
 
@@ -98,6 +117,8 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     --argjson dependency_rows "$dependency_rows" \
     --argjson request_rows "$request_rows" \
     --argjson exception_rows "$exception_rows" \
+    --argjson evaluation_trace_conversation_count "$evaluation_trace_conversation_count" \
+    --argjson evaluation_trace_rows "$evaluation_trace_rows" \
     '{
       status: $status,
       generated_at: $generated_at,
@@ -109,14 +130,16 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
       trace_rows: $trace_rows,
       dependency_rows: $dependency_rows,
       request_rows: $request_rows,
-      exception_rows: $exception_rows
+      exception_rows: $exception_rows,
+      evaluation_trace_conversation_count: $evaluation_trace_conversation_count,
+      evaluation_trace_rows: $evaluation_trace_rows
     }' >"$RESULT_FILE"
 
   if [[ "$status" == "passed" ]]; then
-    echo "Application Insights telemetry check passed: ${telemetry_rows} correlated rows for ${matched_count} hosted E2E conversations."
+    echo "Application Insights telemetry check passed: ${telemetry_rows} correlated rows and ${evaluation_trace_rows} eligible Foundry evaluation spans for ${matched_count} hosted E2E conversations."
     exit 0
   fi
-  echo "Awaiting correlated telemetry (attempt ${attempt}/${MAX_ATTEMPTS}; rows=${telemetry_rows}, conversations=${matched_count}/${#conversation_ids[@]}, exceptions=${exception_rows})."
+  echo "Awaiting eligible evaluation telemetry (attempt ${attempt}/${MAX_ATTEMPTS}; rows=${telemetry_rows}, conversations=${matched_count}/${#conversation_ids[@]}, evaluation_conversations=${evaluation_trace_conversation_count}/${#conversation_ids[@]}, evaluation_rows=${evaluation_trace_rows}, exceptions=${exception_rows})."
   sleep "$POLL_SECONDS"
 done
 
