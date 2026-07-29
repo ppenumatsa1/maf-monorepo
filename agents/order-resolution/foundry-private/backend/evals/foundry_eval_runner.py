@@ -293,6 +293,7 @@ async def run_foundry_eval() -> None:
             "e2e_started_at": started_at.isoformat(),
             "e2e_generated_at": generated_at.isoformat(),
             "result_counts": _to_jsonable(getattr(eval_run, "result_counts", None)),
+            "run_details": _to_jsonable(eval_run),
             "report_url": (
                 f"{models_cfg.project_endpoint.rstrip('/')}/evaluation/evaluations/"
                 f"{eval_object.id}/runs/{eval_run.id}"

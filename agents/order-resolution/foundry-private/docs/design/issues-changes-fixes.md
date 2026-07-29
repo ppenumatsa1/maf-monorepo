@@ -613,6 +613,35 @@ The next protected release waits before one clean submission; any later
 non-completed or incomplete result remains a fail-closed release failure for
 investigation.
 
+## Trace-evaluation message-schema correction (2026-07-29)
+
+**Root cause.** Protected workflow
+[`30455291617`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30455291617)
+completed image deployment, fresh ACA and hosted-agent PostgreSQL
+connectivity proof, PostgreSQL lockdown, all three hosted Responses E2E
+scenarios, and the telemetry correlation gate (91 rows across all three
+conversations). Foundry then returned `failed` for
+`eval_52da614d6bc54621afbacc26136e10ef` /
+`evalrun_2af8d799eecf4d2eb53ede4f7756c3b1`, with zero results and no service
+error. The marked invocation spans emitted their `gen_ai.input.messages` and
+`gen_ai.output.messages` using a nested `parts` structure. Foundry's
+conversation-trace evaluation guidance documents message records as
+role/content objects; its trace extractor uses those fields to form the
+evaluator `messages` input. The existing telemetry check proved correlation,
+but it did not validate that payload schema.
+
+**Precise fix.** The hosted Responses entrypoint now emits the documented
+`{"role": ..., "content": ...}` message objects for marked input and output
+spans. The trace evaluator persists the complete terminal run representation
+in its sanitized local report, alongside result counts and the service error,
+so any future fail-closed evaluation has actionable evidence. No fallback,
+retry, RBAC, OIDC, networking, data-retention, or PostgreSQL control changed.
+
+**Validation required.** The focused hosted telemetry unit test must pass,
+then one new protected private release must prove that the same fresh E2E
+conversations complete Foundry evaluation with at least one result each. The
+prior run remains a failed gate and cannot be used as completion evidence.
+
 ## Hosted-agent release token-lifetime correction (2026-07-28)
 
 **Root cause.** Protected workflow
