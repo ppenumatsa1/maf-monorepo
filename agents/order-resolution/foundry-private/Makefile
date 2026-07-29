@@ -289,7 +289,7 @@ foundry-postgres-lockdown:
 	POSTGRES_CONNECTIVITY_EVIDENCE_FILE="$${POSTGRES_CONNECTIVITY_EVIDENCE_FILE:-../../backend/.foundry/results/private-connectivity-proof.json}" \
 	"../../scripts/foundry/harden_postgres_private_access.sh"
 
-foundry-evidence:
+foundry-evidence: ensure-backend-env
 	./scripts/foundry/collect_private_release_evidence.sh
 
 foundry-release:

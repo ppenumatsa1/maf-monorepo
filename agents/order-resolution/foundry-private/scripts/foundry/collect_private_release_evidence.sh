@@ -34,7 +34,7 @@ fi
 cd "$ROOT_DIR"
 ./scripts/github/foundry_hosted_e2e.sh
 AZURE_RESOURCE_GROUP="$resource_group" \
-APPLICATION_INSIGHTS_NAME="${application_insights_target##*/}" \
+APPLICATION_INSIGHTS_RESOURCE_ID="$application_insights_target" \
 FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}" \
 ./scripts/foundry/verify_telemetry.sh
 FOUNDRY_EVAL_ENFORCE_PASS=true \

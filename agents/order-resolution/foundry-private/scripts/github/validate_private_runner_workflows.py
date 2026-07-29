@@ -314,14 +314,15 @@ def validate() -> None:
         "private hosted E2E",
     )
     telemetry_verification = (
-        Path(PRIVATE_PREFIX) / "scripts/foundry/verify_telemetry.sh"
+        Path(PRIVATE_PREFIX) / "backend/evals/verify_telemetry.py"
     ).read_text()
     for value in (
         "FOUNDRY_EVALUATION_AGENT_ID",
+        "APPLICATION_INSIGHTS_RESOURCE_ID",
         "evaluation_trace_conversation_count",
         "evaluation_trace_ids",
         "arg_max(timestamp, operation_Id)",
-        "query_application_insights",
+        "LogsQueryClient",
         "APP_INSIGHTS_QUERY_MAX_ATTEMPTS",
         "gen_ai.conversation.id",
         "gen_ai.agent.id",
@@ -346,9 +347,14 @@ def validate() -> None:
     for value in (
         "AGENT_ORDER_RESOLUTION_HOSTED_NAME",
         "AGENT_ORDER_RESOLUTION_HOSTED_VERSION",
+        'APPLICATION_INSIGHTS_RESOURCE_ID="$application_insights_target"',
         'FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}"',
     ):
         require(evidence_collection, value, "private release evidence collection")
+    evidence_target = makefile.split("foundry-evidence:", maxsplit=1)[1].split(
+        "\n\nfoundry-release:", maxsplit=1
+    )[0]
+    require(evidence_target, "ensure-backend-env", "private evidence Make target")
 
     core_provision_body = makefile.split("foundry-provision:\n", maxsplit=1)[1].split(
         "\n\nfoundry-project-connections:", maxsplit=1

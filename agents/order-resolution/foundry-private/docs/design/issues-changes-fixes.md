@@ -313,9 +313,10 @@ then ended after a successful first telemetry query. The subsequent
 Application Insights CLI query returned `BadArgumentError: The request had
 some invalid properties` before the evaluator was invoked. The release log
 therefore did not establish an evaluator API failure. Telemetry verification
-now retries each Application Insights query three times with bounded delay and
-emits the failed CLI response before failing closed. Separately, the evaluator
-uses the official trace-ID request shape:
+now uses the documented `azure-monitor-query` `LogsQueryClient` against the
+Application Insights resource ID, with a bounded retry for service responses;
+the evidence target installs that declared dependency before use. Separately,
+the evaluator uses the official trace-ID request shape:
 `data_source={"type": "azure_ai_traces", "trace_ids": ..., "lookback_hours":
 ...}` passed through the `data_source` argument. This code-only repair changes
 no Azure resource, RBAC, OIDC, secret, public access, or network
