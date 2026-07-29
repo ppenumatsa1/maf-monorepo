@@ -65,14 +65,12 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
     exception_rows = countif(itemType == "exception"),
     evaluation_trace_conversation_count = dcountif(
         tostring(conversationId),
-        itemType == "request"
-            and dimensions has '"gen_ai.operation.name":"invoke_agent"'
+        dimensions has '"gen_ai.operation.name":"invoke_agent"'
             and dimensions has 'gen_ai.input.messages'
             and dimensions has 'gen_ai.output.messages'
     ),
     evaluation_trace_rows = countif(
-        itemType == "request"
-            and dimensions has '"gen_ai.operation.name":"invoke_agent"'
+        dimensions has '"gen_ai.operation.name":"invoke_agent"'
             and dimensions has 'gen_ai.input.messages'
             and dimensions has 'gen_ai.output.messages'
     )

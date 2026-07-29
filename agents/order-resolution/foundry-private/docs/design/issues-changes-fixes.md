@@ -691,11 +691,22 @@ the record-content marker in `metadata`; the hosted Responses protocol strips
 that unsupported field before it reaches the handler, so the application
 correctly preserved content redaction.
 
-**Precise fix.** Every private hosted E2E request now uses the Responses
-protocol's `structured_inputs.trace_evaluation_record_content=true` field,
-which the hosted handler explicitly reads. The telemetry gate now requires
-every recorded conversation to have a root `request` span with
-`invoke_agent`, `gen_ai.input.messages`, and `gen_ai.output.messages`; generic
+**Follow-up correction.** Workflow
+[`30459963564`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30459963564)
+proved that `structured_inputs` alone is also absent from the hosted handler:
+the strengthened gate found zero content-bearing spans after its full bounded
+wait and stopped before submitting evaluation. The platform's root `request`
+span carries the official hosted-agent identity but remains content-redacted;
+the application-owned child span is the intended content-bearing evaluation
+surface.
+
+**Precise fix.** Every private hosted E2E invocation now includes the
+Responses-supported `x-client-trace-evaluation-record-content: true` header
+through `azd ai agent invoke --client-header`, which its current CLI contract
+explicitly forwards to responses handlers. The structured input marker remains
+an explicit protocol payload signal. The telemetry gate now requires every
+recorded conversation to have any content-bearing `invoke_agent` span with
+both `gen_ai.input.messages` and `gen_ai.output.messages`; generic
 correlation alone can no longer advance to evaluation. This retains content
 redaction for non-validation traffic and changes no RBAC, OIDC, network,
 database, or retry behavior.

@@ -298,6 +298,11 @@ def validate() -> None:
         "structured_inputs: {trace_evaluation_record_content: true}",
         "private hosted E2E",
     )
+    require(
+        hosted_e2e,
+        '--client-header "$TRACE_EVALUATION_HEADER"',
+        "private hosted E2E",
+    )
     forbid(
         hosted_e2e,
         "metadata: {trace_evaluation_record_content: true}",

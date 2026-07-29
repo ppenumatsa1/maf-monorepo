@@ -25,6 +25,7 @@ BASE_ID="${1:-foundry-e2e-$(date +%s)}"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RESULTS_DIR="$ROOT_DIR/backend/.foundry/results"
 PAYLOAD_FILE="$RESULTS_DIR/.hosted-e2e-resume-${BASE_ID//[^[:alnum:]._-]/_}-$$.json"
+TRACE_EVALUATION_HEADER="x-client-trace-evaluation-record-content: true"
 mkdir -p "$RESULTS_DIR"
 trap 'rm -f "$PAYLOAD_FILE"' EXIT
 
@@ -55,11 +56,11 @@ invoke_responses_payload() {
   for attempt in $(seq 1 20); do
     set +e
     if [[ -n "$conversation_id" ]]; then
-      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --conversation-id "$conversation_id" --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
+      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --conversation-id "$conversation_id" --client-header "$TRACE_EVALUATION_HEADER" --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
     elif [[ "$mode" == "new" ]]; then
-      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --new-conversation --new-session --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
+      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --new-conversation --new-session --client-header "$TRACE_EVALUATION_HEADER" --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
     else
-      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
+      raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --client-header "$TRACE_EVALUATION_HEADER" --input-file "$PAYLOAD_FILE" --no-prompt 2>&1)"
     fi
     rc=$?
     set -e
