@@ -86,8 +86,9 @@ MAF workflow stream events are observed from `workflow.run(..., stream=True)` fo
 
 MAF middleware enriches emitted workflow events with `workflow_run_id` and `session_id`, records streamed MAF event/usage hooks, and emits `workflow.failed` for real workflow failures before re-raising the original exception.
 
-Hosted invocation spans emit `gen_ai.operation.name`,
-`gen_ai.agent.name`, and `gen_ai.conversation.id`. Conversation-level Foundry
+Hosted invocation spans emit `gen_ai.operation.name`, `gen_ai.agent.name`,
+`gen_ai.agent.version`, `gen_ai.agent.id` (in `name:version` form), and
+`gen_ai.conversation.id`. Conversation-level Foundry
 evaluation additionally requires `gen_ai.input.messages` and
 `gen_ai.output.messages`; those content attributes are emitted only when the
 private validation agent is deployed with

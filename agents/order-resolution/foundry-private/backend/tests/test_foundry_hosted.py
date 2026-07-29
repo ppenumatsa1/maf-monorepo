@@ -272,6 +272,19 @@ def test_trace_evaluation_content_uses_custom_hosted_agent_variable(
     )
 
 
+def test_foundry_agent_identity_uses_platform_name_and_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FOUNDRY_AGENT_NAME", "order-resolution-hosted")
+    monkeypatch.setenv("FOUNDRY_AGENT_VERSION", "10")
+
+    assert foundry_main._foundry_agent_identity() == (
+        "order-resolution-hosted",
+        "10",
+        "order-resolution-hosted:10",
+    )
+
+
 def test_runtime_database_url_override_replaces_loopback_database_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -574,6 +587,8 @@ async def test_run_from_responses_records_genai_messages_for_trace_evaluation(
         output_message="Resolution complete.",
     )
     monkeypatch.setenv("FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT", "true")
+    monkeypatch.setenv("FOUNDRY_AGENT_NAME", "order-resolution-hosted")
+    monkeypatch.setenv("FOUNDRY_AGENT_VERSION", "10")
     monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
     monkeypatch.setattr(foundry_main, "order_resolution_service", service)
     monkeypatch.setattr(foundry_main, "get_tracer", lambda _: tracer)
@@ -597,6 +612,9 @@ async def test_run_from_responses_records_genai_messages_for_trace_evaluation(
             "content": "Resolution complete.",
         }
     ]
+    assert span.attributes["gen_ai.agent.name"] == "order-resolution-hosted"
+    assert span.attributes["gen_ai.agent.version"] == "10"
+    assert span.attributes["gen_ai.agent.id"] == "order-resolution-hosted:10"
 
 
 @pytest.mark.asyncio

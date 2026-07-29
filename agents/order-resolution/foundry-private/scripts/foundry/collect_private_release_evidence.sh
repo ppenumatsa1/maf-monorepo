@@ -25,9 +25,17 @@ if [[ -z "$resource_group" || -z "$application_insights_target" ]]; then
 fi
 
 cd "$ROOT_DIR"
+hosted_agent_name="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_NAME)"
+hosted_agent_version="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_VERSION)"
+if [[ -z "$hosted_agent_name" || -z "$hosted_agent_version" ]]; then
+  echo "Private release evidence requires the active hosted agent name and version."
+  exit 1
+fi
+
 ./scripts/github/foundry_hosted_e2e.sh
 AZURE_RESOURCE_GROUP="$resource_group" \
 APPLICATION_INSIGHTS_NAME="${application_insights_target##*/}" \
+FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}" \
 ./scripts/foundry/verify_telemetry.sh
 FOUNDRY_EVAL_ENFORCE_PASS=true \
 FOUNDRY_EVAL_MAX_ERRORED=0 \

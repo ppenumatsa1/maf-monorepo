@@ -385,6 +385,16 @@ def _set_span_attribute(span: Any, key: str, value: Any) -> None:
         span.set_attribute(key, value)
 
 
+def _foundry_agent_identity() -> tuple[str, str, str]:
+    agent_name = os.getenv(
+        "FOUNDRY_AGENT_NAME",
+        os.getenv("FOUNDRY_HOSTED_AGENT_NAME", "order-resolution-hosted"),
+    ).strip()
+    agent_version = os.getenv("FOUNDRY_AGENT_VERSION", "").strip()
+    agent_id = f"{agent_name}:{agent_version}" if agent_name and agent_version else agent_name
+    return agent_name, agent_version, agent_id
+
+
 def _trace_evaluation_requested(create_response: Any, context: Any | None) -> bool:
     client_headers = getattr(context, "client_headers", None)
     if isinstance(client_headers, dict):
@@ -482,6 +492,7 @@ async def _run_from_responses(
 ) -> Any:
     parsed = _parse_input(create_response, context)
     tracer = get_tracer("foundry.responses")
+    agent_name, agent_version, agent_id = _foundry_agent_identity()
     trace_evaluation_content_enabled = _trace_evaluation_content_enabled(create_response, context)
     # Anchor all turn-level telemetry under a single invocation span.
     with tracer.start_as_current_span("foundry.responses.invoke") as span:
@@ -489,16 +500,9 @@ async def _run_from_responses(
         _set_span_attribute(span, "workflow.session_id", parsed.conversation_id)
         _set_span_attribute(span, "foundry.protocol", "responses")
         _set_span_attribute(span, "gen_ai.operation.name", "invoke_agent")
-        _set_span_attribute(
-            span,
-            "gen_ai.agent.name",
-            os.getenv("FOUNDRY_HOSTED_AGENT_NAME", "order-resolution-hosted"),
-        )
-        _set_span_attribute(
-            span,
-            "gen_ai.agent.id",
-            os.getenv("FOUNDRY_HOSTED_AGENT_ID", "order-resolution-hosted"),
-        )
+        _set_span_attribute(span, "gen_ai.agent.name", agent_name)
+        _set_span_attribute(span, "gen_ai.agent.id", agent_id)
+        _set_span_attribute(span, "gen_ai.agent.version", agent_version)
         _set_span_attribute(span, "gen_ai.conversation.id", parsed.conversation_id)
         _set_span_attribute(
             span,

@@ -317,11 +317,23 @@ def validate() -> None:
         Path(PRIVATE_PREFIX) / "scripts/foundry/verify_telemetry.sh"
     ).read_text()
     for value in (
+        "FOUNDRY_EVALUATION_AGENT_ID",
         "evaluation_trace_conversation_count",
+        "gen_ai.conversation.id",
+        "gen_ai.agent.id",
         "gen_ai.input.messages",
         "gen_ai.output.messages",
     ):
         require(telemetry_verification, value, "private telemetry verification")
+    evidence_collection = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/collect_private_release_evidence.sh"
+    ).read_text()
+    for value in (
+        "AGENT_ORDER_RESOLUTION_HOSTED_NAME",
+        "AGENT_ORDER_RESOLUTION_HOSTED_VERSION",
+        'FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}"',
+    ):
+        require(evidence_collection, value, "private release evidence collection")
 
     core_provision_body = makefile.split("foundry-provision:\n", maxsplit=1)[1].split(
         "\n\nfoundry-project-connections:", maxsplit=1

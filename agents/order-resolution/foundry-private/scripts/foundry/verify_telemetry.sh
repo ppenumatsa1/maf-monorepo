@@ -13,6 +13,7 @@ require_bin jq
 
 : "${AZURE_RESOURCE_GROUP:?AZURE_RESOURCE_GROUP is required}"
 : "${APPLICATION_INSIGHTS_NAME:?APPLICATION_INSIGHTS_NAME is required}"
+: "${FOUNDRY_EVALUATION_AGENT_ID:?FOUNDRY_EVALUATION_AGENT_ID is required}"
 
 MAX_ATTEMPTS="${TELEMETRY_MAX_ATTEMPTS:-24}"
 POLL_SECONDS="${TELEMETRY_POLL_SECONDS:-15}"
@@ -51,9 +52,12 @@ conversation_ids_json="$(printf '%s\n' "${conversation_ids[@]}" | jq -R . | jq -
 query=$(cat <<EOF
 let e2eStartedAt = todatetime('${started_at}');
 let conversationIds = dynamic(${conversation_ids_json});
+let expectedAgentId = '${FOUNDRY_EVALUATION_AGENT_ID}';
 union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
 | where timestamp between (e2eStartedAt .. now())
 | extend dimensions = tostring(customDimensions)
+| extend genAiConversationId = tostring(parse_json(dimensions)["gen_ai.conversation.id"])
+| extend genAiAgentId = tostring(parse_json(dimensions)["gen_ai.agent.id"])
 | mv-expand conversationId = conversationIds
 | where dimensions has tostring(conversationId)
 | summarize
@@ -68,11 +72,15 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
         dimensions has '"gen_ai.operation.name":"invoke_agent"'
             and dimensions has 'gen_ai.input.messages'
             and dimensions has 'gen_ai.output.messages'
+            and genAiConversationId == tostring(conversationId)
+            and genAiAgentId == expectedAgentId
     ),
     evaluation_trace_rows = countif(
         dimensions has '"gen_ai.operation.name":"invoke_agent"'
             and dimensions has 'gen_ai.input.messages'
             and dimensions has 'gen_ai.output.messages'
+            and genAiConversationId == tostring(conversationId)
+            and genAiAgentId == expectedAgentId
     )
 EOF
 )
@@ -108,6 +116,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg started_at "$started_at" \
     --arg application_insights_name "$APPLICATION_INSIGHTS_NAME" \
+    --arg evaluation_agent_id "$FOUNDRY_EVALUATION_AGENT_ID" \
     --argjson conversation_ids "$conversation_ids_json" \
     --argjson matched_count "$matched_count" \
     --argjson telemetry_rows "$telemetry_rows" \
@@ -122,6 +131,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
       generated_at: $generated_at,
       e2e_started_at: $started_at,
       application_insights_name: $application_insights_name,
+      evaluation_agent_id: $evaluation_agent_id,
       conversation_ids: $conversation_ids,
       matched_conversation_count: $matched_count,
       telemetry_rows: $telemetry_rows,

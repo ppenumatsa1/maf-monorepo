@@ -247,6 +247,32 @@ For private release-automation changes, run the sole applicable local gate:
 make test
 ```
 
+## Trace-evaluation identity correction (2026-07-29)
+
+**Root cause.** Protected release `30463369625` reached the final Foundry
+conversation evaluator after successful deployment, PostgreSQL lockdown, hosted
+E2E, and telemetry proof. The evaluator returned `failed` with zero results
+and no service error. Its three E2E conversations had four content-bearing
+`invoke_agent` spans in Application Insights, but the wrapper overwrote the
+Foundry platform identity with the bare value `order-resolution-hosted` for
+`gen_ai.agent.id`. Foundry trace evaluation filters `invoke_agent` spans by
+that attribute, which must be the platform's `name:version` identity.
+
+**Precise fix.** The wrapper now derives `gen_ai.agent.name`,
+`gen_ai.agent.version`, and `gen_ai.agent.id` from the platform-injected
+`FOUNDRY_AGENT_NAME` and `FOUNDRY_AGENT_VERSION` values. Evidence collection
+reads the active deployed name/version from AZD and telemetry verification now
+requires each recorded conversation to have an `invoke_agent` span with exact
+conversation ID, content-bearing messages, and the same `name:version`
+identity before evaluation submission. This is a source-controlled telemetry
+contract correction; it changes no private endpoint, firewall, RBAC, OIDC, or
+secret setting.
+
+**Required validation.** Run the focused hosted/evaluation tests and static
+private workflow validator, then a fresh protected release. Closure still
+requires all three fresh E2E conversations to produce completed Foundry
+evaluation results after the locked-down private release path.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a
