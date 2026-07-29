@@ -330,6 +330,13 @@ the private lane root. `evals` is a backend module and is importable only from
 to `backend` before the module invocation. This corrects repository execution
 context only; it does not alter Azure configuration or access controls.
 
+**SDK result-shape follow-up.** Protected release `30475417590` reached the
+supported query client after hosted E2E, but the installed
+`azure-monitor-query` version returned result-table column names as strings
+rather than objects with a `name` property. The parser now accepts both
+documented SDK result representations and has a focused regression test. This
+is a local result-parsing correction with no Azure control-plane change.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a

@@ -8,6 +8,7 @@ from evals.verify_telemetry import (
     _build_telemetry_query,
     _build_trace_ids_query,
     _load_conversation_ids,
+    _query_row,
     _trace_ids,
 )
 
@@ -63,3 +64,30 @@ def test_trace_ids_parses_a_dynamic_json_result() -> None:
     assert _trace_ids(
         {"evaluation_trace_ids": '["trace-damaged", "trace-low", "trace-low"]'}
     ) == ["trace-damaged", "trace-low"]
+
+
+def test_query_row_accepts_string_columns_from_logs_query_client() -> None:
+    class Response:
+        status = "Success"
+        tables = [
+            type(
+                "Table",
+                (),
+                {
+                    "columns": ["matched_count", "telemetry_rows"],
+                    "rows": [[3, 42]],
+                },
+            )()
+        ]
+
+    class Client:
+        def query_resource(self, resource_id: str, query: str, timespan: None) -> Response:
+            assert resource_id == "resource-id"
+            assert query == "query"
+            assert timespan is None
+            return Response()
+
+    assert _query_row(Client(), "resource-id", "query") == {
+        "matched_count": 3,
+        "telemetry_rows": 42,
+    }
