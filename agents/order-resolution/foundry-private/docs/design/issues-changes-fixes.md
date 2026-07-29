@@ -345,6 +345,15 @@ query now casts it to string immediately after expansion, with static and
 unit-test coverage. The correction is limited to evidence query syntax; all
 private topology and access controls remain unchanged.
 
+**Trace-ID projection follow-up.** Protected release `30478359891` passed
+hosted E2E and telemetry eligibility, including three selected records, but
+the Foundry run received those records' timestamps rather than
+`operation_Id` values and correctly produced zero results. The KQL alias on
+`arg_max(timestamp, operation_Id)` returned the aggregation timestamp. The
+trace-selection query now uses `arg_max` to select the latest row and projects
+`operation_Id` explicitly before persisting IDs. This source-only evidence fix
+does not alter private resources, access, or data-plane controls.
+
 ## Private runner deallocation recovery (2026-07-29)
 
 **Root cause.** After protected release `30477645384` completed deployment,

@@ -59,6 +59,7 @@ def test_telemetry_queries_filter_exact_agent_and_conversations() -> None:
         assert "gen_ai.agent.id" in query
     assert "| extend conversationId = tostring(conversationId)" in trace_ids_query
     assert "arg_max(timestamp, operation_Id)" in trace_ids_query
+    assert "| project operation_Id = tostring(operation_Id)" in trace_ids_query
 
 
 def test_trace_ids_parses_a_dynamic_json_result() -> None:

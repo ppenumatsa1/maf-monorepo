@@ -120,7 +120,8 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
     and dimensions has 'gen_ai.output.messages'
     and genAiConversationId == tostring(conversationId)
     and genAiAgentId == expectedAgentId
-| summarize operation_Id = arg_max(timestamp, operation_Id) by conversationId
+| summarize arg_max(timestamp, operation_Id) by conversationId
+| project operation_Id = tostring(operation_Id)
 | summarize evaluation_trace_ids = make_set(operation_Id)
 """
 
