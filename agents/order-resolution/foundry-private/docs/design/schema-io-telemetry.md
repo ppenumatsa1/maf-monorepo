@@ -96,7 +96,8 @@ request contains
 `structured_inputs.trace_evaluation_record_content=true` plus the forwarded
 `x-client-trace-evaluation-record-content: true` client header. The hosted E2E
 script marks only its validation requests, so later ordinary hosted traffic
-remains redacted. Global
+remains redacted even though the source-controlled hosted-agent deployment
+enables the request-level feature. Global
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` and `OTEL_RECORD_CONTENT`
 remain disabled.
 

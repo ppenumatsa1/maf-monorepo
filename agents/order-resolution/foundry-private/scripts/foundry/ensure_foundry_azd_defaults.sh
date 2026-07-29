@@ -149,7 +149,8 @@ set_if_missing RAG_PROVIDER "${RAG_PROVIDER:-pgvector}"
 set_if_missing OTEL_SERVICE_NAME "${OTEL_SERVICE_NAME:-maf-order-resolution-hosted}"
 set_if_missing OTEL_SERVICE_NAMESPACE "${OTEL_SERVICE_NAMESPACE:-maf-order-resolution}"
 set_if_missing OTEL_RECORD_CONTENT "${OTEL_RECORD_CONTENT:-false}"
-set_if_missing FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT "${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT:-false}"
+azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT true >/dev/null
+echo "enforced FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT=true for marked private evaluation requests"
 
 restore_foundry_account="$(get_env_value RESTORE_FOUNDRY_ACCOUNT)"
 foundry_project_endpoint="$(get_env_value FOUNDRY_PROJECTS_ENDPOINT)"

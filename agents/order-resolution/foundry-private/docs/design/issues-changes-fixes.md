@@ -711,6 +711,20 @@ correlation alone can no longer advance to evaluation. This retains content
 redaction for non-validation traffic and changes no RBAC, OIDC, network,
 database, or retry behavior.
 
+**Final root cause and configuration correction.** Workflow
+[`30461657003`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30461657003)
+still observed zero eligible spans after forwarding the header. The release
+payload maps `FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT` into the hosted
+container's custom `TRACE_EVALUATION_RECORD_CONTENT` variable, but the
+retained AZD environment was created while the defaults helper set that source
+value to `false`. The application therefore correctly rejected every marker
+before inspecting its header or structured input. The defaults helper now
+unconditionally sets `FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT=true` before
+each source-controlled hosted-agent deployment. This enables only the
+application's request-level marker path; ordinary traffic still omits
+`gen_ai.input.messages` and `gen_ai.output.messages`. No secret, RBAC, OIDC,
+network, or public-access configuration changes.
+
 **Validation required.** Run the focused hosted telemetry tests and shell
 syntax validation, then a fresh protected release. It must show three
 content-bearing evaluation spans before it submits evaluation, and Foundry

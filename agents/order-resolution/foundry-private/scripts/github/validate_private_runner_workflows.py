@@ -286,6 +286,11 @@ def validate() -> None:
         "private AZD defaults",
     )
     require(
+        azd_defaults,
+        "azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT true",
+        "private AZD defaults",
+    )
+    require(
         access_path_body,
         "../../scripts/foundry/ensure_foundry_azd_defaults.sh",
         "foundry-access-path Make target",
