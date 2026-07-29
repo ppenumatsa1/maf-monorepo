@@ -307,6 +307,18 @@ IDs before evaluation, and Foundry must return a result for every selected
 trace. The change does not alter private topology, RBAC, OIDC, firewall,
 public access, or content-redaction behavior.
 
+**Follow-up RCA.** Protected release `30469803377` passed deploy, connectivity
+proof, PostgreSQL lockdown, and all hosted E2E scenarios, then the evaluator
+submission returned `BadArgumentError: The request had some invalid
+properties`. The exact trace IDs were incorrectly expanded as top-level
+arguments to `evals.runs.create`, rather than being supplied through its
+`data_source` argument. The official Foundry trace-ID example confirms
+`data_source={"type": "azure_ai_traces", "trace_ids": ..., "lookback_hours":
+...}`. The runner now passes that object to `data_source` explicitly, with a
+static contract preventing the invalid expansion. This code-only repair
+changes no Azure resource, RBAC, OIDC, secret, public access, or network
+configuration.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a

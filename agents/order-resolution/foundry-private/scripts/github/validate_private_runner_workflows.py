@@ -335,6 +335,7 @@ def validate() -> None:
         '"trace_ids": trace_ids',
         '"query": "{{item.query}}"',
         '"response": "{{item.response}}"',
+        "data_source=_build_exact_trace_data_source(trace_ids)",
     ):
         require(eval_runner, value, "private trace evaluation runner")
     evidence_collection = (

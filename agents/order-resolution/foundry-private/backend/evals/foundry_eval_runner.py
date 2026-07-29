@@ -183,15 +183,13 @@ def _build_trace_testing_criteria(
     ]
 
 
-def _build_exact_trace_run(
+def _build_exact_trace_data_source(
     trace_ids: list[str],
 ) -> dict[str, object]:
     return {
-        "data_source": {
-            "type": "azure_ai_traces",
-            "trace_ids": trace_ids,
-            "lookback_hours": 24,
-        },
+        "type": "azure_ai_traces",
+        "trace_ids": trace_ids,
+        "lookback_hours": 24,
     }
 
 
@@ -300,7 +298,7 @@ async def run_foundry_eval() -> None:
                     "conversation_count": str(len(conversation_ids)),
                     "trace_count": str(len(trace_ids)),
                 },
-                **_build_exact_trace_run(trace_ids),
+                data_source=_build_exact_trace_data_source(trace_ids),
             )
             start = asyncio.get_running_loop().time()
             while str(eval_run.status) not in _TERMINAL_EVAL_STATUSES:

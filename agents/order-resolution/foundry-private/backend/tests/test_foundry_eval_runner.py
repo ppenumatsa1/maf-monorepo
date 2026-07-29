@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from evals.foundry_eval_runner import (
     _TERMINAL_EVAL_STATUSES,
-    _build_exact_trace_run,
+    _build_exact_trace_data_source,
     _build_trace_testing_criteria,
     _load_hosted_e2e_evidence,
     _load_telemetry_trace_ids,
@@ -161,19 +161,17 @@ def test_trace_criteria_use_query_response_mapping() -> None:
     ]
 
 
-def test_trace_run_reuses_exact_e2e_trace_ids() -> None:
+def test_trace_data_source_reuses_exact_e2e_trace_ids() -> None:
     trace_ids = ["trace-low", "trace-high", "trace-damaged"]
 
-    trace_run = _build_exact_trace_run(trace_ids)
+    trace_data_source = _build_exact_trace_data_source(trace_ids)
 
-    assert trace_run == {
-        "data_source": {
-            "type": "azure_ai_traces",
-            "trace_ids": trace_ids,
-            "lookback_hours": 24,
-        },
+    assert trace_data_source == {
+        "type": "azure_ai_traces",
+        "trace_ids": trace_ids,
+        "lookback_hours": 24,
     }
-    assert "target" not in trace_run["data_source"]
+    assert "target" not in trace_data_source
 
 
 def test_load_telemetry_trace_ids_requires_unique_coverage(
