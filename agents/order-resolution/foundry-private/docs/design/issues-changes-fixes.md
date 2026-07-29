@@ -593,6 +593,18 @@ Application Insights correlation before it starts Foundry evaluation. This
 keeps ordinary traffic redacted and makes missing trace export a direct,
 separate failure instead of an opaque zero-row evaluation.
 
+**Release-order correction.** The first marked-request run
+[`30409232845`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30409232845)
+proved telemetry correlation first: Application Insights returned 151 rows
+covering all three fresh E2E conversations. The workflow was then canceled at
+its runner execution boundary while the redundant five-minute evaluator delay
+was still sleeping. The private release now sets
+`ingestion_delay_seconds: 0`: `verify_telemetry.sh` is the bounded ingestion
+wait and an explicit all-conversation proof immediately precedes evaluation.
+The runner's reusable default remains conservative for callers that do not
+perform that proof. This shortens the release without accepting missing
+traces.
+
 **Authority and retry boundary.** Microsoft’s conversation-trace evaluation
 guidance states that Application Insights ingestion can delay trace
 availability and directs operators to wait a few minutes before retrying:

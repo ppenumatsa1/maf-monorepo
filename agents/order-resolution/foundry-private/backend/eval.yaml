@@ -21,6 +21,6 @@ foundry:
     evidence_file: .foundry/results/hosted-e2e-evidence.json
     max_traces: 10
     max_evidence_age_seconds: 21600
-    ingestion_delay_seconds: 300
+    ingestion_delay_seconds: 0
 options:
   pass_threshold: 0.8
