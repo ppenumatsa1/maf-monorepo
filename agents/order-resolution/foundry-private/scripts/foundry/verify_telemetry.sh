@@ -17,8 +17,36 @@ require_bin jq
 
 MAX_ATTEMPTS="${TELEMETRY_MAX_ATTEMPTS:-24}"
 POLL_SECONDS="${TELEMETRY_POLL_SECONDS:-15}"
+QUERY_MAX_ATTEMPTS="${APP_INSIGHTS_QUERY_MAX_ATTEMPTS:-3}"
+QUERY_RETRY_SECONDS="${APP_INSIGHTS_QUERY_RETRY_SECONDS:-5}"
 EVIDENCE_FILE="${HOSTED_E2E_EVIDENCE_FILE:-backend/.foundry/results/hosted-e2e-evidence.json}"
 RESULT_FILE="${TELEMETRY_RESULT_FILE:-backend/.foundry/results/telemetry-verification.json}"
+
+query_application_insights() {
+  local analytics_query="$1"
+  local attempt output
+
+  for attempt in $(seq 1 "$QUERY_MAX_ATTEMPTS"); do
+    if output="$(
+      az monitor app-insights query \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --app "$APPLICATION_INSIGHTS_NAME" \
+        --analytics-query "$analytics_query" \
+        -o json 2>&1
+    )"; then
+      printf '%s' "$output"
+      return 0
+    fi
+
+    echo "Application Insights query attempt ${attempt}/${QUERY_MAX_ATTEMPTS} failed: ${output}" >&2
+    if [[ "$attempt" -lt "$QUERY_MAX_ATTEMPTS" ]]; then
+      sleep "$QUERY_RETRY_SECONDS"
+    fi
+  done
+
+  echo "Application Insights query did not succeed after ${QUERY_MAX_ATTEMPTS} attempts." >&2
+  return 1
+}
 
 [[ -f "$EVIDENCE_FILE" ]] || {
   echo "Hosted E2E evidence is required: $EVIDENCE_FILE"
@@ -107,13 +135,7 @@ EOF
 )
 
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-  result="$(
-    az monitor app-insights query \
-      --resource-group "$AZURE_RESOURCE_GROUP" \
-      --app "$APPLICATION_INSIGHTS_NAME" \
-      --analytics-query "$query" \
-      -o json
-  )"
+  result="$(query_application_insights "$query")"
   row="$(echo "$result" | jq -c '.tables[0].rows[0] // [0, 0, 0, 0, 0, 0, 0, 0]')"
   matched_count="$(echo "$row" | jq -r '.[0] // 0')"
   telemetry_rows="$(echo "$row" | jq -r '.[1] // 0')"
@@ -130,13 +152,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     && "$evaluation_trace_conversation_count" -eq "${#conversation_ids[@]}" \
     && "$evaluation_trace_rows" -gt 0 \
     && "$exception_rows" -eq 0 ]]; then
-    trace_ids_result="$(
-      az monitor app-insights query \
-        --resource-group "$AZURE_RESOURCE_GROUP" \
-        --app "$APPLICATION_INSIGHTS_NAME" \
-        --analytics-query "$trace_ids_query" \
-        -o json
-    )"
+    trace_ids_result="$(query_application_insights "$trace_ids_query")"
     evaluation_trace_ids="$(echo "$trace_ids_result" | jq -c \
       '(.tables[0].rows[0][0] // []) | map(select(type == "string" and length > 0)) | unique')"
     if [[ "$(echo "$evaluation_trace_ids" | jq 'length')" -eq "${#conversation_ids[@]}" ]]; then

@@ -321,6 +321,8 @@ def validate() -> None:
         "evaluation_trace_conversation_count",
         "evaluation_trace_ids",
         "arg_max(timestamp, operation_Id)",
+        "query_application_insights",
+        "APP_INSIGHTS_QUERY_MAX_ATTEMPTS",
         "gen_ai.conversation.id",
         "gen_ai.agent.id",
         "gen_ai.input.messages",
