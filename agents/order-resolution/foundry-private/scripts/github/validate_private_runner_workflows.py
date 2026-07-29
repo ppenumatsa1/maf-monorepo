@@ -119,6 +119,7 @@ def validate() -> None:
         "inputs.postgres_lockdown_confirmation == 'lockdown'",
         deploy_name,
     )
+    require(deploy, "\n  evidence:\n    needs: deploy", deploy_name)
     require(
         deploy,
         "Verify active Container Apps use private ACR images",
@@ -137,6 +138,7 @@ def validate() -> None:
             "make foundry-deploy",
             "make foundry-connectivity-proof",
             "make foundry-postgres-lockdown",
+            "\n  evidence:\n    needs: deploy",
             "make foundry-evidence",
         ),
         deploy_name,

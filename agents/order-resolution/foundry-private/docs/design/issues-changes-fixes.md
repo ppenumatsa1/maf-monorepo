@@ -615,7 +615,7 @@ investigation.
 
 ## Trace-evaluation message-schema correction (2026-07-29)
 
-**Root cause.** Protected workflow
+**Initial root-cause hypothesis.** Protected workflow
 [`30455291617`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30455291617)
 completed image deployment, fresh ACA and hosted-agent PostgreSQL
 connectivity proof, PostgreSQL lockdown, all three hosted Responses E2E
@@ -637,10 +637,45 @@ in its sanitized local report, alongside result counts and the service error,
 so any future fail-closed evaluation has actionable evidence. No fallback,
 retry, RBAC, OIDC, networking, data-retention, or PostgreSQL control changed.
 
-**Validation required.** The focused hosted telemetry unit test must pass,
-then one new protected private release must prove that the same fresh E2E
-conversations complete Foundry evaluation with at least one result each. The
-prior run remains a failed gate and cannot be used as completion evidence.
+**Validation outcome.** The focused hosted telemetry unit test passed.
+Protected workflow
+[`30456529681`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30456529681)
+then emitted the corrected schema and again passed all deployment,
+connectivity, lockdown, E2E, and telemetry gates (67 rows across all three
+conversations), but its evaluation immediately returned zero results. The
+payload correction standardizes the documented schema but is not sufficient
+evidence that Foundry's evaluation service has ingested the traces. The
+release-timing correction below is now the required gate.
+
+## Trace-evaluation release-window correction (2026-07-29)
+
+**Root cause.** The prior telemetry-first shortcut set
+`ingestion_delay_seconds: 0` after `verify_telemetry.sh` found correlated App
+Insights rows. Two protected releases (`30455291617` and `30456529681`) prove
+that this query does not establish availability to Foundry's separate
+conversation-trace evaluator: both evaluator submissions failed immediately
+with zero results and no service error. Restoring the documented five-minute
+delay in the former single `deploy` job is not reliable either. Workflow
+`30409232845` was terminated seven seconds before its delay elapsed because
+the private runner's 15-minute job boundary was consumed by provisioning,
+deployment, proof, lockdown, and E2E.
+
+**Precise fix.** The protected workflow now has two serialized jobs on the
+same sole `foundry-private-v2` runner. `deploy` retains all source-controlled
+core stages through fresh connectivity proof and PostgreSQL lockdown.
+`evidence` has an explicit `needs: deploy` dependency and performs fresh
+hosted E2E, telemetry correlation, the restored five-minute ingestion delay,
+and enforced Foundry evaluation. It re-authenticates through the same
+environment-scoped GitHub OIDC identity, restores the required Azure CLI/AZD
+tooling, and validates the retained selected AZD environment before evidence
+collection. This gives evaluation its own private runner time budget without
+loosening release ordering, relying on a public host, enabling a network
+exception, or allowing an optional evidence path.
+
+**Validation required.** The static workflow contract must verify this
+dependent evidence job and the exact release order. A new protected release
+must finish the final evaluation with one or more results for every fresh E2E
+conversation; earlier releases remain failed evidence.
 
 ## Hosted-agent release token-lifetime correction (2026-07-28)
 
