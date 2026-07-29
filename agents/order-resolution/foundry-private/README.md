@@ -141,6 +141,13 @@ then run `scripts/github/bootstrap_vm_runner_host.sh` and
 `foundry-private-v2` label. Only after GitHub reports that label online may a
 private release be dispatched.
 
+If the source-controlled VM and registration remain intact but the VM is
+deallocated, dispatch **Order Resolution Private Runner Start** with
+`confirmation=start`. It starts only `vm-maffnd-runner` through the existing
+environment-scoped OIDC identity, waits for `PowerState/running`, then waits
+for the existing `foundry-private-v2` GitHub runner registration to be online.
+It does not create or modify RBAC, OIDC, networking, secrets, or VM extensions.
+
 For release automation changes, the only local private validation is:
 
 ```bash

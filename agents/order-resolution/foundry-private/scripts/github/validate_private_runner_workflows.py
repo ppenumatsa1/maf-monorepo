@@ -82,6 +82,26 @@ def validate() -> None:
     for name in DEPLOYMENT_WORKFLOWS:
         validate_deployment_workflow(name)
 
+    runner_start_workflow = (WORKFLOWS / "order-resolution-private-runner-start.yml").read_text()
+    for value in (
+        "confirmation:",
+        "options: [cancel, start]",
+        "runs-on: ubuntu-latest",
+        "environment: foundry-private-env",
+        "id-token: write",
+        "az vm start",
+        'PRIVATE_RUNNER_VM_NAME: vm-maffnd-runner',
+        "PowerState/running",
+        "actions/runners",
+        "PRIVATE_RUNNER_LABEL",
+    ):
+        require(runner_start_workflow, value, "private runner-start workflow")
+    forbid(
+        runner_start_workflow,
+        "az vm run-command",
+        "private runner-start workflow",
+    )
+
     for name in SERIALIZED_PRIVATE_WORKFLOWS:
         require(
             (WORKFLOWS / name).read_text(),

@@ -1,0 +1,72 @@
+name: Order Resolution Private Runner Start
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Select start to start the existing private runner VM and wait for GitHub registration.
+        required: true
+        type: choice
+        default: cancel
+        options: [cancel, start]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+env:
+  TARGET_RESOURCE_GROUP: rg-maf-ora-foundry-v2
+  PRIVATE_RUNNER_VM_NAME: vm-maffnd-runner
+  PRIVATE_RUNNER_LABEL: foundry-private-v2
+
+jobs:
+  start-runner:
+    if: ${{ inputs.confirmation == 'start' }}
+    runs-on: ubuntu-latest
+    environment: foundry-private-env
+    steps:
+      - name: Authenticate with the deployment environment's federated Azure identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Start the existing private runner VM
+        run: |
+          set -euo pipefail
+          az vm start \
+            --resource-group "$TARGET_RESOURCE_GROUP" \
+            --name "$PRIVATE_RUNNER_VM_NAME" \
+            --no-wait
+          for attempt in $(seq 1 30); do
+            state="$(az vm get-instance-view \
+              --resource-group "$TARGET_RESOURCE_GROUP" \
+              --name "$PRIVATE_RUNNER_VM_NAME" \
+              --query "instanceView.statuses[?code=='PowerState/running'].code | [0]" \
+              --output tsv)"
+            if [[ "$state" == "PowerState/running" ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Private runner VM did not reach PowerState/running within five minutes."
+          exit 1
+      - name: Wait for the private GitHub Actions runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            runners_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runners")"
+            online_count="$(printf '%s' "$runners_json" | jq \
+              --arg label "$PRIVATE_RUNNER_LABEL" \
+              '[.runners[] | select(( [.labels[].name] | index($label)) and .status=="online")] | length')"
+            if [[ "$online_count" -ge 1 ]]; then
+              echo "Private runner readiness check passed for ${PRIVATE_RUNNER_LABEL}."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Private runner VM is running but no matching GitHub runner became online."
+          exit 1

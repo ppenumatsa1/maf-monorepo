@@ -345,6 +345,25 @@ query now casts it to string immediately after expansion, with static and
 unit-test coverage. The correction is limited to evidence query syntax; all
 private topology and access controls remain unchanged.
 
+## Private runner deallocation recovery (2026-07-29)
+
+**Root cause.** After protected release `30477645384` completed deployment,
+connectivity proof, and PostgreSQL lockdown, its evidence job was canceled
+before E2E. GitHub then reported the sole `foundry-private-v2` runner offline,
+and read-only Azure VM inspection showed the source-controlled
+`vm-maffnd-runner` was `VM deallocated` with provisioning state `Succeeded`.
+The next protected release therefore remained queued.
+
+**Precise fix.** A protected, manually confirmed
+`order-resolution-private-runner-start.yml` workflow now runs on
+`ubuntu-latest` with the existing `foundry-private-env` OIDC identity. It
+starts only the existing private runner VM, waits for its running power state,
+and then waits for GitHub to observe the existing required runner label. It
+does not use Run Command, modify VM extensions, add RBAC/OIDC, recreate the
+runner, open a network path, or change secrets. This makes routine
+deallocation recovery reproducible from the repository while retaining the
+separate Bastion/IaC recovery path for a deleted VM or registration.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a
