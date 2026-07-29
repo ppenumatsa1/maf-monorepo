@@ -273,6 +273,22 @@ private workflow validator, then a fresh protected release. Closure still
 requires all three fresh E2E conversations to produce completed Foundry
 evaluation results after the locked-down private release path.
 
+## Evidence AZD context correction (2026-07-29)
+
+**Root cause.** The first protected release containing the trace-identity fix,
+`30467055999`, completed deployment, connectivity proof, and PostgreSQL
+lockdown but stopped before hosted E2E. The new evidence script changed to the
+repository root before reading `AGENT_ORDER_RESOLUTION_HOSTED_NAME` and
+`AGENT_ORDER_RESOLUTION_HOSTED_VERSION`; `azd env get-value` requires the
+selected Foundry AZD project directory, so the command returned no value under
+`set -e`.
+
+**Precise fix.** The script now reads both active agent values while still in
+`infra/foundry-hosted`, then changes to the repository root for E2E and
+telemetry collection. The release remains fail-closed: missing active agent
+identity still stops evidence before invoking the agent or evaluator. No Azure
+resource, RBAC, OIDC, network, firewall, or secret was changed.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a

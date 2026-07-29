@@ -24,7 +24,6 @@ if [[ -z "$resource_group" || -z "$application_insights_target" ]]; then
   exit 1
 fi
 
-cd "$ROOT_DIR"
 hosted_agent_name="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_NAME)"
 hosted_agent_version="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_VERSION)"
 if [[ -z "$hosted_agent_name" || -z "$hosted_agent_version" ]]; then
@@ -32,6 +31,7 @@ if [[ -z "$hosted_agent_name" || -z "$hosted_agent_version" ]]; then
   exit 1
 fi
 
+cd "$ROOT_DIR"
 ./scripts/github/foundry_hosted_e2e.sh
 AZURE_RESOURCE_GROUP="$resource_group" \
 APPLICATION_INSIGHTS_NAME="${application_insights_target##*/}" \
