@@ -322,6 +322,7 @@ def validate() -> None:
         "evaluation_trace_conversation_count",
         "evaluation_trace_ids",
         "arg_max(timestamp, operation_Id)",
+        "extend conversationId = tostring(conversationId)",
         "LogsQueryClient",
         "APP_INSIGHTS_QUERY_MAX_ATTEMPTS",
         "gen_ai.conversation.id",

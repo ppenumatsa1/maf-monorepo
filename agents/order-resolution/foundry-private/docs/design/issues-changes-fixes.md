@@ -337,6 +337,14 @@ rather than objects with a `name` property. The parser now accepts both
 documented SDK result representations and has a focused regression test. This
 is a local result-parsing correction with no Azure control-plane change.
 
+**Trace-ID query follow-up.** Protected release `30476429820` completed the
+telemetry eligibility polling and then surfaced an Application Insights KQL
+semantic error while selecting trace IDs: `mv-expand` produced a dynamic
+`conversationId`, which cannot be used as a `summarize` group key. The trace
+query now casts it to string immediately after expansion, with static and
+unit-test coverage. The correction is limited to evidence query syntax; all
+private topology and access controls remain unchanged.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a

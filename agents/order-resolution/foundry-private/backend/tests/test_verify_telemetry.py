@@ -57,6 +57,7 @@ def test_telemetry_queries_filter_exact_agent_and_conversations() -> None:
         assert 'dynamic(["order-resolution-hosted:7"])' in query
         assert "gen_ai.conversation.id" in query
         assert "gen_ai.agent.id" in query
+    assert "| extend conversationId = tostring(conversationId)" in trace_ids_query
     assert "arg_max(timestamp, operation_Id)" in trace_ids_query
 
 

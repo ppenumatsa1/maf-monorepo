@@ -113,6 +113,7 @@ union isfuzzy=true traces, dependencies, requests, customEvents, exceptions
 | extend genAiConversationId = tostring(parse_json(dimensions)["gen_ai.conversation.id"])
 | extend genAiAgentId = tostring(parse_json(dimensions)["gen_ai.agent.id"])
 | mv-expand conversationId = conversationIds
+| extend conversationId = tostring(conversationId)
 | where dimensions has tostring(conversationId)
 | where dimensions has '"gen_ai.operation.name":"invoke_agent"'
     and dimensions has 'gen_ai.input.messages'
