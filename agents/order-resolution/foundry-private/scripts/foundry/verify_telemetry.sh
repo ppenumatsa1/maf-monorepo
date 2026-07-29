@@ -9,4 +9,5 @@ PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
   exit 1
 }
 
+cd "${ROOT_DIR}/backend"
 exec "$PYTHON" -m evals.verify_telemetry

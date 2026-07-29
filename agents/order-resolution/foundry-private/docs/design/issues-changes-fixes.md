@@ -322,6 +322,14 @@ the evaluator uses the official trace-ID request shape:
 no Azure resource, RBAC, OIDC, secret, public access, or network
 configuration.
 
+**Execution-context follow-up.** Protected release `30473686601` confirmed
+the clean evidence target installed the new SDK and completed hosted E2E, then
+stopped because the wrapper invoked `python -m evals.verify_telemetry` from
+the private lane root. `evals` is a backend module and is importable only from
+`backend` (or when that directory is on `PYTHONPATH`). The wrapper now changes
+to `backend` before the module invocation. This corrects repository execution
+context only; it does not alter Azure configuration or access controls.
+
 ## Clean-runner E2E dependency correction (2026-07-28)
 
 GitHub Actions run `30370787132` failed the design-review browser gate on a
