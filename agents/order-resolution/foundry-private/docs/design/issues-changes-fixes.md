@@ -364,6 +364,27 @@ input and output. The change remains restricted to explicitly marked private
 E2E content and does not enable global content capture or change Azure access
 controls.
 
+## Private release closure evidence (2026-07-29)
+
+Protected release
+[`30493060929`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/30493060929)
+completed successfully from `foundry-private-v2` at commit `e64b1ff`.
+
+| Gate | Current evidence |
+| --- | --- |
+| Deployment | Backend/frontend and hosted agent deployed from private ACR; `order-resolution-hosted` version `23` became active. |
+| Connectivity | Fresh ACA/hosted-agent PostgreSQL connectivity proof recorded before lockdown. |
+| PostgreSQL | The explicitly confirmed private-access lockdown completed after fresh proof. |
+| Hosted E2E | Low-risk, high-risk approval/resume, and damaged-item approval/resume scenarios passed with three fresh conversations. |
+| Telemetry | 69 correlated Application Insights rows and four eligible `invoke_agent` spans covered all three E2E conversations without exceptions. |
+| Foundry evaluation | `eval_cf1bb4a15cb34dcf8566d3df7fb1ee60` / `evalrun_323d7b1092f64d0ba061e6ab5ac93af4` completed with 3 total, 3 passed, 0 failed, and 0 errored results. |
+
+No ad-hoc RBAC, OIDC, secret, firewall, public-access, or network change was
+used to close this release. The temporary runner deallocation was recovered by
+starting the existing source-managed VM; the current tracked recovery workflow
+keeps that operational action least-privileged and does not use VM Run Command
+or runner-administration credentials.
+
 ## Private runner deallocation recovery (2026-07-29)
 
 **Root cause.** After protected release `30477645384` completed deployment,
