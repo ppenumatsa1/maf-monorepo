@@ -372,6 +372,14 @@ def validate() -> None:
         'FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}"',
     ):
         require(evidence_collection, value, "private release evidence collection")
+    hosted_agent = (Path(PRIVATE_PREFIX) / "backend/foundry/main.py").read_text()
+    for value in (
+        '"gen_ai.input.messages"',
+        '"gen_ai.output.messages"',
+        '"parts": [',
+        '"type": "text"',
+    ):
+        require(hosted_agent, value, "private hosted trace messages")
     evidence_target = makefile.split("foundry-evidence:", maxsplit=1)[1].split(
         "\n\nfoundry-release:", maxsplit=1
     )[0]

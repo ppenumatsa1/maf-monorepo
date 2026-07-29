@@ -456,7 +456,12 @@ def _set_trace_evaluation_input(
             [
                 {
                     "role": "user",
-                    "content": input_text,
+                    "parts": [
+                        {
+                            "type": "text",
+                            "content": input_text,
+                        }
+                    ],
                 }
             ]
         ),
@@ -480,7 +485,12 @@ def _set_trace_evaluation_output(
             [
                 {
                     "role": "assistant",
-                    "content": message,
+                    "parts": [
+                        {
+                            "type": "text",
+                            "content": message,
+                        }
+                    ],
                 }
             ]
         ),

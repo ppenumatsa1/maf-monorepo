@@ -603,13 +603,23 @@ async def test_run_from_responses_records_genai_messages_for_trace_evaluation(
     assert json.loads(str(span.attributes["gen_ai.input.messages"])) == [
         {
             "role": "user",
-            "content": "Resolve delayed order ORD-1001",
+            "parts": [
+                {
+                    "type": "text",
+                    "content": "Resolve delayed order ORD-1001",
+                }
+            ],
         }
     ]
     assert json.loads(str(span.attributes["gen_ai.output.messages"])) == [
         {
             "role": "assistant",
-            "content": "Resolution complete.",
+            "parts": [
+                {
+                    "type": "text",
+                    "content": "Resolution complete.",
+                }
+            ],
         }
     ]
     assert span.attributes["gen_ai.agent.name"] == "order-resolution-hosted"

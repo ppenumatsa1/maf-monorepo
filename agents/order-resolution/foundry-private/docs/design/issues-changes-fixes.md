@@ -354,6 +354,16 @@ trace-selection query now uses `arg_max` to select the latest row and projects
 `operation_Id` explicitly before persisting IDs. This source-only evidence fix
 does not alter private resources, access, or data-plane controls.
 
+**Message-schema follow-up.** Protected release `30491730680` then proved the
+three persisted IDs were valid but Foundry rejected every span as unsupported:
+the emitted message JSON used a legacy direct `content` field. The Foundry
+trace-evaluation contract requires OpenTelemetry GenAI message `parts`, so
+marked validation spans now emit
+`{"role": "...", "parts": [{"type": "text", "content": "..."}]}` for both
+input and output. The change remains restricted to explicitly marked private
+E2E content and does not enable global content capture or change Azure access
+controls.
+
 ## Private runner deallocation recovery (2026-07-29)
 
 **Root cause.** After protected release `30477645384` completed deployment,

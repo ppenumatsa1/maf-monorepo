@@ -100,7 +100,10 @@ script marks only its validation requests, so later ordinary hosted traffic
 remains redacted even though the source-controlled hosted-agent deployment
 enables the request-level feature. Global
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` and `OTEL_RECORD_CONTENT`
-remain disabled.
+remain disabled. Marked messages use the GenAI semantic-convention JSON
+format: each `user` or `assistant` message carries
+`parts: [{"type": "text", "content": "..."}]`, rather than a legacy direct
+`content` field. Foundry trace evaluation rejects unsupported message shapes.
 
 FastAPI request instrumentation is applied after app creation so hosted API calls are expected in `AppRequests`. Workflow, MAF, and Foundry model spans are exported as dependencies.
 
