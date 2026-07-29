@@ -144,8 +144,9 @@ private release be dispatched.
 If the source-controlled VM and registration remain intact but the VM is
 deallocated, dispatch **Order Resolution Private Runner Start** with
 `confirmation=start`. It starts only `vm-maffnd-runner` through the existing
-environment-scoped OIDC identity, waits for `PowerState/running`, then waits
-for the existing `foundry-private-v2` GitHub runner registration to be online.
+environment-scoped OIDC identity and waits for `PowerState/running`. The
+subsequent protected release job is the GitHub registration readiness proof;
+the workflow token intentionally lacks runner-administration permission.
 It does not create or modify RBAC, OIDC, networking, secrets, or VM extensions.
 
 For release automation changes, the only local private validation is:

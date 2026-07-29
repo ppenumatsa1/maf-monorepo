@@ -92,7 +92,6 @@ def validate() -> None:
         "az vm start",
         'PRIVATE_RUNNER_VM_NAME: vm-maffnd-runner',
         "PowerState/running",
-        "actions/runners",
         "PRIVATE_RUNNER_LABEL",
     ):
         require(runner_start_workflow, value, "private runner-start workflow")

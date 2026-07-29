@@ -358,9 +358,12 @@ The next protected release therefore remained queued.
 `order-resolution-private-runner-start.yml` workflow now runs on
 `ubuntu-latest` with the existing `foundry-private-env` OIDC identity. It
 starts only the existing private runner VM, waits for its running power state,
-and then waits for GitHub to observe the existing required runner label. It
-does not use Run Command, modify VM extensions, add RBAC/OIDC, recreate the
-runner, open a network path, or change secrets. This makes routine
+and leaves GitHub registration proof to the subsequent protected release job.
+The environment's `GITHUB_TOKEN` correctly lacks self-hosted-runner
+administration permission, so the workflow does not attempt to list runners
+through the administrative GitHub API or introduce a token secret. It does not
+use Run Command, modify VM extensions, add RBAC/OIDC, recreate the runner,
+open a network path, or change secrets. This makes routine
 deallocation recovery reproducible from the repository while retaining the
 separate Bastion/IaC recovery path for a deleted VM or registration.
 
