@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: maf-underwriting-foundry-public
+services:
+    underwriting-hosted:
+        project: ./agent
+        host: azure.ai.agent
+        language: docker
+        env:
+            AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+            DATABASE_URL: ${RUNTIME_DATABASE_URL}
+            DB_AUTH_MODE: password
+            ENABLE_INSTRUMENTATION: "true"
+            ENABLE_TELEMETRY: "true"
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"
+            OTEL_SERVICE_NAME: underwriting-hosted
+            RUNTIME_DATABASE_URL: ${RUNTIME_DATABASE_URL}
+            UNDERWRITING_APPINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
+            UNDERWRITING_MODEL_DEPLOYMENT_NAME: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        kind: hosted
+        name: underwriting-hosted
+        protocols:
+            - protocol: responses
+              version: 2.0.0
+        startupCommand: python -m foundry.main
+infra:
+    provider: bicep
+    path: ./iac

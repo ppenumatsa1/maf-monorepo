@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "foundryAccountName": { "value": "${FOUNDRY_ACCOUNT_NAME}" },
+    "foundryProjectName": { "value": "${FOUNDRY_PROJECT_NAME}" },
+    "containerRegistryName": { "value": "${CONTAINER_REGISTRY_NAME}" },
+    "postgresServerName": { "value": "${POSTGRES_SERVER_NAME}" },
+    "postgresServerLocation": { "value": "${POSTGRES_SERVER_LOCATION}" },
+    "postgresAdministratorLogin": { "value": "${POSTGRES_ADMIN_USERNAME}" },
+    "postgresOperatorIp": { "value": "${POSTGRES_OPERATOR_IP}" },
+    "postgresAdministratorPassword": { "value": "${POSTGRES_ADMIN_PASSWORD}" },
+    "postgresDatabaseName": { "value": "${POSTGRES_DATABASE}" },
+    "containerAppsEnvironmentName": { "value": "${CONTAINER_APPS_ENVIRONMENT_NAME}" },
+    "backendContainerAppName": { "value": "${BACKEND_CONTAINER_APP_NAME}" },
+    "publicBackendManagedIdentityName": { "value": "${PUBLIC_BACKEND_MANAGED_IDENTITY_NAME}" },
+    "frontendContainerAppName": { "value": "${FRONTEND_CONTAINER_APP_NAME}" },
+    "applicationInsightsName": { "value": "${APPLICATION_INSIGHTS_NAME}" },
+    "logAnalyticsWorkspaceName": { "value": "${LOG_ANALYTICS_WORKSPACE_NAME}" }
+  }
+}

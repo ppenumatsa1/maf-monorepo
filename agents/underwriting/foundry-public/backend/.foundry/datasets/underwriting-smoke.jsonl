@@ -1,0 +1,2 @@
+{"query":"Run the default underwriting application and return the decision.", "expected_behavior":"Returns a completed underwriting workflow result with a decision and rationale."}
+{"query":"{\"application\":{\"application_id\":\"eval-low-risk\",\"applicant_name\":\"Ada Lovelace\",\"age\":38,\"income\":145000,\"requested_coverage\":500000,\"health_disclosures\":\"none\",\"driving_history\":\"clean\",\"credit_score\":760}}", "expected_behavior":"Returns a completed underwriting workflow result for the supplied application."}

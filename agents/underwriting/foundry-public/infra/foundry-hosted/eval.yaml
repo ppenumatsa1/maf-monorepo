@@ -1,0 +1,11 @@
+name: underwriting-public-smoke
+agent:
+  name: underwriting-hosted
+dataset:
+  local_uri: ../../backend/.foundry/datasets/underwriting-smoke.jsonl
+evaluators:
+  - builtin.task_adherence
+  - builtin.intent_resolution
+  - builtin.relevance
+options:
+  pass_threshold: 0.8

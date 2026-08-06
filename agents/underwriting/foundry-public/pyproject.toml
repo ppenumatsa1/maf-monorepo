@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "underwriting-maf-prototype"
+version = "0.2.0"
+description = "Insurance underwriting prototype using Microsoft Agent Framework"
+requires-python = ">=3.11"
+dependencies = [
+  "agent-framework-core==1.13.0",
+  "agent-framework-azure-ai==1.0.0rc6",
+  "agent-framework-ag-ui==1.0.1",
+  "azure-identity>=1.25.0,<2.0.0",
+  "azure-monitor-opentelemetry>=1.8.0,<2.0.0",
+  "azure-ai-projects>=2.4.0,<3.0.0",
+  "azure-ai-agentserver-core[tracing]==2.0.0b7",
+  "azure-ai-agentserver-responses==1.0.0b8",
+  "fastapi>=0.121.0,<0.140.0",
+  "uvicorn[standard]>=0.30.0,<1.0.0",
+  "SQLAlchemy==2.0.41",
+  "psycopg[binary]==3.2.9",
+  "python-dotenv==1.1.1",
+  "opentelemetry-api>=1.42.0",
+  "opentelemetry-sdk>=1.42.0",
+  "opentelemetry-exporter-otlp>=1.42.0",
+  "opentelemetry-instrumentation-fastapi>=0.63b0",
+  "opentelemetry-instrumentation-openai-v2>=2.3.0b0,<3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.4.1",
+  "ruff>=0.12.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["frontend", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
