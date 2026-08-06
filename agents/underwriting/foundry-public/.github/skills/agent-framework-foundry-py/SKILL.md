@@ -9,7 +9,7 @@ Use this repository-owned skill for underwriting workflow implementation and rev
 
 ## Runtime ownership
 
-- backend/app/maf/workflows/\* owns parent/child workflow orchestration.
+- backend/app/maf/workflows/\* owns master-workflow orchestration.
 - backend/app/maf/executors/\* owns underwriting stage logic.
 - backend/app/maf/middleware/\* owns resilience and failure shaping.
 - backend/app/maf/runner.py owns run execution and streaming behavior.
@@ -19,8 +19,9 @@ Use this repository-owned skill for underwriting workflow implementation and rev
 ## Workflow guardrails
 
 - Keep orchestration in MAF workflows; do not move decision flow into API routes.
+- Keep risk, credit, medical, and driving as direct executors that fan out and fan in in one master-workflow superstep; do not reintroduce nested workflows.
 - Emit additive stream projections for AG-UI consumers; keep native workflow events stable.
-- Preserve deterministic checkpoint and resume behavior for crash/restart handling.
+- Preserve deterministic checkpoint and resume behavior for crash/restart handling. Only checkpoints produced by the deployed direct-executor graph are resumable; version-40 nested-graph checkpoints have no compatibility workflow or fallback.
 - Keep idempotency and retry semantics explicit and observable in emitted events.
 
 ## Required verification

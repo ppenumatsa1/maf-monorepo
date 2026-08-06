@@ -9,16 +9,20 @@ model.
 
 ## Initial Underwriting Decisions
 
-### ADR-001: Use a MAF parent workflow with four child checks
+### ADR-001: Use a MAF parent workflow with four child checks — superseded
 
-**Decision:** Model underwriting as one parent workflow that fans out to risk,
-credit, medical, and driving child workflows, then fans in their results.
+**Original decision:** Model underwriting as one parent workflow that fans out
+to risk, credit, medical, and driving child workflows, then fans in their
+results.
 
 **Why:** Each assessment is independently observable and recoverable, while the
 final decision still depends on a complete, shared underwriting state.
 
-**Result:** The workflow retains explicit executor message contracts and can
-show partial progress without emitting a premature decision.
+**Original result:** The workflow retained explicit executor message contracts
+and could show partial progress without emitting a premature decision.
+
+**Status:** Superseded by ADR-011. This record remains for historical
+accuracy; it is not the supported deployed workflow design.
 
 ### ADR-002: Keep the policy decision deterministic
 
@@ -134,6 +138,22 @@ skills define the release path. Hosted readiness claims require dated evidence
 in [issues-changes-fixes.md](issues-changes-fixes.md). PostgreSQL credential
 rotation/readiness remains supported, while a rebuild remains explicitly
 confirmed and destructive.
+
+### ADR-011: Use one master workflow with direct underwriting executors
+
+**Decision:** Replace the nested parent/child workflow design with one master
+underwriting workflow. Its risk, credit, medical, and driving executors fan
+out and fan in in one superstep.
+
+**Why:** The deployed runtime needs one explicit graph and checkpoint shape for
+the underwriting decision. Nested graph recovery would otherwise leave
+ambiguous checkpoint ownership and a migration burden.
+
+**Result:** Only checkpoints written by the deployed master direct-executor
+graph are supported for resume. Version-40 nested-graph checkpoints are
+unsupported after deployment. There is no compatibility workflow, checkpoint
+migration path, or fallback; an affected pre-cutover run must start again.
+This decision documents the cutover only and does not claim release success.
 
 ## Related Documents
 

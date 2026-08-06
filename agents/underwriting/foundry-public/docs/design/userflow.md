@@ -16,8 +16,8 @@ Fresh hosted release evidence belongs in [issues-changes-fixes.md](issues-change
 1. Operator selects a scenario (happy path, retry, crash) and submits an application.
 2. UI starts a hosted run and opens AG-UI stream updates.
 3. Public adapter creates or reuses one `workflow_run_id` and invokes the hosted Responses agent.
-4. Hosted agent starts parent workflow orchestration and persists the durable run.
-5. Parent workflow fans out to risk, credit, medical, and driving child workflows.
+4. Hosted agent starts the master workflow and persists the durable run.
+5. The master workflow fans out directly to risk, credit, medical, and driving executors in one superstep.
 6. Fan-in aggregator updates shared state as each check completes.
 7. Final decision computes deterministic score and approval outcome.
 8. Optional model rationale is attached to the final decision output.
@@ -28,7 +28,7 @@ Fresh hosted release evidence belongs in [issues-changes-fixes.md](issues-change
 1. Operator runs crash scenario (`crash_after_executor` set by scenario).
 2. Backend returns `CRASHED` status with the same `workflow_run_id`.
 3. UI invokes resume for that run.
-4. Resume loads latest persisted MAF checkpoint.
+4. Resume loads the latest persisted checkpoint only when it was written by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; there is no compatibility workflow or fallback.
 5. Remaining checks and final decision complete.
 6. Idempotency prevents duplicate side effects during replayed execution steps.
 

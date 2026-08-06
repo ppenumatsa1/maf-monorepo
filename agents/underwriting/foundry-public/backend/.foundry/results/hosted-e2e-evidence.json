@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-08-06T20:43:46Z",
-  "started_at": "2026-08-06T20:42:40Z",
+  "generated_at": "2026-08-06T21:49:39Z",
+  "started_at": "2026-08-06T21:48:36Z",
   "frontend_url": "https://azcawhcedyxchnbtmpubfe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io",
   "backend_url": "https://azcawhcedyxchnbtmpubbe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io",
   "resource_group": "rg-underwriting-readiness-0731",
   "backend_container_app": "azcawhcedyxchnbtmpubbe",
   "frontend_container_app": "azcawhcedyxchnbtmpubfe",
   "workflow_run_ids": [
-    "run-hosted-happy-20260806204240-294236",
-    "run-hosted-recover-20260806204240-294236"
+    "run-hosted-happy-20260806214836-359053",
+    "run-hosted-recover-20260806214836-359053"
   ],
-  "happy_run_id": "run-hosted-happy-20260806204240-294236",
-  "recovered_run_id": "run-hosted-recover-20260806204240-294236",
+  "happy_run_id": "run-hosted-happy-20260806214836-359053",
+  "recovered_run_id": "run-hosted-recover-20260806214836-359053",
   "happy_decision": "APPROVED",
   "recovered_decision": "APPROVED",
   "playwright_status": "passed"

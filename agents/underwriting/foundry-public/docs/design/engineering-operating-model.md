@@ -31,7 +31,7 @@ Underwriting adopts Order Resolution's release governance without changing the u
 
 - One underwriting business workflow. The hosted lane may not bypass MAF orchestration.
 - Deterministic scoring remains authoritative; model rationale can explain the result but not change the policy outcome.
-- Parent/child fan-out/fan-in behavior remains explicit and resumable.
+- Master-workflow direct-executor fan-out/fan-in behavior remains explicit and resumable only from checkpoints written by the deployed graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
 - `maf_checkpoints` remains the authoritative checkpoint backend for resume.
 - Retry/backoff applies to transient read/model operations; side-effecting writes must remain idempotent.
 - Resume is keyed by `workflow_run_id` and must not duplicate business writes.
@@ -51,29 +51,27 @@ Underwriting adopts Order Resolution's release governance without changing the u
 
 ## Canonical release workflow
 
-Run local gates first, then use the checked-in authenticated release sequence:
+Run local gates first, then use the checked-in authenticated release
+orchestrator:
 
 ```bash
-make foundry-bootstrap
-make foundry-iac-build
-make foundry-provision
-make foundry-postgres-schema
-make foundry-postgres-credentials
-make foundry-postgres-readiness
-make foundry-deploy
-make foundry-backend-deploy
-make foundry-frontend-deploy
-make foundry-smoke
-make foundry-eval
+make foundry-release
 ```
 
 Release workflow rules:
 
 1. Use current operator environment values and local authenticated secrets.
-2. Do not claim readiness from partial command success.
-3. Validate both workflow behavior and telemetry correlation.
-4. Record the exact commands, outcomes, `workflow_run_id` values, evaluation IDs, and deferrals in the delivery ledger.
-5. If a clean cutover problem is found, fix the hosted path or adapter boundary; do not paper over it with compatibility shims.
+2. Run the selected validation target and Bicep build concurrently; after
+   shared readiness, deploy the backend, frontend, and hosted agent
+   concurrently. The deployment router selects full provisioning or app-only
+   deployment.
+3. Run hosted smoke before the Foundry evaluation and deployed browser E2E
+   gates, which run concurrently; start telemetry validation after E2E writes
+   its evidence.
+4. Do not claim readiness from partial command success.
+5. Record the exact commands, outcomes, `workflow_run_id` values, evaluation
+   IDs, and deferrals in the delivery ledger.
+6. If a clean cutover problem is found, fix the hosted path or adapter boundary; do not paper over it with compatibility shims.
 
 ## Evidence handoff
 
@@ -86,6 +84,9 @@ For every deployment-impacting or operating-model change, record in `docs/design
 - Foundry evaluation IDs and outcome counts;
 - Application Insights / Foundry trace evidence;
 - open issues, fixes, and explicit deferrals.
+
+The ignored `deployment-report/` directory may retain local timing observations,
+but it is not release evidence.
 
 ## Baseline scenarios
 

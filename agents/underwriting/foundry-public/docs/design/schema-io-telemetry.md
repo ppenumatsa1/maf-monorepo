@@ -78,6 +78,7 @@
 - The public adapter starts or resumes hosted Responses work; it must not grow a second production orchestration contract.
 - Durable reads for refresh/replay/assistant explanation come from PostgreSQL-backed projections.
 - Local-only validation settings must not leak into deployed public-lane behavior.
+- Resume accepts only checkpoints produced by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
 
 ## Database surfaces
 
@@ -98,13 +99,18 @@
   - `http.status_code`
   - `http.duration_ms`
 - `APPLICATIONINSIGHTS_CONNECTION_STRING` enables Azure Monitor exporter.
-- Hosted workflow telemetry uses a 100% sampling ratio so short fan-out/executor spans are retained consistently with their parent workflow.
+- Hosted workflow telemetry uses a 100% sampling ratio so short direct-executor fan-out/fan-in spans are retained consistently with their master workflow.
 - `OpenAIInstrumentor` records public-backend model metadata without capturing application or decision content.
 - Local fallback supports console tracing when `ENABLE_CONSOLE_TRACING=true`.
 
 ### Public UI to Foundry correlation
 
-For start and resume actions, the public adapter invokes `underwriting-hosted` through the agent-specific Responses endpoint. Start input carries the validated application only in the Responses body so the hosted workflow can execute it. Responses metadata contains only safe identifiers:
+`FOUNDRY_PROJECT_ENDPOINT` is the canonical Foundry project endpoint
+configuration. For start and resume actions, the public adapter derives and
+invokes the `underwriting-hosted` agent-specific Responses endpoint from that
+project endpoint. Start input carries the validated application only in the
+Responses body so the hosted workflow can execute it. Responses metadata
+contains only safe identifiers:
 
 ```json
 {
@@ -115,6 +121,12 @@ For start and resume actions, the public adapter invokes `underwriting-hosted` t
 ```
 
 The hosted handler executes MAF and writes PostgreSQL checkpoints, events, state, and final results. The public adapter reads those projections. The browser, public adapter, Responses metadata, and telemetry must never expose a PostgreSQL credential or token. OpenTelemetry model-content capture remains disabled.
+
+The `foundry.responses.invoke` span deliberately provides
+`gen_ai.input.messages` and `gen_ai.output.messages` for report-only
+evaluation. They contain only redacted action, terminal-status, and decision
+summaries; they must not contain applicant input, workflow payloads, raw model
+output, or credentials.
 
 Each hosted stage receives the safe context below automatically:
 
@@ -133,7 +145,7 @@ Start and resume are separate Foundry Responses traces. Operators join them by `
 - Workflow-level visibility is provided through persisted `workflow_events` and state projections.
 - Checkpoint save/load logs include workflow and checkpoint identifiers for recovery diagnostics.
 - Frontend/operator views read durable run artifacts rather than relying solely on transient stream frames.
-- Foundry shows hosted parent/child workflow, model, retry, fan-in, and checkpoint spans. Application Insights correlates the public AG-UI Request, hosted conversation, and `workflow_run_id`.
+- Foundry shows the hosted master workflow, direct executor, model, retry, fan-in, and checkpoint spans. Application Insights correlates the public AG-UI Request, hosted conversation, and `workflow_run_id`.
 
 ### Operator trace lookup
 
@@ -151,4 +163,4 @@ union isfuzzy=true requests, dependencies, traces, exceptions, customEvents
 
 ## Release evidence linkage
 
-When hosted validation is run, record the relevant `workflow_run_id` values, evaluation IDs, and trace references in [issues-changes-fixes.md](issues-changes-fixes.md). Telemetry is part of the release contract, not optional background evidence.
+When hosted validation is run, record the relevant `workflow_run_id` values, evaluation IDs, and trace references in [issues-changes-fixes.md](issues-changes-fixes.md). The telemetry gate requires correlated Application Insights dependency spans named `foundry.responses.invoke` and `workflow.*` for every deployed E2E run; `traces` rows are supplemental evidence. Telemetry is part of the release contract, not optional background evidence.

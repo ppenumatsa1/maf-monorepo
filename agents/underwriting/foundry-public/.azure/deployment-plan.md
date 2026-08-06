@@ -22,17 +22,15 @@ resource-reuse PostgreSQL configuration.
 
 ## Deployment Sequence
 
-1. Validate local source, Bicep, script syntax, AZD environment, identity, and
-   resource prerequisites.
-2. Build the Bicep template and provision approved resource configuration.
-3. Apply PostgreSQL schema and rotate/provision the least-privilege runtime
-   credential using local authenticated secrets.
-4. Validate PostgreSQL TLS, authentication, firewall, and hosted runtime
-   readiness.
-5. Deploy the hosted Foundry agent, public backend, and public frontend.
-6. Execute hosted smoke, browser E2E, report-only Foundry trace evaluation,
-   and Application Insights correlation verification.
-7. Record dated evidence, run identifiers, evaluation results, and telemetry
+1. Run `make foundry-release` from the authenticated operator environment.
+2. Validate local source and build Bicep concurrently, then use the deployment
+   router to select full provisioning or app-only deployment.
+3. After shared readiness, deploy the hosted Foundry agent, public backend,
+   and public frontend concurrently.
+4. Execute hosted smoke, then run deployed browser E2E and report-only Foundry
+   evaluation concurrently.
+5. Verify Application Insights correlation after E2E writes its evidence.
+6. Record dated evidence, run identifiers, evaluation results, and telemetry
    references in `docs/design/issues-changes-fixes.md`.
 
 ## Safety and Rollback
@@ -156,5 +154,42 @@ remaining deployment workflow.
   `run-hosted-happy-20260806204240-294236` and
   `run-hosted-recover-20260806204240-294236`.
 - Foundry evaluation `eval_ddc6cba8d07f455fba4ee2f352296780` passed 1 of 1.
+- Application Insights telemetry verification passed with 64 correlated
+  request/dependency records and zero correlated exceptions.
+
+## 2026-08-06 Direct-Executor Workflow Cutover Validation Proof
+
+- `make validate-full` passed after flattening the underwriting graph: backend
+  lint/format, 43 backend tests, frontend lint/build/tests, script tests, and
+  local Playwright E2E all completed successfully.
+- The new topology regression test proves one master workflow contains the
+  four direct check executors and no nested `WorkflowExecutor` wrappers.
+- `az bicep build --file infra/foundry-hosted/iac/main.bicep` passed. The
+  existing `no-deployments-resources` Bicep warning remains non-blocking.
+- `azd provision --preview --no-prompt` passed in 26 seconds without mutation.
+  Its Foundry connection and PostgreSQL resource-reuse differences predate
+  this backend-only workflow change.
+- `azd package --no-prompt` passed in 3 seconds using the approved CFS PyPI
+  feed.
+- Azure authentication, subscription, environment, Docker build contexts, and
+  static least-privilege role assignments were revalidated. The deployment
+  uses no IaC, schema, identity, or RBAC change.
+- This is a clean graph cutover: checkpoints created by the nested
+  version-40 topology are unsupported for resume after deployment. No
+  compatibility workflow or fallback will be deployed.
+
+## 2026-08-06 Direct-Executor Deployment Completion Evidence
+
+- `azd provision --no-prompt` was a verified no-op; the existing Container App
+  identity retained `AcrPull` on the registry.
+- Hosted agent `underwriting-hosted` version `41` deployed from the refreshed
+  generated source context. Nested Python bytecode caches are now excluded
+  from that context so stale wrapper modules cannot enter the hosted image.
+- Public backend revision `azcawhcedyxchnbtmpubbe--0000020` and frontend
+  revision `azcawhcedyxchnbtmpubfe--0000011` report `Running`.
+- Hosted smoke passed with `run-smoke-20260806214717-357052`.
+- Deployed E2E passed for `run-hosted-happy-20260806214836-359053` and
+  `run-hosted-recover-20260806214836-359053`.
+- Foundry evaluation `eval_286f9bdf2cab4166accb2422a9292e55` passed 1 of 1.
 - Application Insights telemetry verification passed with 64 correlated
   request/dependency records and zero correlated exceptions.

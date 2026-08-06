@@ -21,6 +21,7 @@ tar \
   --exclude='backend/tests' \
   --exclude='backend/.pytest_cache' \
   --exclude='backend/__pycache__' \
+  --exclude='*/__pycache__' \
   --exclude='backend/.foundry/results' \
   --exclude='backend/.tmp' \
   -C "$ROOT_DIR" \

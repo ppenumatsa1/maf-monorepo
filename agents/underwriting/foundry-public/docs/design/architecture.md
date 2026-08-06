@@ -80,28 +80,28 @@ sequenceDiagram
   participant UI as React Console
   participant API as FastAPI Adapter
   participant Host as Foundry Hosted Agent
-  participant Parent as MAF Parent Workflow
-  participant Checks as Child Workflows
+  participant Master as MAF Master Workflow
+  participant Checks as Direct Executors
   participant DB as PostgreSQL
 
   Operator->>UI: Start underwriting run
   UI->>API: POST run
   API->>Host: Responses start
-  Host->>Parent: Execute workflow
-  Parent->>DB: Persist run and checkpoint
+  Host->>Master: Execute workflow
+  Master->>DB: Persist run and checkpoint
   par Risk check
-    Parent->>Checks: Run risk workflow
+    Master->>Checks: Run risk executor
   and Credit check
-    Parent->>Checks: Run credit workflow
+    Master->>Checks: Run credit executor
   and Medical check
-    Parent->>Checks: Run medical workflow
+    Master->>Checks: Run medical executor
   and Driving check
-    Parent->>Checks: Run driving workflow
+    Master->>Checks: Run driving executor
   end
-  Checks-->>Parent: CheckResult payloads
-  Parent->>Parent: Fan-in and deterministic decision
-  Parent->>DB: Persist events, state, and result
-  Parent-->>Host: Decision and rationale
+  Checks-->>Master: CheckResult payloads
+  Master->>Master: Fan-in and deterministic decision
+  Master->>DB: Persist events, state, and result
+  Master-->>Host: Decision and rationale
   Host-->>API: Response
   API-->>UI: Run projection
 
@@ -111,15 +111,15 @@ sequenceDiagram
     UI->>API: POST resume
     API->>Host: Responses resume
     Host->>DB: Load checkpoint
-    Host->>Parent: Continue remaining work
+    Host->>Master: Continue remaining work
   end
 ```
 
 ### Underwriting Message Flow
 
 1. `init_context` initializes shared workflow state and emits one check request per required domain.
-2. Parent fans out to child workflows through `WorkflowExecutor`.
-3. Each child emits one `CheckResult` payload.
+2. The master workflow fans out directly to the four executors in one superstep.
+3. Each direct executor emits one `CheckResult` payload.
 4. `fan_in_aggregator` incrementally merges child results into shared state.
 5. When all checks complete, `final_decision` computes policy outcome and score breakdown.
 6. Rationale generation enriches the final payload while deterministic decision remains authoritative.
@@ -129,7 +129,7 @@ sequenceDiagram
 
 - Middleware wraps check operations with retry/backoff behavior.
 - Crash injection can force controlled interruptions after a named executor.
-- Resume loads the latest checkpoint by `workflow_run_id` and continues remaining execution.
+- Resume loads the latest checkpoint by `workflow_run_id` and continues remaining execution only when that checkpoint was written by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
 - Idempotency guards prevent duplicate persistence when replay or resume re-enters completed handlers.
 
 ## Development View
@@ -150,9 +150,9 @@ flowchart TD
   B[Public FastAPI adapter] --> HOSTED[Foundry Responses host\nbackend/foundry/main.py]
   HOSTED --> SVC
   SVC --> RUN[UnderwritingMafRunner]
-  RUN --> WF[Parent Underwriting Workflow]
+  RUN --> WF[Master Underwriting Workflow]
   WF --> EX[init_context + fan-out/fan-in + final_decision]
-  EX --> CHILD[Risk/Credit/Medical/Driving child workflows]
+  EX --> CHECKS[Risk/Credit/Medical/Driving direct executors]
   WF --> EVT[workflow events + checkpoints]
   EVT --> DB[(workflow_runs/business_state/workflow_events/maf_checkpoints)]
   B --> AGUI[POST /api/v1/underwriting/ag-ui]
@@ -165,7 +165,7 @@ flowchart TD
 - **Application layer** (`backend/app/modules/underwriting`)
   - Orchestration service boundary and domain decision modeling.
 - **Workflow runtime** (`backend/app/maf`)
-  - Parent/child workflows, fan-out/fan-in executors, middleware, and AG-UI adapters.
+  - One master workflow, direct risk/credit/medical/driving executors, fan-out/fan-in, middleware, and AG-UI adapters.
 - **Persistence adapters** (`backend/app/infrastructure`)
   - PostgreSQL repositories for runs, state, events, results, and idempotency.
   - Real MAF checkpoint storage through `PostgresCheckpointStorage`.
@@ -189,12 +189,13 @@ The public hosted lane adopts Order Resolution's operating model:
 - the hosted Responses entrypoint owns production orchestration and writes;
 - local execution mode exists only for isolated validation;
 - no compatibility shim should reintroduce a second orchestration runtime, shadow checkpoint path, or direct browser-to-Foundry flow.
+- version-40 nested-graph checkpoints are not a supported resume input after deployment; there is no compatibility workflow or fallback.
 
 ### Verification
 
 1. Functional tests (`backend/tests`) validate fan-out/fan-in, idempotency, and resume behavior.
 2. E2E rubric (`frontend/tests/e2e/rubric.ts`) validates operator-facing lifecycle and recovery expectations.
-3. Hosted smoke/eval (`make foundry-smoke`, `make foundry-eval`, `make foundry-trace-eval`) validates real hosted workflow/model telemetry and public-request correlation.
+3. Hosted smoke/eval (`make foundry-smoke`, `make foundry-eval`) validates real hosted workflow/model telemetry and public-request correlation.
 4. Release governance and execution evidence are recorded in [`engineering-operating-model.md`](engineering-operating-model.md) and [`issues-changes-fixes.md`](issues-changes-fixes.md).
 
 ## Physical View

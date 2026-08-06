@@ -1,8 +1,8 @@
 # Implementation Phases
 
-## Phase 1 (completed): Local MAF underwriting core
+## Phase 1 (completed, superseded workflow shape): Local MAF underwriting core
 
-- Built real MAF parent/child workflow orchestration.
+- Built the original real MAF parent/child workflow orchestration.
 - Implemented fan-out/fan-in aggregation with shared state.
 - Added idempotency and retry/backoff middleware behavior.
 - Added custom PostgreSQL checkpoint storage and resume path.
@@ -16,12 +16,14 @@
 - Added Playwright E2E rubric for operator-path validation.
 - Added OpenTelemetry-based request instrumentation.
 
-## Phase 3 (completed in repo): Hosted durable execution clean cutover
+## Phase 3 (implemented in repo; release verification pending): Direct-executor master-workflow cutover
 
-- Moved the MAF parent/child workflow and PostgreSQL durability boundary into `backend/foundry/main.py`, the hosted Responses entrypoint.
+- Replaced the nested parent/child graph with one master workflow whose risk, credit, medical, and driving executors fan out/fan in in one superstep.
+- Kept the PostgreSQL durability boundary in `backend/foundry/main.py`, the hosted Responses entrypoint.
 - Converted the public API to a relay/read-model adapter and preserved AG-UI/history/CopilotKit contracts.
 - Kept retry/idempotency, crash/resume, and PostgreSQL checkpoints in the shared workflow rather than replacing them with hosted-lane shims.
 - Established the clean-cutover rule that deployed public traffic uses the hosted Responses lane while local execution mode remains validation-only.
+- Declared version-40 nested-graph checkpoints unsupported for resume after deployment. No compatibility workflow or fallback is provided.
 
 ## Phase 4 (required for live-readiness claims): Release governance and evidence
 
@@ -29,6 +31,7 @@
 - Run the checked-in authenticated release sequence and hosted validation gates.
 - Verify deployed smoke, E2E, Foundry workflow/model traces, Application Insights correlation, and trace evaluation.
 - Record evidence, issues, fixes, and deferrals in `docs/design/issues-changes-fixes.md`.
+- Verify a fresh post-cutover crash/resume run proves only the new master direct-executor checkpoint shape is resumed.
 
 ## Next phase candidates
 

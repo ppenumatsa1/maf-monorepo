@@ -1,5 +1,3 @@
-from typing import Never
-
 from agent_framework import Executor, WorkflowContext, handler
 
 from app.core.config import Settings
@@ -18,7 +16,7 @@ class MedicalCheckExecutor(Executor):
         self.settings = settings
 
     @handler
-    async def run(self, request: CheckRequest, ctx: WorkflowContext[Never, CheckResult]) -> None:
+    async def run(self, request: CheckRequest, ctx: WorkflowContext[CheckResult]) -> None:
         if request.check_type != CheckType.MEDICAL:
             return
 
@@ -44,7 +42,7 @@ class MedicalCheckExecutor(Executor):
         payload = invocation.payload
 
         if invocation.from_idempotency:
-            await ctx.yield_output(
+            await ctx.send_message(
                 CheckResult(
                     workflow_run_id=payload["workflow_run_id"],
                     application_id=payload["application_id"],
@@ -83,4 +81,4 @@ class MedicalCheckExecutor(Executor):
         maybe_crash_after_executor(
             self.settings, self.repository, request.workflow_run_id, "medical_check"
         )
-        await ctx.yield_output(result)
+        await ctx.send_message(result)

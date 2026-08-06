@@ -4,11 +4,11 @@ This file describes expected behavior for coding agents working in this reposito
 
 ## Project Context
 
-- Backend: FastAPI public adapter plus a single underwriting MAF workflow implemented with parent and child workflows.
+- Backend: FastAPI public adapter plus one master underwriting MAF workflow with direct executors.
 - Foundry hosted entrypoint: `backend/foundry/main.py` packaged by `backend/Dockerfile.hosted`.
 - Public lane: authenticated local AZD/Bicep flow under `infra/foundry-hosted/`; use the existing `make foundry-*` commands.
 - Frontend: React + Vite operations console that consumes AG-UI progress, durable run history, and an allowlisted CopilotKit selected-run assistant.
-- Workflow pattern: `init_context` fans out risk, credit, medical, and driving checks; child workflows emit one result each; `fan_in_aggregator` merges shared state; `final_decision` applies deterministic policy before rationale generation.
+- Workflow pattern: `init_context` fans out directly to risk, credit, medical, and driving executors in one superstep; `fan_in_aggregator` merges shared state; `final_decision` applies deterministic policy before rationale generation.
 - Persistence: PostgreSQL-backed `maf_checkpoints`, `workflow_runs`, `business_state`, `workflow_events`, `underwriting_results`, and `idempotency_records`.
 - Telemetry: preserve public-adapter request correlation, hosted Foundry spans, retry/backoff, checkpoint save/load, idempotency skip, fan-out/fan-in, and final decision spans.
 - Backend package boundaries:
@@ -25,6 +25,7 @@ This file describes expected behavior for coding agents working in this reposito
 2. Keep one underwriting workflow path; do not add alternate orchestration layers, duplicate adapters, or compatibility shims.
 3. `backend/foundry/main.py` constructs the real hosted MAF runner; the public adapter relays start/resume and reads durable projections.
 4. Preserve fan-out/fan-in, checkpoint/resume, retry, and idempotency semantics unless the task explicitly changes them.
+   Resume supports only checkpoints written by the deployed master direct-executor graph: version-40 nested-graph checkpoints have no compatibility workflow or fallback.
 5. Keep AG-UI additive to durable run/state/events/checkpoints APIs; do not move operator state to stream-only behavior.
 6. Preserve the CopilotKit allowlist boundary: only selected run id, normalized status, safe event/executor metadata, checkpoint summary, and categorical final decision may cross the bridge.
 7. If API, read-model, AG-UI, CopilotKit, or event contracts change intentionally, update frontend, tests, and docs in the same change set.

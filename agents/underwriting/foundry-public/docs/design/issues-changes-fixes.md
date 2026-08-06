@@ -10,6 +10,8 @@ Use it to separate **architecture intent** from **verified execution evidence**.
 - README and design docs describe the supported architecture and release workflow.
 - Only a fresh, dated ledger entry in this file should be used to claim hosted readiness, smoke completion, evaluation success, or telemetry verification.
 - If a change affects runtime behavior, release steps, telemetry, or public-lane topology, update this ledger in the same change set.
+- `deployment-report/` is ignored local timing evidence only; it is not a
+  substitute for this canonical release-evidence ledger.
 
 ## Clean cutover acceptance checks
 
@@ -21,6 +23,8 @@ Every hosted release entry should confirm the following:
 4. AG-UI and CopilotKit surfaces read or explain allowlisted durable projections only.
 5. Retry/idempotency and crash/resume behavior still correlate on one `workflow_run_id`.
 6. No compatibility shims were added to hide a hosted-lane defect.
+7. The master workflow's direct risk, credit, medical, and driving executors fan out/fan in in one superstep.
+8. Resume accepts only checkpoints written by the deployed direct-executor graph; version-40 nested-graph checkpoints are rejected without a compatibility workflow or fallback.
 
 ## Entry template
 
@@ -70,6 +74,40 @@ Use one section per meaningful operational change.
 ## Documentation-only alignment note
 
 This file may also capture documentation-only operating-model updates. Those entries should explicitly say that no hosted release completion is being claimed.
+
+## 2026-08-06 - Direct-executor master-workflow cutover (release evidence pending)
+
+**Change**
+
+- Documented the replacement of the nested parent/child workflow with one
+  master underwriting workflow whose direct risk, credit, medical, and driving
+  executors fan out and fan in in one superstep.
+- Marked version-40 nested-graph checkpoints unsupported for resume after
+  deployment. No compatibility workflow or fallback is available.
+
+**Root cause / learning**
+
+- Nested graph checkpoints encode the former parent/child graph shape. The
+  master direct-executor graph has a different checkpoint topology, so treating
+  a version-40 checkpoint as resumable would create ambiguous recovery
+  behavior.
+- A clean cutover must reject that ambiguity rather than retain a second graph
+  only to resume historical checkpoints.
+
+**Expected verification (not yet performed)**
+
+- Deploy the master direct-executor graph.
+- Confirm a fresh crash/resume run resumes from a checkpoint written by that
+  graph and retains retry, idempotency, fan-in, and telemetry correlation.
+- Confirm a version-40 nested-graph checkpoint is not resumed and that no
+  compatibility workflow or fallback path is invoked.
+- Record hosted smoke, deployed E2E, Foundry evaluation, Application Insights
+  evidence, and run identifiers in a subsequent dated entry.
+
+**Release status**
+
+- Documentation-only record. It does not claim deployment, smoke, E2E,
+  evaluation, telemetry, or release success.
 
 ## 2026-08-06 - Release validation blocked by container package TLS
 
@@ -263,3 +301,54 @@ This file may also capture documentation-only operating-model updates. Those ent
 - This is baseline 1 of 3 for the optimized release timing sample. Future
   application-only releases should append comparable timing evidence before
   setting a steady-state target.
+
+## 2026-08-06 - Direct-executor master-workflow cutover
+
+**Change**
+
+- Flattened the underwriting MAF graph so one master workflow fans out directly
+  to risk, credit, medical, and driving executors, then incrementally fans in
+  their `CheckResult` messages before final decisioning.
+- Removed four one-step nested workflow wrappers and changed direct checks from
+  terminal `yield_output` calls to typed `send_message` routing.
+- Excluded nested `__pycache__` directories from generated hosted-agent source
+  packaging after review found stale bytecode in the ignored build context.
+
+**Why**
+
+- One-step child workflows added indirection without a reusable or multi-step
+  boundary. Direct executors retain the same Agent Framework superstep
+  concurrency while making the topology simpler and type-validated.
+- Old nested-topology checkpoints have a different graph signature. The clean
+  cutover deliberately rejects them rather than maintaining a second workflow
+  or recovery fallback.
+
+**Validation and release evidence**
+
+- The full local validation route passed, including 43 backend tests, frontend
+  checks, scripts, and local Playwright E2E. The topology test proves direct
+  graph nodes and no `WorkflowExecutor` wrappers.
+- A Rubber Duck review confirmed the routing change is required: nested
+  wrappers formerly forwarded child `yield_output` values, while direct nodes
+  must send `CheckResult` messages to the fan-in edge.
+- Hosted agent v41, backend revision
+  `azcawhcedyxchnbtmpubbe--0000020`, and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000011` deployed successfully.
+- Smoke run `run-smoke-20260806214717-357052`, both deployed E2E runs
+  `run-hosted-happy-20260806214836-359053` and
+  `run-hosted-recover-20260806214836-359053`, Foundry evaluation
+  `eval_286f9bdf2cab4166accb2422a9292e55` (1 of 1), and telemetry correlation
+  (64 rows, zero exceptions) all passed.
+
+**Issue and fix**
+
+- The initial concurrent hosted-agent ACR build hit a transient CFS pip
+  `BrokenPipeError`. Backend and frontend deployment succeeded; retrying only
+  the failed hosted-agent leg succeeded. This is a package-feed recovery
+  sample, not a topology defect or steady-state timing baseline.
+
+**Decision**
+
+- Keep a direct executor in the master workflow while its check is one step.
+  Introduce a sub-workflow only for a reusable or multi-step pipeline with
+  meaningful internal branching, tools, or lifecycle.

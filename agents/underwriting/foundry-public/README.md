@@ -45,12 +45,12 @@ This README describes the supported architecture and release workflow. It does n
 ## Underwriting Flow
 
 1. Intake creates an underwriting context for one `workflow_run_id`.
-2. Parent workflow fans out to four child checks: risk, credit, medical, and driving.
-3. Fan-in aggregator merges child results into shared workflow state.
+2. One master underwriting workflow fans out directly to risk, credit, medical, and driving executors in one superstep.
+3. Fan-in aggregator merges the direct-executor results into shared workflow state.
 4. Final decision computes approval/review and produces deterministic score components.
 5. LLM rationale generation runs only after deterministic decision computation, with fallback available.
 6. Checkpoints and events are persisted to PostgreSQL throughout execution.
-7. Resume uses latest checkpoint for the run and idempotency prevents duplicate side effects.
+7. Resume uses a checkpoint created by the deployed master direct-executor graph; idempotency prevents duplicate side effects.
 
 ## Canonical operating model and clean cutover
 
@@ -61,6 +61,7 @@ Underwriting now follows the same engineering operating model and release govern
 - **Adapter-only public API:** the FastAPI layer starts/resumes hosted work, serves durable read models, exposes AG-UI, and hosts the CopilotKit bridge.
 - **No compatibility shims:** do not add a second orchestration engine, shadow checkpoint store, direct browser-to-Foundry path, or legacy public-lane fallback that bypasses the hosted workflow.
 - **Clean cutover rule:** deployed public traffic uses the hosted Responses lane; local execution mode exists only for isolated local validation.
+- **Checkpoint migration rule:** version-40 nested-graph checkpoints are unsupported for resume after this deployment. There is no compatibility workflow or fallback; start a new run if a pre-cutover checkpoint must be retried.
 - **Evidence-driven release claims:** fresh hosted smoke, E2E, eval, and telemetry evidence must be recorded in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md) before claiming release readiness.
 
 ## Hosted deployment boundary
@@ -116,29 +117,27 @@ make foundry-eval
 
 ## Canonical public release workflow
 
-Use the current operator environment and authenticated local secrets, then run the checked-in release sequence:
+Use the current operator environment and authenticated local secrets, then run
+the checked-in release orchestrator:
 
 ```bash
-make foundry-bootstrap
-make foundry-iac-build
-make foundry-provision
-make foundry-postgres-schema
-make foundry-postgres-credentials
-make foundry-postgres-readiness
-make foundry-deploy
-make foundry-backend-deploy
-make foundry-frontend-deploy
-make foundry-smoke
-make foundry-eval
+make foundry-release
 ```
 
 Release governance expectations:
 
 1. Run local gates first.
-2. Provision and deploy the hosted lane through the checked-in sequence only.
-3. Validate happy path, retry, and crash/resume behavior through hosted smoke and browser E2E.
-4. Verify Foundry and Application Insights traces correlate on `workflow_run_id`.
-5. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
+2. The release orchestrator runs validation and the Bicep build concurrently,
+   performs either full provisioning or app-only deployment according to the
+   deployment router, then deploys the three runtime components concurrently
+   after shared readiness.
+3. It runs hosted smoke, then Foundry evaluation and deployed browser E2E in
+   parallel, then validates Application Insights telemetry after E2E writes
+   its evidence.
+4. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
+
+`deployment-report/` is ignored local timing evidence only. It does not prove
+release readiness; the delivery ledger is the canonical release-evidence record.
 
 Treat this README as the contract for the workflow, not as a source of truth for current resource names or a declaration that a release already completed.
 

@@ -18,7 +18,7 @@ Public FastAPI adapter
   -> no production MAF runner
 
 Foundry Hosted Agent
-  -> shared MAF parent/child workflow
+  -> master MAF workflow with direct risk, credit, medical, and driving executors
   -> PostgreSQL checkpoints, workflow state, events, and idempotency records
   -> Foundry workflow/model traces
 ```
@@ -30,6 +30,10 @@ Bicep parameters, source, or telemetry. The previous version-34 deployment is
 an acknowledgement-only historical baseline, not evidence for this topology.
 
 ## Delivery status
+
+The direct-executor master-workflow cutover is release-verified. The
+version-40 entries below are preserved historical records and must not be read
+as current topology or release evidence for this cutover.
 
 | Work | Status | Evidence / next action |
 | --- | --- | --- |
@@ -43,9 +47,48 @@ an acknowledgement-only historical baseline, not evidence for this topology.
 | Architecture review | Complete | Independent review identified and corrected the frontend/backend origin mismatch, proxy-scheme assumption, and missing adapter schema initialization. |
 | Hosted architecture IaC provision | Complete | PostgreSQL recreation, schema bootstrap, runtime role, and TLS/firewall posture were applied declaratively in `rg-underwriting-readiness-0731`. |
 | Hosted credential provision | Complete | Hosted and public runtimes use the dedicated least-privilege TLS PostgreSQL credential through runtime secrets only. |
-| Hosted agent/public adapter/frontend deployment | Complete | Hosted agent version `38`, public backend revision `azcawhcedyxchnbtmpubbe--0000017`, and frontend revision `azcawhcedyxchnbtmpubfe--0000007` are deployed. |
-| Hosted smoke, E2E, telemetry, evaluation | Complete with native-evaluator blocker | Version-pinned smoke, deployed UI E2E, and controlled trace probes pass. Native evaluator generation remains blocked by the organization storage network policy; the trace-evaluation fallback passes. |
+| Direct-executor master-workflow cutover | Complete | Agent v41 runs one master graph with direct checks. Version-40 nested-graph checkpoints are unsupported for resume; no compatibility workflow or fallback exists. |
+| Hosted agent/public adapter/frontend deployment | Complete | Agent v41, backend revision `azcawhcedyxchnbtmpubbe--0000020`, and frontend revision `azcawhcedyxchnbtmpubfe--0000011` are running. |
+| Hosted smoke, E2E, telemetry, evaluation | Complete | Fresh smoke, deployed E2E, report-only Foundry evaluation, and Application Insights validation passed; identifiers are recorded below. |
 | Native evaluator generation | Blocked | The organization-enforced storage policy prevents the required public evaluation-storage route. A policy exemption or private networking is required for this optional generation path. |
+
+## 2026-08-06 - Direct-executor master-workflow cutover
+
+**Change.** The supported workflow is one master underwriting workflow with
+direct risk, credit, medical, and driving executors that fan out and fan in in
+one superstep. Version-40 nested-graph checkpoints are unsupported for resume
+after deployment. No compatibility workflow or fallback exists.
+
+**Root cause / learning.** Nested-graph checkpoints encode the former
+parent/child topology. The direct-executor master graph has a different
+checkpoint shape, so attempting compatibility resume would make recovery
+ownership ambiguous. The clean cutover intentionally rejects that ambiguity
+instead of preserving a legacy graph.
+
+**Verification.**
+
+- Hosted agent v41 deployed with the direct-executor graph. Backend revision
+  `azcawhcedyxchnbtmpubbe--0000020` and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000011` report `Running`.
+- Hosted smoke approved `run-smoke-20260806214717-357052`.
+- Deployed E2E approved
+  `run-hosted-happy-20260806214836-359053` and
+  `run-hosted-recover-20260806214836-359053`.
+- Foundry evaluation `eval_286f9bdf2cab4166accb2422a9292e55` /
+  `evalrun_b3d88ed1e9894fa7a8dde76cca9d1817` passed 1 of 1 with no failed or
+  errored results.
+- Application Insights correlated 64 rows across both E2E runs: 3 request
+  rows and 61 dependency rows, with zero correlated exceptions.
+- The 43-test backend suite exercised fresh direct-graph crash/resume,
+  idempotency, and incremental fan-in behavior. The graph signature differs
+  from v40, so the framework rejects a v40 checkpoint rather than executing a
+  compatibility path.
+
+**Release note.** The first concurrent hosted-agent build encountered a
+transient Central Feed Services pip `BrokenPipeError`. The public backend and
+frontend deployments completed; retrying only the failed hosted-agent build
+succeeded. The deployed timing is therefore a recovery sample, not a
+steady-state release baseline.
 
 ## Public PostgreSQL Flexible Server rebuild workflow
 

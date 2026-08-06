@@ -29,7 +29,8 @@ Confirm that retry emits bounded retry evidence, crash leaves a resumable `workf
 ## Frontend scenario
 
 1. Start backend/API: `make up`
-2. Start UI: `make frontend-dev`
+2. For Vite development, start UI with the backend origin:
+   `VITE_API_BASE_URL=http://localhost:8000 make frontend-dev`
 3. Open the Vite URL and execute:
    - happy path
    - retry
@@ -53,7 +54,7 @@ Confirm that retry emits bounded retry evidence, crash leaves a resumable `workf
 4. Run retry and crash/resume scenarios and confirm they correlate on one durable `workflow_run_id` each.
 5. Ask the embedded assistant for the selected run's status and confirm it returns only a safe execution summary.
 6. In Application Insights, start from the run ID and confirm the AG-UI request plus hosted workflow/model spans are visible.
-7. In Foundry, confirm the corresponding `underwriting-hosted` workflow/model trace includes MAF parent/child execution, retry/fan-in/checkpoint spans, and the correlated `workflow_run_id`.
+7. In Foundry, confirm the corresponding `underwriting-hosted` workflow/model trace includes the master workflow, direct risk/credit/medical/driving executor, retry/fan-in/checkpoint spans, and the correlated `workflow_run_id`.
 8. Record commands, run IDs, trace references, and any deferrals in `docs/design/issues-changes-fixes.md`.
 
 ## Clean cutover / no-shims checks
