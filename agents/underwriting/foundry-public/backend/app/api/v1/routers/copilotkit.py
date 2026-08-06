@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.config import load_settings
+from app.core.container import get_copilot_bridge
 from app.modules.underwriting.copilot import (
     explanation_intent,
     selected_run_id_from_agui_context,
@@ -17,9 +18,13 @@ from app.modules.underwriting.copilot import (
 from app.modules.underwriting.copilot_bridge import UnderwritingCopilotBridge
 
 router = APIRouter(prefix="/api/v1/underwriting", tags=["underwriting"])
-bridge = UnderwritingCopilotBridge(load_settings())
+bridge: UnderwritingCopilotBridge | Any | None = None
 _AGUI_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _COPILOT_AGENT_ID = "underwriting-run-assistant"
+
+
+def _bridge() -> Any:
+    return bridge or get_copilot_bridge()
 
 
 def _require_configured_frontend_origin(request: Request) -> None:
@@ -120,7 +125,7 @@ async def copilotkit_run(agent_id: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=422, detail="Invalid AG-UI JSON") from exc
     thread_id, run_id, selected_run_id, intent = _parse_request(payload)
     try:
-        explanation = await bridge.explain(selected_run_id, intent)
+        explanation = await _bridge().explain(selected_run_id, intent)
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Hosted assistant is unavailable") from exc
     return StreamingResponse(

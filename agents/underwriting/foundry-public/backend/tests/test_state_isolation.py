@@ -42,18 +42,18 @@ def test_build_workflow_uses_fresh_dependencies_for_each_build(monkeypatch) -> N
         created_storages.append(storage)
         return storage
 
-    def fake_build_parent_underwriting_workflow(
+    def fake_build_underwriting_workflow(
         *, repository, settings, checkpoint_storage, foundry_client
     ):
         seen.append((id(checkpoint_storage), id(foundry_client)))
         return object()
 
     monkeypatch.setattr(runner_module, "create_foundry_maf_client", fake_create_foundry_client)
-    monkeypatch.setattr(runner_module, "PostgresCheckpointStorage", fake_checkpoint_storage)
+    monkeypatch.setattr(runner_module, "PostgresCheckpointStore", fake_checkpoint_storage)
     monkeypatch.setattr(
         runner_module,
-        "build_parent_underwriting_workflow",
-        fake_build_parent_underwriting_workflow,
+        "build_underwriting_workflow",
+        fake_build_underwriting_workflow,
     )
 
     runner = UnderwritingMafRunner(SimpleNamespace(engine=object()), settings)

@@ -1,12 +1,13 @@
 from agent_framework import Executor, WorkflowContext, handler
 
 from app.core.telemetry import workflow_attributes, workflow_stage_span
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import CheckRequest, CheckType, UnderwritingRunRequest
 
 
 class InitContextExecutor(Executor):
-    def __init__(self, repository: Repository):
+    def __init__(self, repository: WorkflowRunRepository):
         super().__init__(id="init_context")
         self.repository = repository
 
@@ -48,7 +49,7 @@ class InitContextExecutor(Executor):
             )
             self.repository.log_event(
                 workflow_run_id,
-                "init_context",
+                event_types.INIT_CONTEXT,
                 self.id,
                 {"application_id": app.application_id, "message_received": True},
             )

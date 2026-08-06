@@ -5,20 +5,25 @@ from typing import Any
 
 from app.core.config import Settings
 from app.infrastructure.db.engine import create_db_engine, init_db, reset_db
-from app.infrastructure.foundry.responses_client import UnderwritingResponsesClient
-from app.infrastructure.repositories.underwriting_repository import Repository
-from app.maf.runner import UnderwritingMafRunner
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
+from app.maf.factory import create_workflow_engine
 from app.modules.underwriting.hosted import HostedWorkflowEnvelope
 from app.modules.underwriting.models import UnderwritingApplication
+from app.modules.underwriting.ports import (
+    UnderwritingHostedWorkflowPort,
+    UnderwritingRunRepositoryPort,
+    UnderwritingWorkflowEngine,
+)
+from app.modules.underwriting.projections import project_workflow_run
 
 
-class UnderwritingService:
+class LocalUnderwritingService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.engine = create_db_engine(settings)
         init_db(self.engine)
-        self.repository = Repository(self.engine)
-        self.runner = UnderwritingMafRunner(repository=self.repository, settings=settings)
+        self.repository = WorkflowRunRepository(self.engine)
+        self.workflow = create_workflow_engine(repository=self.repository, settings=settings)
 
     async def run_workflow(
         self,
@@ -29,16 +34,16 @@ class UnderwritingService:
         fail_credit_randomly: bool | None = None,
         crash_after_executor: str | None = None,
     ) -> tuple[str, list[Any]]:
-        return await self.runner.run(
+        return await self.workflow.start(
             workflow_run_id=workflow_run_id,
-            app=application,
+            application=application,
             fail_risk_once=fail_risk_once,
             fail_credit_randomly=fail_credit_randomly,
             crash_after_executor=crash_after_executor,
         )
 
     async def resume_workflow(self, workflow_run_id: str) -> list[Any]:
-        return await self.runner.resume(workflow_run_id)
+        return await self.workflow.resume(workflow_run_id)
 
     def reset_database(self) -> None:
         reset_db(self.engine)
@@ -75,27 +80,25 @@ class UnderwritingService:
         return self.repository.list_checkpoints(run_id)
 
 
-class UnderwritingHostedAdapter:
-    """Browser-facing adapter that invokes and projects the hosted MAF workflow."""
-
+class UnderwritingService:
     def __init__(
         self,
-        settings: Settings,
         *,
-        responses_client: UnderwritingResponsesClient | None = None,
-    ):
-        self.settings = settings
-        self.engine = create_db_engine(settings)
-        init_db(self.engine)
-        self.repository = Repository(self.engine)
-        self._responses_client = responses_client or UnderwritingResponsesClient(settings)
-        if settings.execution_mode not in {"hosted", "local"}:
-            raise ValueError("UNDERWRITING_EXECUTION_MODE must be 'hosted' or 'local'")
-        self._local_service = (
-            UnderwritingService(settings) if settings.execution_mode == "local" else None
-        )
+        settings: Settings,
+        workflow: UnderwritingWorkflowEngine | None,
+        workflow_run_repository: UnderwritingRunRepositoryPort,
+        responses_client: UnderwritingHostedWorkflowPort | None = None,
+    ) -> None:
+        if workflow is None and responses_client is None:
+            raise ValueError("UnderwritingService requires a workflow engine or responses client.")
 
-    async def start_workflow(
+        self.settings = settings
+        self.workflow = workflow
+        self.repository = workflow_run_repository
+        self.engine = getattr(workflow_run_repository, "engine", None)
+        self.responses_client = responses_client
+
+    async def start_run(
         self,
         *,
         workflow_run_id: str,
@@ -106,58 +109,75 @@ class UnderwritingHostedAdapter:
     ) -> dict[str, Any]:
         existing = self.repository.get_workflow_run(workflow_run_id)
         if existing is not None:
-            return self._project_run(workflow_run_id, {})
-
-        if self._local_service is not None:
-            await self._local_service.run_workflow(
-                workflow_run_id=workflow_run_id,
-                application=application,
-                fail_risk_once=fail_risk_once,
-                fail_credit_randomly=fail_credit_randomly,
-                crash_after_executor=crash_after_executor,
+            return project_workflow_run(
+                self.repository,
+                workflow_run_id,
+                fallback_status=str(existing.get("status", "SUBMITTED")),
             )
-            return self._project_run(workflow_run_id, {})
 
-        response = await self._responses_client.invoke(
-            HostedWorkflowEnvelope(
-                workflow_run_id=workflow_run_id,
-                action="start",
-                application=application,
-                fail_risk_once=fail_risk_once,
-                fail_credit_randomly=fail_credit_randomly,
-                crash_after_executor=crash_after_executor,
+        if self.responses_client is not None:
+            response = await self.responses_client.invoke(
+                HostedWorkflowEnvelope(
+                    workflow_run_id=workflow_run_id,
+                    action="start",
+                    application=application,
+                    fail_risk_once=fail_risk_once,
+                    fail_credit_randomly=fail_credit_randomly,
+                    crash_after_executor=crash_after_executor,
+                )
             )
+            return project_workflow_run(
+                self.repository,
+                workflow_run_id,
+                fallback_status=str(response.get("status", "SUBMITTED")),
+            )
+
+        if self.workflow is None:
+            raise RuntimeError("Local underwriting workflow engine is not configured.")
+
+        _, outputs = await self.workflow.start(
+            workflow_run_id=workflow_run_id,
+            application=application,
+            fail_risk_once=fail_risk_once,
+            fail_credit_randomly=fail_credit_randomly,
+            crash_after_executor=crash_after_executor,
         )
-        return self._project_run(workflow_run_id, response)
+        return project_workflow_run(
+            self.repository,
+            workflow_run_id,
+            fallback_status="COMPLETED",
+            outputs=outputs,
+        )
 
-    async def resume_workflow(self, workflow_run_id: str) -> dict[str, Any]:
+    async def resume_run(self, workflow_run_id: str) -> dict[str, Any]:
         existing = self.repository.get_workflow_run(workflow_run_id)
         if existing is not None and existing.get("status") == "COMPLETED":
-            return self._project_run(workflow_run_id, {})
+            return project_workflow_run(
+                self.repository,
+                workflow_run_id,
+                fallback_status=str(existing.get("status", "COMPLETED")),
+            )
 
-        if self._local_service is not None:
-            await self._local_service.resume_workflow(workflow_run_id)
-            return self._project_run(workflow_run_id, {})
+        if self.responses_client is not None:
+            response = await self.responses_client.invoke(
+                HostedWorkflowEnvelope(workflow_run_id=workflow_run_id, action="resume")
+            )
+            return project_workflow_run(
+                self.repository,
+                workflow_run_id,
+                fallback_status=str(response.get("status", "SUBMITTED")),
+            )
 
-        response = await self._responses_client.invoke(
-            HostedWorkflowEnvelope(workflow_run_id=workflow_run_id, action="resume")
+        if self.workflow is None:
+            raise RuntimeError("Local underwriting workflow engine is not configured.")
+
+        outputs = await self.workflow.resume(workflow_run_id)
+        return project_workflow_run(
+            self.repository,
+            workflow_run_id,
+            fallback_status="COMPLETED",
+            outputs=outputs,
         )
-        return self._project_run(workflow_run_id, response)
-
-    def _project_run(self, workflow_run_id: str, response: dict[str, Any]) -> dict[str, Any]:
-        run = self.repository.get_workflow_run(workflow_run_id)
-        outputs = [
-            result["result_json"]
-            for result in self.repository.list_underwriting_results(workflow_run_id)
-            if result.get("check_type") == "final_decision"
-            and isinstance(result.get("result_json"), dict)
-        ]
-        status = run.get("status") if run is not None else response.get("status", "SUBMITTED")
-        return {
-            "workflow_run_id": workflow_run_id,
-            "status": str(status),
-            "outputs": outputs,
-        }
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         return self.repository.get_workflow_run(run_id)

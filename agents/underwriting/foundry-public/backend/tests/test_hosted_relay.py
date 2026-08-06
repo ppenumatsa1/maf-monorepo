@@ -4,13 +4,13 @@ import asyncio
 import json
 from dataclasses import replace
 
-import app.modules.underwriting.service as service_module
+import app.core.container as container_module
 from app.core.config import Settings
-from app.infrastructure.db.engine import init_db
+from app.core.container import build_underwriting_service
 from app.infrastructure.foundry.responses_client import UnderwritingResponsesClient
 from app.modules.underwriting.hosted import HostedWorkflowEnvelope
 from app.modules.underwriting.models import UnderwritingApplication
-from app.modules.underwriting.service import UnderwritingHostedAdapter
+from app.modules.underwriting.service import UnderwritingService
 
 
 def _settings(tmp_path) -> Settings:
@@ -185,35 +185,38 @@ def test_hosted_client_uses_configured_version_pinned_responses_url(monkeypatch,
 def test_public_adapter_dispatches_to_hosted_agent_without_constructing_runner(
     monkeypatch, tmp_path
 ) -> None:
-    class UnexpectedRunner:
-        def __init__(self, *_args, **_kwargs) -> None:
-            raise AssertionError("public hosted adapter must not construct a local MAF runner")
+    def unexpected_create_workflow_engine(*_args, **_kwargs):
+        raise AssertionError("public hosted adapter must not construct a local MAF runner")
 
-    monkeypatch.setattr(service_module, "UnderwritingMafRunner", UnexpectedRunner)
+    monkeypatch.setattr(
+        container_module,
+        "create_workflow_engine",
+        unexpected_create_workflow_engine,
+    )
 
     class FakeResponsesClient:
         def __init__(self) -> None:
             self.envelopes: list[HostedWorkflowEnvelope] = []
-            self.adapter: UnderwritingHostedAdapter | None = None
+            self.service: UnderwritingService | None = None
 
         async def invoke(self, envelope: HostedWorkflowEnvelope) -> dict[str, object]:
             self.envelopes.append(envelope)
-            assert self.adapter is not None
-            self.adapter.repository.create_workflow_run(
+            assert self.service is not None
+            self.service.repository.create_workflow_run(
                 envelope.workflow_run_id,
                 "hosted-workflow",
                 "underwriting-parent",
                 "app-relay-test",
                 "Private Applicant",
             )
-            self.adapter.repository.save_underwriting_result(
+            self.service.repository.save_underwriting_result(
                 envelope.workflow_run_id,
                 "app-relay-test",
                 "final_decision",
                 {"decision": "APPROVED", "rationale": "Hosted result"},
                 f"{envelope.workflow_run_id}:final",
             )
-            self.adapter.repository.update_workflow_run_status(
+            self.service.repository.update_workflow_run_status(
                 envelope.workflow_run_id, "COMPLETED"
             )
             return {
@@ -223,12 +226,11 @@ def test_public_adapter_dispatches_to_hosted_agent_without_constructing_runner(
             }
 
     client = FakeResponsesClient()
-    adapter = UnderwritingHostedAdapter(_settings(tmp_path), responses_client=client)
-    init_db(adapter.engine)
-    client.adapter = adapter
+    service = build_underwriting_service(_settings(tmp_path), responses_client=client)
+    client.service = service
 
     projection = asyncio.run(
-        adapter.start_workflow(
+        service.start_run(
             workflow_run_id="run-adapter-test",
             application=_application(),
             fail_risk_once=False,

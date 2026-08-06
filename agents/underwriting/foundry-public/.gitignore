@@ -37,3 +37,6 @@ test-results/
 local.ini
 *.local.ini
 infra/foundry-hosted/agent/
+
+# Local deployment progress reports and operational evidence.
+deployment-report/

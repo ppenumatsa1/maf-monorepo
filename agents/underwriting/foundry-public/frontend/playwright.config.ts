@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test'
 
+const localBackendPort = process.env.E2E_BACKEND_HOST_PORT ?? '8000'
+const localApiBase =
+  process.env.PLAYWRIGHT_API_BASE_URL ?? process.env.VITE_API_BASE_URL ?? `http://127.0.0.1:${localBackendPort}`
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
@@ -12,6 +16,10 @@ export default defineConfig({
     ? undefined
     : {
         command: 'npm run dev -- --host 127.0.0.1 --port 4175',
+        env: {
+          ...process.env,
+          VITE_API_BASE_URL: localApiBase,
+        },
         port: 4175,
         reuseExistingServer: true,
         timeout: 120000,

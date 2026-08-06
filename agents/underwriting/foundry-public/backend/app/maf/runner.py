@@ -8,22 +8,23 @@ from typing import Any
 from app.core.config import Settings
 from app.core.observability import log_with_context
 from app.core.telemetry import workflow_stage_span
-from app.infrastructure.checkpointing.postgres_checkpoint_storage import PostgresCheckpointStorage
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.checkpoint_store import PostgresCheckpointStore
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.maf.clients.foundry_maf_client import create_foundry_maf_client
-from app.maf.workflows.parent_underwriting_workflow import build_parent_underwriting_workflow
+from app.maf.workflows.underwriting import build_underwriting_workflow
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import UnderwritingApplication, UnderwritingRunRequest
 
 
 class UnderwritingMafRunner:
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: WorkflowRunRepository, settings: Settings):
         self.repository = repository
         self.base_settings = settings
 
     def _build_workflow_components(self, settings: Settings):
-        checkpoint_storage = PostgresCheckpointStorage(self.repository.engine)
+        checkpoint_storage = PostgresCheckpointStore(self.repository.engine)
         foundry_client = create_foundry_maf_client(settings)
-        workflow = build_parent_underwriting_workflow(
+        workflow = build_underwriting_workflow(
             repository=self.repository,
             settings=settings,
             checkpoint_storage=checkpoint_storage,
@@ -35,11 +36,11 @@ class UnderwritingMafRunner:
         workflow, _, _ = self._build_workflow_components(settings)
         return workflow
 
-    async def run(
+    async def start(
         self,
         *,
         workflow_run_id: str | None = None,
-        app: UnderwritingApplication,
+        application: UnderwritingApplication,
         fail_risk_once: bool | None = None,
         fail_credit_randomly: bool | None = None,
         crash_after_executor: str | None = None,
@@ -61,7 +62,7 @@ class UnderwritingMafRunner:
             "underwriting.initialize",
             {
                 "workflow.run_id": run_id,
-                "underwriting.application_id": app.application_id,
+                "underwriting.application_id": application.application_id,
             },
         ):
             workflow = self._build_workflow(effective_settings)
@@ -69,19 +70,23 @@ class UnderwritingMafRunner:
         if existing_run is not None:
             raise ValueError(f"workflow_run_id already exists: {run_id}")
         self.repository.create_workflow_run(
-            run_id, workflow.id, "underwriting-parent", app.application_id, app.applicant_name
+            run_id,
+            workflow.id,
+            "underwriting-parent",
+            application.application_id,
+            application.applicant_name,
         )
         self.repository.log_event(
             run_id,
-            "workflow_start",
+            event_types.WORKFLOW_START,
             "main",
-            {"application_id": app.application_id, "maf_workflow_id": workflow.id},
+            {"application_id": application.application_id, "maf_workflow_id": workflow.id},
         )
         log_with_context(
             logging.getLogger("app.workflow"),
             "workflow_start",
             workflow_run_id=run_id,
-            application_id=app.application_id,
+            application_id=application.application_id,
             workflow_id=workflow.id,
         )
         try:
@@ -89,21 +94,32 @@ class UnderwritingMafRunner:
                 "underwriting.run",
                 {
                     "workflow.run_id": run_id,
-                    "underwriting.application_id": app.application_id,
+                    "underwriting.application_id": application.application_id,
                 },
             ):
                 result = await workflow.run(
-                    message=UnderwritingRunRequest(workflow_run_id=run_id, application=app)
+                    message=UnderwritingRunRequest(
+                        workflow_run_id=run_id,
+                        application=application,
+                    )
                 )
                 outputs = result.get_outputs()
             self.repository.update_workflow_run_status(run_id, "COMPLETED")
             self.repository.log_event(
-                run_id, "workflow_completed", "main", {"output_count": len(outputs)}
+                run_id,
+                event_types.WORKFLOW_COMPLETED,
+                "main",
+                {"output_count": len(outputs)},
             )
             return run_id, outputs
         except Exception as exc:
             self.repository.update_workflow_run_status(run_id, "CRASHED")
-            self.repository.log_event(run_id, "workflow_crashed", "main", {"error": str(exc)})
+            self.repository.log_event(
+                run_id,
+                event_types.WORKFLOW_CRASHED,
+                "main",
+                {"error": str(exc)},
+            )
             raise
 
     async def resume(self, workflow_run_id: str) -> list[Any]:
@@ -119,7 +135,7 @@ class UnderwritingMafRunner:
 
         self.repository.log_event(
             workflow_run_id,
-            "resume_requested",
+            event_types.RESUME_REQUESTED,
             "main",
             {"checkpoint_id": checkpoint_id, "note": "loading real MAF checkpoint from postgres"},
         )
@@ -139,6 +155,9 @@ class UnderwritingMafRunner:
             outputs = result.get_outputs()
         self.repository.update_workflow_run_status(workflow_run_id, "COMPLETED")
         self.repository.log_event(
-            workflow_run_id, "resume_completed", "main", {"output_count": len(outputs)}
+            workflow_run_id,
+            event_types.RESUME_COMPLETED,
+            "main",
+            {"output_count": len(outputs)},
         )
         return outputs

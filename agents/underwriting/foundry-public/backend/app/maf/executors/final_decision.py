@@ -3,14 +3,15 @@ from typing import Never
 from agent_framework import Executor, WorkflowContext, handler
 
 from app.core.telemetry import workflow_attributes, workflow_stage_span
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.contracts import DecisionLLMClient
 from app.modules.underwriting.decisions import build_final_rationale, compute_decision
 from app.modules.underwriting.models import AllChecksComplete, Decision, FinalDecisionResult
 
 
 class FinalDecisionExecutor(Executor):
-    def __init__(self, repository: Repository, llm_client: DecisionLLMClient | None):
+    def __init__(self, repository: WorkflowRunRepository, llm_client: DecisionLLMClient | None):
         super().__init__(id="final_decision")
         self.repository = repository
         self.llm_client = llm_client
@@ -43,7 +44,7 @@ class FinalDecisionExecutor(Executor):
                 )
                 self.repository.log_event(
                     message.workflow_run_id,
-                    "idempotency_skip",
+                    event_types.IDEMPOTENCY_SKIP,
                     self.id,
                     {"idempotency_key": idempotency_key},
                 )
@@ -55,7 +56,7 @@ class FinalDecisionExecutor(Executor):
                 )
                 self.repository.log_event(
                     message.workflow_run_id,
-                    "idempotency_skip",
+                    event_types.IDEMPOTENCY_SKIP,
                     self.id,
                     {"idempotency_key": idempotency_key, "source": "result_row"},
                 )
@@ -104,6 +105,9 @@ class FinalDecisionExecutor(Executor):
                 final.to_dict(),
             )
             self.repository.log_event(
-                message.workflow_run_id, "final_decision", self.id, final.to_dict()
+                message.workflow_run_id,
+                event_types.FINAL_DECISION,
+                self.id,
+                final.to_dict(),
             )
             await ctx.yield_output(final)

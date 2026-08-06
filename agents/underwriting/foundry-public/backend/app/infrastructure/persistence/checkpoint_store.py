@@ -31,7 +31,7 @@ CHECKPOINT_ALLOWED_TYPES = frozenset(
 )
 
 
-class PostgresCheckpointStorage(CheckpointStorage):
+class PostgresCheckpointStore(CheckpointStorage):
     """Real MAF checkpoint storage backed by PostgreSQL."""
 
     def __init__(self, engine: Engine):

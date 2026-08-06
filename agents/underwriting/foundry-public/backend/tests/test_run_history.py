@@ -4,14 +4,14 @@ from datetime import datetime, timedelta
 
 from app.infrastructure.db.engine import init_db
 from app.infrastructure.db.tables import maf_checkpoints
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from sqlalchemy import create_engine, inspect, text
 
 
 def test_history_searches_filters_and_sorts_newest_first() -> None:
     engine = create_engine("sqlite:///:memory:", future=True)
     init_db(engine)
-    repo = Repository(engine)
+    repo = WorkflowRunRepository(engine)
 
     repo.create_workflow_run(
         "run-older",

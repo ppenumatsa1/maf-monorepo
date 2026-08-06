@@ -10,7 +10,8 @@ from agent_framework import FunctionInvocationContext, FunctionMiddleware, Funct
 
 from app.core.config import Settings
 from app.core.telemetry import workflow_stage_span
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import CheckType
 
 
@@ -32,7 +33,7 @@ class ResilientInvocationResult:
 
 
 class IdempotencyMiddleware(FunctionMiddleware):
-    def __init__(self, repository: Repository):
+    def __init__(self, repository: WorkflowRunRepository):
         self.repository = repository
 
     async def process(
@@ -62,7 +63,7 @@ class IdempotencyMiddleware(FunctionMiddleware):
             ):
                 self.repository.log_event(
                     op.workflow_run_id,
-                    "idempotency_skip",
+                    event_types.IDEMPOTENCY_SKIP,
                     op.executor_name,
                     {"idempotency_key": op.idempotency_key},
                 )
@@ -86,7 +87,7 @@ class IdempotencyMiddleware(FunctionMiddleware):
                 )
                 self.repository.log_event(
                     op.workflow_run_id,
-                    "idempotency_skip",
+                    event_types.IDEMPOTENCY_SKIP,
                     op.executor_name,
                     {"idempotency_key": op.idempotency_key, "source": "result_row"},
                 )
@@ -101,7 +102,7 @@ class IdempotencyMiddleware(FunctionMiddleware):
 
 
 class RetryBackoffMiddleware(FunctionMiddleware):
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: WorkflowRunRepository, settings: Settings):
         self.repository = repository
         self.settings = settings
 
@@ -125,7 +126,7 @@ class RetryBackoffMiddleware(FunctionMiddleware):
                 ):
                     self.repository.log_event(
                         op.workflow_run_id,
-                        "retry_attempt",
+                        event_types.RETRY_ATTEMPT,
                         op.executor_name,
                         {"operation_name": op.operation_name, "attempt": attempt},
                     )
@@ -145,7 +146,7 @@ class RetryBackoffMiddleware(FunctionMiddleware):
                     ):
                         self.repository.log_event(
                             op.workflow_run_id,
-                            "retry_exhausted",
+                            event_types.RETRY_EXHAUSTED,
                             op.executor_name,
                             {
                                 "operation_name": op.operation_name,
@@ -171,7 +172,7 @@ class RetryBackoffMiddleware(FunctionMiddleware):
                 ):
                     self.repository.log_event(
                         op.workflow_run_id,
-                        "retry_backoff",
+                        event_types.RETRY_BACKOFF,
                         op.executor_name,
                         {
                             "operation_name": op.operation_name,
@@ -185,7 +186,7 @@ class RetryBackoffMiddleware(FunctionMiddleware):
 
 
 class FailureInjectionMiddleware(FunctionMiddleware):
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: WorkflowRunRepository, settings: Settings):
         self.repository = repository
         self.settings = settings
 
@@ -233,7 +234,7 @@ class FailureInjectionMiddleware(FunctionMiddleware):
 
 async def invoke_check_operation(
     *,
-    repository: Repository,
+    repository: WorkflowRunRepository,
     settings: Settings,
     workflow_run_id: str,
     application_id: str,

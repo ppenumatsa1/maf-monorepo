@@ -158,6 +158,12 @@ h2 {
   background: #f8fafc;
 }
 
+.meta-chip-live {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
 .status-chip {
   padding: 0.24rem 0.55rem;
   border: 1px solid transparent;
@@ -343,6 +349,12 @@ h2 {
 .panel-subtitle {
   margin: 0.2rem 0 0;
   font-size: 0.8rem;
+}
+
+.timeline-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .event-counters,
@@ -657,5 +669,11 @@ pre {
     align-items: start;
     flex-direction: column;
     gap: 0.15rem;
+  }
+
+  .timeline-toolbar {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
-import app.infrastructure.checkpointing.postgres_checkpoint_storage as checkpoint_module
+import app.infrastructure.persistence.checkpoint_store as checkpoint_module
 import app.maf.executors.credit_check as credit_module
 import app.maf.executors.driving_check as driving_module
 import app.maf.executors.fan_in_aggregator as fan_in_module
@@ -172,6 +172,25 @@ def test_hosted_workflow_telemetry_is_correlated_to_responses_operation(
     response_span = spans["foundry.responses.invoke"]
     workflow_span = spans["underwriting.hosted.workflow"]
     assert workflow_span.parent is response_span
+    input_messages = json.loads(str(response_span.attributes["gen_ai.input.messages"]))
+    output_messages = json.loads(str(response_span.attributes["gen_ai.output.messages"]))
+    assert input_messages == [
+        {
+            "role": "user",
+            "parts": [{"type": "text", "content": "Execute underwriting workflow action: resume."}],
+        }
+    ]
+    assert output_messages == [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "text",
+                    "content": "Underwriting workflow finished with status: COMPLETED. Decision: APPROVED.",
+                }
+            ],
+        }
+    ]
     correlated = [
         span
         for span in tracer.spans
@@ -183,5 +202,6 @@ def test_hosted_workflow_telemetry_is_correlated_to_responses_operation(
         "Private Applicant" not in json.dumps(span.attributes)
         and "145000" not in json.dumps(span.attributes)
         and "760" not in json.dumps(span.attributes)
+        and "private health detail" not in json.dumps(span.attributes)
         for span in tracer.spans
     )

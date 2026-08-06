@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.modules.underwriting import events as event_types
+
 SAFE_EXPLANATION_PROTOCOL = "underwriting-safe-explanation/v1"
 SAFE_RUN_STATUSES = frozenset({"IDLE", "IN_PROGRESS", "RUNNING", "COMPLETED", "CRASHED", "FAILED"})
 SAFE_DECISIONS = frozenset(
@@ -23,19 +25,19 @@ SAFE_DECISIONS = frozenset(
 )
 SAFE_EVENT_TYPES = frozenset(
     {
-        "workflow_start",
-        "workflow_completed",
-        "workflow_crashed",
-        "resume_requested",
-        "resume_completed",
-        "init_context",
-        "retry_attempt",
-        "retry_backoff",
-        "retry_exhausted",
-        "idempotency_skip",
-        "check_completed",
-        "fan_in_result_received",
-        "final_decision",
+        event_types.WORKFLOW_START,
+        event_types.WORKFLOW_COMPLETED,
+        event_types.WORKFLOW_CRASHED,
+        event_types.RESUME_REQUESTED,
+        event_types.RESUME_COMPLETED,
+        event_types.INIT_CONTEXT,
+        event_types.RETRY_ATTEMPT,
+        event_types.RETRY_BACKOFF,
+        event_types.RETRY_EXHAUSTED,
+        event_types.IDEMPOTENCY_SKIP,
+        event_types.CHECK_COMPLETED,
+        event_types.FAN_IN_RESULT_RECEIVED,
+        event_types.FINAL_DECISION,
     }
 )
 SAFE_EXECUTOR_NAMES = frozenset(

@@ -1,4 +1,4 @@
-import type { RunResponse } from './api'
+import type { WorkflowCheckpointRecord, WorkflowEventRecord, WorkflowStateRow } from './api'
 import { apiBaseUrl } from './api'
 
 const MAX_ASSISTANT_EVENTS = 100
@@ -71,17 +71,17 @@ function safeStatus(value: string): string {
   return SAFE_STATUSES.has(normalized) ? normalized : 'UNKNOWN'
 }
 
-function finalDecision(outputs: unknown[]): string | null {
-  for (const output of outputs) {
-    const decision = asRecord(output)?.decision
-    if (typeof decision === 'string' && SAFE_DECISIONS.has(decision.toUpperCase())) {
-      return decision.toUpperCase()
-    }
-  }
-  return null
+function selectedRunDecision(stateRows: WorkflowStateRow[]): string | null {
+  const persistedDecision = asRecord(
+    stateRows.find((row) => row.state_key === 'final_decision')?.state_json,
+  )
+  const decision = persistedDecision?.decision
+  return typeof decision === 'string' && SAFE_DECISIONS.has(decision.toUpperCase())
+    ? decision.toUpperCase()
+    : null
 }
 
-function latestCheckpointTimestamp(checkpoints: Record<string, unknown>[]): string | null {
+function latestCheckpointTimestamp(checkpoints: WorkflowCheckpointRecord[]): string | null {
   return checkpoints.reduce<string | null>((latest, checkpoint) => {
     const timestamp = safeTimestamp(checkpoint.created_at)
     return timestamp && (!latest || timestamp > latest) ? timestamp : latest
@@ -93,13 +93,13 @@ export function createSafeSelectedRunContext({
   status,
   events,
   checkpoints,
-  runResponse,
+  stateRows,
 }: {
-  runId: string
+  runId: string | null
   status: string
-  events: Record<string, unknown>[]
-  checkpoints: Record<string, unknown>[]
-  runResponse: RunResponse | null
+  events: WorkflowEventRecord[]
+  checkpoints: WorkflowCheckpointRecord[]
+  stateRows: WorkflowStateRow[]
 }): SafeSelectedRunContext {
   return {
     runId: safeIdentifier(runId),
@@ -119,7 +119,7 @@ export function createSafeSelectedRunContext({
       latestCreatedAt: latestCheckpointTimestamp(checkpoints),
     },
     output: {
-      finalDecision: finalDecision(runResponse?.outputs ?? []),
+      finalDecision: selectedRunDecision(stateRows),
     },
   }
 }

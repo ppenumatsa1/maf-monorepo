@@ -1,6 +1,6 @@
 ---
 name: ag-ui-streaming-fastapi-py
-description: Implement and review FastAPI streaming endpoints that project MAF workflow events into AG-UI-compatible event envelopes for frontend and CopilotKit-style consumers.
+description: Implement and review FastAPI AG-UI streaming endpoints that project durable underwriting workflow progress without widening the public contract.
 ---
 
 # AG-UI Streaming for FastAPI (Underwriting)
@@ -9,19 +9,21 @@ Use this skill when changing streaming APIs, event envelopes, or backend-to-fron
 
 ## Scope
 
-- Endpoint surface: POST /api/v1/underwriting/ag-ui
-- Backend sources: workflow events emitted by MAF runner/executors
-- Projection target: AG-UI-compatible stream envelopes consumed by frontend
+- Endpoint surface: `POST /api/v1/underwriting/ag-ui`
+- Route ownership: `backend/app/api/v1/routes/underwriting.py`
+- Projection helpers: `backend/app/maf/agui.py`
+- Durable read models: run, state, events, and checkpoints endpoints remain the source of truth
 
 ## Guardrails
 
-- Treat native MAF events as source-of-truth; AG-UI events are additive projections.
-- Do not break existing event types without coordinated frontend/test/doc updates.
-- Keep payload fields stable for run identifiers, stage names, checkpoint ids, and idempotency markers.
-- Preserve stream ordering expectations for start, stage progress, terminal output, and failures.
+- Treat native workflow and durable repository data as source of truth; AG-UI events are additive projections.
+- Do not widen the public stream surface to include applicant PII, financial inputs, checkpoint payloads, or secrets.
+- Preserve ordering expectations for run start, progress, checkpointed interruption, resume, terminal output, and failures.
+- Keep CopilotKit as a separate allowlisted explanation surface; AG-UI changes must not silently broaden assistant data access.
 
 ## Required verification
 
-1. Validate backend stream contract tests in `backend/tests/test_agui.py`.
-2. Validate frontend E2E assertions in `frontend/tests/e2e/underwriting.spec.ts`.
-3. Validate docs parity in `docs/design/schema-io-telemetry.md` and `docs/design/e2e-rubric.md`.
+1. Validate `backend/tests/test_agui.py`.
+2. Validate `backend/tests/test_hosted_relay.py` and `backend/tests/test_hosted_telemetry_correlation.py` when hosted relay or telemetry semantics change.
+3. Validate `frontend/tests/e2e/underwriting.spec.ts`.
+4. Validate docs parity in `docs/design/schema-io-telemetry.md` and `docs/design/e2e-rubric.md`.

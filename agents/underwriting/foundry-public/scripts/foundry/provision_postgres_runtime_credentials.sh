@@ -70,11 +70,19 @@ require_password() {
   fi
 }
 
+set_azd_secret() {
+  if ! AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env set "$1" "$2" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null 2>&1; then
+    echo "Unable to save the local AZD environment credential." >&2
+    exit 1
+  fi
+}
+
 require_bin az
 require_bin azd
 require_bin python3
 require_bin psql
-test -r "$CREDENTIAL_HELPER" || {
+[[ -r "$CREDENTIAL_HELPER" ]] || {
   echo "Missing PostgreSQL credential helper." >&2
   exit 1
 }
@@ -162,13 +170,14 @@ if ! az postgres flexible-server db show \
   exit 1
 fi
 
-# A recreated database is empty. Create the owned tables with the
-# administrator before granting only runtime DML privileges.
 bash "$SCRIPT_DIR/bootstrap_postgres_schema.sh"
 
-provision_file="$(mktemp)"
-verification_file=''
-trap 'rm -f "$provision_file" "${verification_file:-}"' EXIT
+scratch_dir="$ROOT_DIR/backend/.tmp/foundry"
+run_stamp="$(date -u +%Y%m%d%H%M%S)-$$"
+provision_file="$scratch_dir/provision-postgres-runtime-${run_stamp}.sql"
+verification_file="$scratch_dir/verify-postgres-runtime-${run_stamp}.sql"
+mkdir -p "$scratch_dir"
+trap 'rm -f "$provision_file" "$verification_file"' EXIT
 umask 077
 (
   POSTGRES_DATABASE="$database_name" \
@@ -197,15 +206,6 @@ runtime_database_url="$(
     python3 "$CREDENTIAL_HELPER" runtime-url
 )"
 
-set_azd_secret() {
-  if ! AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-    azd env set "$1" "$2" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null 2>&1; then
-    echo "Unable to save the local AZD environment credential." >&2
-    exit 1
-  fi
-}
-
-verification_file="$(mktemp)"
 (
   POSTGRES_DATABASE="$database_name" \
   POSTGRES_RUNTIME_USERNAME="$runtime_username" \

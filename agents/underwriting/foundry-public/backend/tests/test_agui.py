@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 
 def test_agui_streams_safe_hosted_workflow_projection() -> None:
-    class FakeHostedAdapter:
+    class FakeService:
         def __init__(self) -> None:
             self.events = [
                 {
@@ -27,18 +27,18 @@ def test_agui_streams_safe_hosted_workflow_projection() -> None:
                 },
             ]
 
-        async def start_workflow(self, **_kwargs: object) -> dict[str, object]:
+        async def start_run(self, **_kwargs: object) -> dict[str, object]:
             await asyncio.sleep(0)
             return {"status": "COMPLETED", "outputs": []}
 
-        async def resume_workflow(self, _workflow_run_id: str) -> dict[str, object]:
+        async def resume_run(self, _workflow_run_id: str) -> dict[str, object]:
             await asyncio.sleep(0)
             return {"status": "COMPLETED", "outputs": []}
 
         def get_events(self, _workflow_run_id: str) -> list[dict[str, object]]:
             return self.events
 
-    service = FakeHostedAdapter()
+    service = FakeService()
     app = FastAPI()
     add_agent_framework_fastapi_endpoint(
         app=app,

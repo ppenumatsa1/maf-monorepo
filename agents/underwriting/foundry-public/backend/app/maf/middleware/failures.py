@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from app.core.config import Settings
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 
 
 def maybe_fail_once(
     settings: Settings,
-    repository: Repository,
+    repository: WorkflowRunRepository,
     workflow_run_id: str,
     idempotency_key: str,
     check_type: str,
@@ -21,12 +21,12 @@ def maybe_fail_once(
             raise RuntimeError("Injected FAIL_RISK_ONCE failure")
 
 
-def should_fail_credit(settings: Settings, repository: Repository) -> bool:
+def should_fail_credit(settings: Settings, repository: WorkflowRunRepository) -> bool:
     return settings.fail_credit_randomly and repository.should_fail_credit_randomly()
 
 
 def maybe_crash_after_executor(
-    settings: Settings, repository: Repository, workflow_run_id: str, executor_name: str
+    settings: Settings, repository: WorkflowRunRepository, workflow_run_id: str, executor_name: str
 ) -> None:
     if not settings.crash_after_executor:
         return

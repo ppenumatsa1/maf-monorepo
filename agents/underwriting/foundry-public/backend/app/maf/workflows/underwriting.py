@@ -3,8 +3,8 @@ from __future__ import annotations
 from agent_framework import Workflow, WorkflowBuilder, WorkflowExecutor
 
 from app.core.config import Settings
-from app.infrastructure.checkpointing.postgres_checkpoint_storage import PostgresCheckpointStorage
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.checkpoint_store import PostgresCheckpointStore
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.maf.executors.fan_in_aggregator import FanInAggregatorExecutor
 from app.maf.executors.final_decision import FinalDecisionExecutor
 from app.maf.executors.init_context import InitContextExecutor
@@ -15,10 +15,10 @@ from app.maf.workflows.child_risk_workflow import build_child_risk_workflow
 from app.modules.underwriting.contracts import DecisionLLMClient
 
 
-def build_parent_underwriting_workflow(
-    repository: Repository,
+def build_underwriting_workflow(
+    repository: WorkflowRunRepository,
     settings: Settings,
-    checkpoint_storage: PostgresCheckpointStorage,
+    checkpoint_storage: PostgresCheckpointStore,
     foundry_client: DecisionLLMClient | None,
 ) -> Workflow:
     init_context = InitContextExecutor(repository)

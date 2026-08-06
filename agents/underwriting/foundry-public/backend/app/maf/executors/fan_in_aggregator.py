@@ -2,13 +2,14 @@ from agent_framework import Executor, WorkflowContext, handler
 
 from app.core.config import Settings
 from app.core.telemetry import workflow_attributes, workflow_stage_span
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.maf.middleware.failures import maybe_crash_after_executor
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import AllChecksComplete, CheckResult
 
 
 class FanInAggregatorExecutor(Executor):
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: WorkflowRunRepository, settings: Settings):
         super().__init__(id="fan_in_aggregator")
         self.repository = repository
         self.settings = settings
@@ -47,7 +48,7 @@ class FanInAggregatorExecutor(Executor):
             )
             self.repository.log_event(
                 workflow_run_id,
-                "fan_in_result_received",
+                event_types.FAN_IN_RESULT_RECEIVED,
                 self.id,
                 {
                     "received_check": check_key,

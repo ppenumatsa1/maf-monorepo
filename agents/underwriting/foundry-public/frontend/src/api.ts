@@ -1,3 +1,5 @@
+import { getInitialApiBase } from './config'
+
 export type UnderwritingApplication = {
   application_id: string
   applicant_name: string
@@ -9,10 +11,14 @@ export type UnderwritingApplication = {
   credit_score: number
 }
 
-export type RunResponse = {
-  workflow_run_id: string
+export type WorkflowRunRecord = {
+  id: string
+  application_id: string
+  applicant_name: string
   status: string
-  outputs: unknown[]
+  created_at: string
+  updated_at: string
+  [key: string]: unknown
 }
 
 export type RunHistoryItem = {
@@ -26,6 +32,28 @@ export type RunHistoryItem = {
   checkpoint_count: number
   latest_checkpoint_at: string | null
   resumable: boolean
+}
+
+export type WorkflowStateRow = {
+  state_key: string
+  state_json: Record<string, unknown> | null
+  [key: string]: unknown
+}
+
+export type WorkflowEventRecord = {
+  id?: number | string
+  workflow_run_id?: string
+  event_type: string
+  executor_name: string
+  payload_json: Record<string, unknown> | null
+  created_at: string
+  [key: string]: unknown
+}
+
+export type WorkflowCheckpointRecord = {
+  checkpoint_id?: string
+  created_at?: string
+  [key: string]: unknown
 }
 
 export type RunHistoryResponse = {
@@ -50,55 +78,51 @@ export class ApiError extends Error {
   }
 }
 
-export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+export const apiBaseUrl = getInitialApiBase()
+
+async function errorMessage(response: Response): Promise<string> {
+  const responseText = await response.text()
+  if (!responseText) {
+    return `Request failed (${response.status})`
+  }
+  try {
+    const parsed = JSON.parse(responseText) as { detail?: unknown; message?: unknown }
+    const detail = parsed.detail ?? parsed.message
+    return typeof detail === 'string' ? detail : responseText
+  } catch {
+    return responseText
+  }
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
+    cache: 'no-store',
     headers: {
-      'content-type': 'application/json',
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
       ...(init?.headers ?? {}),
     },
   })
   if (!response.ok) {
-    throw new ApiError(await response.text(), response.status)
+    throw new ApiError(await errorMessage(response), response.status)
   }
   return (await response.json()) as T
 }
 
-export async function startRun(payload: {
-  application: UnderwritingApplication
-  fail_risk_once?: boolean
-  fail_credit_randomly?: boolean
-  crash_after_executor?: string
-  workflow_run_id?: string
-}): Promise<RunResponse> {
-  return api<RunResponse>('/api/v1/underwriting/runs', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
+export async function getRun(runId: string): Promise<WorkflowRunRecord> {
+  return api<WorkflowRunRecord>(`/api/v1/underwriting/runs/${runId}`)
 }
 
-export async function resumeRun(runId: string): Promise<RunResponse> {
-  return api<RunResponse>(`/api/v1/underwriting/runs/${runId}/resume`, {
-    method: 'POST',
-  })
+export async function getState(runId: string): Promise<WorkflowStateRow[]> {
+  return api<WorkflowStateRow[]>(`/api/v1/underwriting/runs/${runId}/state`)
 }
 
-export async function getRun(runId: string): Promise<Record<string, unknown>> {
-  return api<Record<string, unknown>>(`/api/v1/underwriting/runs/${runId}`)
+export async function getEvents(runId: string): Promise<WorkflowEventRecord[]> {
+  return api<WorkflowEventRecord[]>(`/api/v1/underwriting/runs/${runId}/events`)
 }
 
-export async function getState(runId: string): Promise<Record<string, unknown>[]> {
-  return api<Record<string, unknown>[]>(`/api/v1/underwriting/runs/${runId}/state`)
-}
-
-export async function getEvents(runId: string): Promise<Record<string, unknown>[]> {
-  return api<Record<string, unknown>[]>(`/api/v1/underwriting/runs/${runId}/events`)
-}
-
-export async function getCheckpoints(runId: string): Promise<Record<string, unknown>[]> {
-  return api<Record<string, unknown>[]>(`/api/v1/underwriting/runs/${runId}/checkpoints`)
+export async function getCheckpoints(runId: string): Promise<WorkflowCheckpointRecord[]> {
+  return api<WorkflowCheckpointRecord[]>(`/api/v1/underwriting/runs/${runId}/checkpoints`)
 }
 
 export async function getRunHistory(params: {
@@ -153,7 +177,7 @@ export async function streamRun(
     }),
   })
   if (!response.ok) {
-    throw new ApiError(await response.text(), response.status)
+    throw new ApiError(await errorMessage(response), response.status)
   }
   if (!response.body) {
     throw new Error('AG-UI stream was not available')

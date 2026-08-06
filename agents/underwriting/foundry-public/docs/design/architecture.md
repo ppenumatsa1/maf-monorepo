@@ -2,7 +2,10 @@
 
 ## Purpose
 
-This document describes the business and runtime architecture for the underwriting use case through four views: logical, process, development, and physical.
+This document describes the business and runtime architecture for the underwriting use case through four views: logical, process, development, and physical. It also records the clean-cutover operating model for the public hosted lane.
+
+For the rationale behind the initial Underwriting design and the later clean
+alignment decisions, see [architecture-decisions.md](architecture-decisions.md).
 
 ## Business Problem
 
@@ -20,13 +23,12 @@ Deliver a verifiable multi-step underwriting workflow that is:
 - operationally transparent (run history, event timeline, checkpoints, AG-UI stream),
 - decision-safe (deterministic score policy before any model rationale),
 - durable (PostgreSQL-backed checkpoints and business projections),
-- extensible (shared domain contracts across local validation, the public
-  adapter, and the hosted agent).
+- extensible (shared domain contracts across local validation, the public adapter, and the hosted agent),
+- release-governed (hosted readiness is claimed only from recorded smoke/E2E/eval/telemetry evidence).
 
 ## Logical View
 
-The logical view follows an insurance application from intake through parallel
-assessments, aggregation, and the final underwriting outcome.
+The logical view follows an insurance application from intake through parallel assessments, aggregation, and the final underwriting outcome.
 
 ```mermaid
 flowchart TD
@@ -63,15 +65,10 @@ flowchart TD
 ### Business Decision Model
 
 - Intake creates one underwriting case for the submitted application.
-- Risk, credit, medical, and driving assessments run independently and may
-  complete in any order.
-- Aggregation proceeds incrementally, but no decision is made until all four
-  assessment results are present.
-- The deterministic policy approves when the average score is at least `0.8`,
-  risk is at least `0.6`, and credit is at least `0.65`. Lower average-score
-  bands produce approval with conditions, human referral, or decline.
-- Model-generated rationale explains the result but cannot change the policy
-  decision.
+- Risk, credit, medical, and driving assessments run independently and may complete in any order.
+- Aggregation proceeds incrementally, but no decision is made until all four assessment results are present.
+- The deterministic policy approves when the average score is at least `0.8`, risk is at least `0.6`, and credit is at least `0.65`. Lower average-score bands produce approval with conditions, human referral, or decline.
+- Model-generated rationale explains the result but cannot change the policy decision.
 
 ## Process View
 
@@ -141,15 +138,11 @@ The development view maps runtime responsibilities to source modules and verific
 
 There is one business workflow implementation and one service boundary (`backend/app/modules/underwriting/service.py`).
 
-- `backend/app/main.py` and CLI commands invoke the same service/workflow path
-  for local verification runs.
+- `backend/app/main.py` and CLI commands invoke the same service/workflow path for local verification runs.
 - `backend/app/server.py` exposes HTTP routes for run/resume/history/state/events/checkpoints.
 - `backend/app/server.py` also adds `POST /api/v1/underwriting/ag-ui` for AG-UI event streaming.
-- `backend/app/modules/underwriting/service.py:UnderwritingHostedAdapter`
-  relays start/resume operations and projects the shared durable history; it
-  does not construct a MAF runner in hosted mode.
-- `backend/foundry/main.py` hosts the real Foundry Responses workflow entrypoint
-  and constructs the MAF runner there.
+- `backend/app/modules/underwriting/service.py:UnderwritingHostedAdapter` relays start/resume operations and projects the shared durable history; it does not construct a second production orchestration path in hosted mode.
+- `backend/foundry/main.py` hosts the real Foundry Responses workflow entrypoint and constructs the MAF runner there.
 
 ```mermaid
 flowchart TD
@@ -177,10 +170,8 @@ flowchart TD
   - PostgreSQL repositories for runs, state, events, results, and idempotency.
   - Real MAF checkpoint storage through `PostgresCheckpointStorage`.
 - **Frontend** (`frontend/src`)
-  - Operations console for scenario execution, live progress stream, and
-    run-history inspection.
-  - Embedded CopilotKit assistant receives only an allowlisted selected-run
-    projection through the public adapter.
+  - Operations console for scenario execution, live progress stream, and run-history inspection.
+  - Embedded CopilotKit assistant receives only an allowlisted selected-run projection through the public adapter.
 
 ### Execution Surfaces
 
@@ -188,16 +179,23 @@ The same underwriting business flow runs across:
 
 1. Local CLI (`make run`, `make run-crash`, `make resume`).
 2. Local FastAPI routes (`/api/v1/underwriting/*`) and AG-UI stream endpoint.
-3. Foundry hosted Responses workflow execution correlated to the public
-   request and durable run.
+3. Foundry hosted Responses workflow execution correlated to the public request and durable run.
+
+### Clean cutover and no-shims rule
+
+The public hosted lane adopts Order Resolution's operating model:
+
+- the browser-facing adapter starts or resumes hosted work and reads durable projections;
+- the hosted Responses entrypoint owns production orchestration and writes;
+- local execution mode exists only for isolated validation;
+- no compatibility shim should reintroduce a second orchestration runtime, shadow checkpoint path, or direct browser-to-Foundry flow.
 
 ### Verification
 
 1. Functional tests (`backend/tests`) validate fan-out/fan-in, idempotency, and resume behavior.
 2. E2E rubric (`frontend/tests/e2e/rubric.ts`) validates operator-facing lifecycle and recovery expectations.
-3. Hosted smoke/eval (`make foundry-smoke`, `make foundry-eval`,
-   `make foundry-trace-eval`) validates real hosted workflow/model telemetry
-   and public-request correlation.
+3. Hosted smoke/eval (`make foundry-smoke`, `make foundry-eval`, `make foundry-trace-eval`) validates real hosted workflow/model telemetry and public-request correlation.
+4. Release governance and execution evidence are recorded in [`engineering-operating-model.md`](engineering-operating-model.md) and [`issues-changes-fixes.md`](issues-changes-fixes.md).
 
 ## Physical View
 
@@ -229,10 +227,7 @@ flowchart LR
   Agent -->|TLS read and write| DB
 ```
 
-The public adapter passes start/resume input to the hosted agent only in the
-Responses body; it never places application data in Responses metadata. The
-browser never receives a Foundry or database credential and never calls
-Foundry directly. The hosted runtime alone receives its TLS database URL.
+The public adapter passes start/resume input to the hosted agent only in the Responses body; it never places application data in Responses metadata. The browser never receives a Foundry or database credential and never calls Foundry directly. The hosted runtime alone receives its TLS database URL.
 
 ### Durable Stores
 
@@ -247,12 +242,6 @@ PostgreSQL is the durable source of truth for both business and workflow recover
 
 ### Hosted Execution Boundary
 
-The hosted runtime uses a dedicated least-privilege PostgreSQL password over
-TLS. Password authentication and the Azure-services firewall exception are
-declared in Bicep; the credential is provisioned/rotated locally and injected
-only into the hosted runtime. This prototype accepts the password-custody and
-public-network posture tradeoff to match the order-resolution standard.
+The hosted runtime uses a dedicated least-privilege PostgreSQL password over TLS. Password authentication and the narrow required network posture are release-managed and injected only into the hosted runtime. This prototype intentionally keeps the public adapter as a browser-facing relay while the hosted agent owns durable execution.
 
-`UNDERWRITING_EXECUTION_MODE=local` exists only for isolated local E2E
-validation. It is never set in the deployed public adapter, whose default and
-required production mode is `hosted`.
+`UNDERWRITING_EXECUTION_MODE=local` exists only for isolated local E2E validation. It is never the intended deployed public-adapter mode.

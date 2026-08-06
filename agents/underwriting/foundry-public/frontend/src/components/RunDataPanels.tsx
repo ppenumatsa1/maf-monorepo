@@ -1,20 +1,27 @@
-import type { RunResponse } from '../api'
+import type {
+  WorkflowCheckpointRecord,
+  WorkflowEventRecord,
+  WorkflowRunRecord,
+  WorkflowStateRow,
+} from '../api'
 
 type RunData = {
-  runId: string
-  runResponse: RunResponse | null
-  runInfo: Record<string, unknown> | null
-  stateRows: Record<string, unknown>[]
-  events: Record<string, unknown>[]
-  checkpoints: Record<string, unknown>[]
+  runId: string | null
+  currentStatus: string
+  runInfo: WorkflowRunRecord | null
+  stateRows: WorkflowStateRow[]
+  events: WorkflowEventRecord[]
+  checkpoints: WorkflowCheckpointRecord[]
 }
 
 type TimelineProps = Pick<RunData, 'runId' | 'events'> & {
   onRefresh: () => void
   loading: boolean
+  isStreaming: boolean
+  streamedEventCount: number
 }
 
-type RecoveryProps = Pick<RunData, 'runResponse' | 'runInfo' | 'stateRows' | 'events' | 'checkpoints'> & {
+type RecoveryProps = Pick<RunData, 'currentStatus' | 'stateRows' | 'events' | 'checkpoints'> & {
   onResume: () => void
   loading: boolean
 }
@@ -41,7 +48,7 @@ function businessLabel(value: string): string {
   return labels[value] ?? value.replace(/_/g, ' ')
 }
 
-function eventSummary(event: Record<string, unknown>): {
+function eventSummary(event: WorkflowEventRecord): {
   title: string
   description: string
   tone: TimelineTone
@@ -106,11 +113,14 @@ function JsonDetails({ title, testId, value }: { title: string; testId: string; 
   )
 }
 
-function currentStatus(runResponse: RunResponse | null, runInfo: Record<string, unknown> | null): string {
-  return String(runResponse?.status ?? runInfo?.status ?? 'IDLE')
-}
-
-export function RunTimeline({ runId, events, onRefresh, loading }: TimelineProps) {
+export function RunTimeline({
+  runId,
+  events,
+  onRefresh,
+  loading,
+  isStreaming,
+  streamedEventCount,
+}: TimelineProps) {
   const orderedEvents = [...events].sort((left, right) => {
     const leftTime = new Date(String(left.created_at ?? '')).getTime()
     const rightTime = new Date(String(right.created_at ?? '')).getTime()
@@ -125,11 +135,21 @@ export function RunTimeline({ runId, events, onRefresh, loading }: TimelineProps
         <div>
           <span className="panel-kicker">Execution</span>
           <h2>Event Timeline</h2>
-          <p className="panel-subtitle">Events are shown in the order this underwriting run executed.</p>
+          <p className="panel-subtitle">
+            Events are shown in the order this underwriting run executed.
+          </p>
         </div>
-        <button type="button" className="button-secondary" onClick={onRefresh} disabled={loading || !runId}>
-          Refresh
-        </button>
+        <div className="timeline-toolbar">
+          <span
+            className={`meta-chip ${isStreaming ? 'meta-chip-live' : ''}`}
+            data-testid="agui-stream-status"
+          >
+            {isStreaming ? `AG-UI live • ${streamedEventCount}` : 'AG-UI idle'}
+          </span>
+          <button type="button" className="button-secondary" onClick={onRefresh} disabled={loading || !runId}>
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="event-counters">
         <div data-testid="retry-event-count" className="summary-item">
@@ -173,8 +193,7 @@ export function RunTimeline({ runId, events, onRefresh, loading }: TimelineProps
 }
 
 export function RunRecoveryPanel({
-  runResponse,
-  runInfo,
+  currentStatus,
   stateRows,
   events,
   checkpoints,
@@ -193,7 +212,7 @@ export function RunRecoveryPanel({
     : Array.isArray(context.expected_checks)
       ? context.expected_checks.map(String)
     : ['risk', 'credit', 'medical', 'driving']
-  const status = currentStatus(runResponse, runInfo)
+  const status = currentStatus
   const latestCheckpoint = checkpoints.at(-1)
   const failed = events.some((event) =>
     ['workflow_crashed', 'retry_exhausted'].includes(String(event.event_type)),
@@ -254,14 +273,20 @@ export function RunRecoveryPanel({
   )
 }
 
-export function RunSummaryRail({ runId, runResponse, runInfo, stateRows, events, checkpoints }: SummaryProps) {
-  const status = currentStatus(runResponse, runInfo)
+export function RunSummaryRail({
+  runId,
+  currentStatus,
+  runInfo,
+  stateRows,
+  events,
+  checkpoints,
+}: SummaryProps) {
+  const status = currentStatus
   const context = valueAsObject(stateRows.find((row) => row.state_key === 'underwriting_context')?.state_json)
   const persistedDecision = valueAsObject(stateRows.find((row) => row.state_key === 'final_decision')?.state_json)
-  const outputDecision = valueAsObject(runResponse?.outputs[0])
-  const decision = persistedDecision.decision ?? outputDecision.decision ?? 'Pending'
-  const rationale = persistedDecision.rationale ?? outputDecision.rationale
-  const scoreBreakdown = valueAsObject(persistedDecision.score_breakdown ?? outputDecision.score_breakdown)
+  const decision = persistedDecision.decision ?? 'Pending'
+  const rationale = persistedDecision.rationale
+  const scoreBreakdown = valueAsObject(persistedDecision.score_breakdown)
 
   return (
     <aside className="summary-rail-layout">
@@ -320,7 +345,7 @@ export function RunSummaryRail({ runId, runResponse, runInfo, stateRows, events,
       </section>
       <section className="card output-panel">
         <span className="panel-kicker">Technical output</span>
-        <JsonDetails title="Raw run output" testId="run-outputs" value={runResponse?.outputs ?? persistedDecision} />
+        <JsonDetails title="Persisted final decision output" testId="run-outputs" value={persistedDecision} />
       </section>
     </aside>
   )

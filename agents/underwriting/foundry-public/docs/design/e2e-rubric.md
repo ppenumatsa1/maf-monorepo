@@ -12,9 +12,9 @@ Playwright rubric source: `frontend/tests/e2e/rubric.ts`.
 6. Checkpoint list is populated.
 7. Idempotency skip signal is present in replay/resume path.
 8. Event payload includes observability context fields.
-9. Public release smoke confirms the AG-UI request is an Application Insights
-   Request and the hosted MAF workflow/model trace is visible in Foundry.
+9. Public release smoke confirms the AG-UI request is an Application Insights Request and the hosted MAF workflow/model trace is visible in Foundry.
+10. Public release smoke confirms browser traffic stays on the public adapter contract rather than calling Foundry directly.
+11. Public release smoke confirms retry and crash/resume evidence correlate on one durable `workflow_run_id` per run.
+12. Hosted release evidence is recorded in `docs/design/issues-changes-fixes.md` before readiness is claimed.
 
-Criteria 1-8 are automated Playwright coverage. Criterion 9 is a release
-smoke check because it requires deployed Azure resources and telemetry
-materialization. A rubric pass requires all automated criteria to pass.
+Criteria 1-8 are automated Playwright coverage. Criteria 9-12 are hosted release checks because they require deployed Azure resources, telemetry materialization, and the delivery ledger. A local rubric pass requires all automated criteria to pass. A full public release pass requires both the automated criteria and the hosted release checks.

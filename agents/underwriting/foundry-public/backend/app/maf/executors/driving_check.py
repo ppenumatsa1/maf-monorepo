@@ -4,14 +4,15 @@ from agent_framework import Executor, WorkflowContext, handler
 
 from app.core.config import Settings
 from app.core.telemetry import workflow_attributes, workflow_stage_span
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.maf.middleware.failures import maybe_crash_after_executor
 from app.maf.middleware.resilience import invoke_check_operation
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import CheckRequest, CheckResult, CheckType
 
 
 class DrivingCheckExecutor(Executor):
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: WorkflowRunRepository, settings: Settings):
         super().__init__(id="driving_check")
         self.repository = repository
         self.settings = settings
@@ -71,7 +72,10 @@ class DrivingCheckExecutor(Executor):
             invocation.idempotency_key, "driving_check", "completed", result.to_dict()
         )
         self.repository.log_event(
-            request.workflow_run_id, "check_completed", self.id, result.to_dict()
+            request.workflow_run_id,
+            event_types.CHECK_COMPLETED,
+            self.id,
+            result.to_dict(),
         )
         maybe_crash_after_executor(
             self.settings, self.repository, request.workflow_run_id, "driving_check"

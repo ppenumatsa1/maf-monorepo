@@ -4,12 +4,13 @@ import asyncio
 
 from app.core.config import load_settings
 from app.infrastructure.db.engine import create_db_engine, init_db, reset_db
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.main import run_workflow
 from app.modules.underwriting.models import UnderwritingApplication
 
 
-def test_fan_in_state_updates_one_result_at_a_time() -> None:
+def test_fan_in_state_updates_one_result_at_a_time(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'fan-in.db'}")
     settings = load_settings()
     engine = create_db_engine(settings)
     init_db(engine)
@@ -27,7 +28,7 @@ def test_fan_in_state_updates_one_result_at_a_time() -> None:
     )
     run_id, _ = asyncio.run(run_workflow(workflow_run_id="run-fanin-001", app=app))
 
-    repo = Repository(engine)
+    repo = WorkflowRunRepository(engine)
     state_entries = repo.list_business_state(run_id)
     aggregation = [row for row in state_entries if row["state_key"] == "aggregation_state"]
     assert aggregation, "aggregation_state should exist"

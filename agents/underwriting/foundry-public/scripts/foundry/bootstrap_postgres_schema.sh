@@ -32,11 +32,11 @@ required_env() {
 require_bin az
 require_bin azd
 require_bin psql
-test -x "$PYTHON" || {
+[[ -x "$PYTHON" ]] || {
   echo "Missing project virtual environment; run make install first." >&2
   exit 1
 }
-test -r "$DDL_GENERATOR" || {
+[[ -r "$DDL_GENERATOR" ]] || {
   echo "Missing PostgreSQL schema DDL generator." >&2
   exit 1
 }
@@ -49,7 +49,10 @@ admin_username="$(required_env POSTGRES_ADMIN_USERNAME)"
 admin_password="$(required_env POSTGRES_ADMIN_PASSWORD)"
 
 az account set --subscription "$subscription_id" >/dev/null
-schema_file="$(mktemp)"
+scratch_dir="$ROOT_DIR/backend/.tmp/foundry"
+run_stamp="$(date -u +%Y%m%d%H%M%S)-$$"
+schema_file="$scratch_dir/bootstrap-postgres-schema-${run_stamp}.sql"
+mkdir -p "$scratch_dir"
 trap 'rm -f "$schema_file"' EXIT
 umask 077
 PYTHONPATH="$ROOT_DIR/backend" "$PYTHON" "$DDL_GENERATOR" >"$schema_file"
@@ -66,4 +69,5 @@ if ! PGPASSWORD="$admin_password" PGSSLMODE=require \
 fi
 
 unset admin_password
+printf 'Verified PostgreSQL resource group: %s\n' "$resource_group" >/dev/null
 echo "Bootstrapped the underwriting PostgreSQL schema with the administrator credential."

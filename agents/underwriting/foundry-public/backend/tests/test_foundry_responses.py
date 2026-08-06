@@ -7,7 +7,7 @@ from typing import Any
 
 import foundry.main as hosted_main
 from app.core.config import Settings
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.modules.underwriting.hosted import HOSTED_WORKFLOW_PROTOCOL
 from app.modules.underwriting.models import Decision, FinalDecisionResult
 
@@ -128,7 +128,7 @@ def test_hosted_handler_executes_start_envelope(monkeypatch) -> None:
                 )
             ]
 
-    monkeypatch.setattr(hosted_main, "UnderwritingService", FakeService)
+    monkeypatch.setattr(hosted_main, "LocalUnderwritingService", FakeService)
 
     result = asyncio.run(
         hosted_main._handle(
@@ -167,7 +167,7 @@ def test_hosted_handler_executes_resume_envelope(monkeypatch) -> None:
             captured.append(workflow_run_id)
             return [{"decision": "APPROVED"}]
 
-    monkeypatch.setattr(hosted_main, "UnderwritingService", FakeService)
+    monkeypatch.setattr(hosted_main, "LocalUnderwritingService", FakeService)
     request = {
         "protocol": HOSTED_WORKFLOW_PROTOCOL,
         "workflow_run_id": "run-resume-test",
@@ -240,7 +240,7 @@ def test_hosted_handler_runs_maf_workflow_and_resumes_checkpoint(monkeypatch, tm
         )
     )
 
-    repository = Repository(hosted_main.UnderwritingService(settings).engine)
+    repository = WorkflowRunRepository(hosted_main.LocalUnderwritingService(settings).engine)
     events = repository.list_events(start["workflow_run_id"])
     assert crashed["status"] == "CRASHED"
     assert repository.latest_checkpoint_id(start["workflow_run_id"]) is not None
@@ -305,7 +305,7 @@ def test_hosted_handler_never_copies_application_values_to_manual_trace_attribut
             return kwargs["workflow_run_id"], []
 
     monkeypatch.setattr(hosted_main, "_tracer", FakeTracer())
-    monkeypatch.setattr(hosted_main, "UnderwritingService", FakeService)
+    monkeypatch.setattr(hosted_main, "LocalUnderwritingService", FakeService)
 
     asyncio.run(
         hosted_main._handle(

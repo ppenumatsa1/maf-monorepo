@@ -2,19 +2,26 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-AGENT_DIR="$ROOT_DIR/infra/foundry-hosted/agent"
+TARGET_DIR="$ROOT_DIR/infra/foundry-hosted/agent"
 
-rm -rf "$AGENT_DIR"
-mkdir -p "$AGENT_DIR"
+if [[ ! -f "$ROOT_DIR/backend/Dockerfile.hosted" || ! -f "$ROOT_DIR/backend/foundry/main.py" ]]; then
+  echo "backend/Dockerfile.hosted and backend/foundry/main.py are required." >&2
+  exit 1
+fi
 
-cp "$ROOT_DIR/pyproject.toml" "$AGENT_DIR/"
-cp "$ROOT_DIR/backend/Dockerfile.hosted" "$AGENT_DIR/Dockerfile"
+rm -rf "$TARGET_DIR"
+mkdir -p "$TARGET_DIR"
+
+cp "$ROOT_DIR/pyproject.toml" "$TARGET_DIR/"
+cp "$ROOT_DIR/backend/Dockerfile.hosted" "$TARGET_DIR/Dockerfile"
+
 tar \
-  --exclude='.venv' \
-  --exclude='__pycache__' \
-  --exclude='.pytest_cache' \
-  --exclude='.foundry/results' \
+  --exclude='backend/.env' \
+  --exclude='backend/.venv' \
+  --exclude='backend/tests' \
+  --exclude='backend/.pytest_cache' \
+  --exclude='backend/__pycache__' \
+  --exclude='backend/.foundry/results' \
+  --exclude='backend/.tmp' \
   -C "$ROOT_DIR" \
-  -cf - backend | tar -C "$AGENT_DIR" -xf -
-cp "$ROOT_DIR/backend/eval.yaml" "$AGENT_DIR/eval.yaml"
-cp -R "$ROOT_DIR/backend/.foundry" "$AGENT_DIR/.foundry"
+  -cf - backend | tar -C "$TARGET_DIR" -xf -

@@ -17,7 +17,7 @@ from app.infrastructure.db.tables import (
 )
 
 
-class Repository:
+class WorkflowRunRepository:
     def __init__(self, engine: Engine):
         self.engine = engine
 

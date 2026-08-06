@@ -11,13 +11,13 @@ from typing import Any
 from app.core.config import load_settings
 from app.core.observability import configure_observability
 from app.modules.underwriting.models import FinalDecisionResult, UnderwritingApplication
-from app.modules.underwriting.service import UnderwritingService
+from app.modules.underwriting.service import LocalUnderwritingService
 
 
-def _service() -> UnderwritingService:
+def _service() -> LocalUnderwritingService:
     settings = load_settings()
     configure_observability(settings.log_level)
-    return UnderwritingService(settings)
+    return LocalUnderwritingService(settings)
 
 
 async def run_workflow(

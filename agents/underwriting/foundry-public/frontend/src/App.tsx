@@ -2,19 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CopilotChat, useAgentContext } from '@copilotkit/react-core/v2'
 
 import {
-  ApiError,
   getCheckpoints,
   getEvents,
   getRun,
   getRunHistory,
   getState,
-  resumeRun,
-  startRun,
   streamRun,
   type AGUIEvent,
   type RunHistoryItem,
-  type RunResponse,
   type UnderwritingApplication,
+  type WorkflowCheckpointRecord,
+  type WorkflowEventRecord,
+  type WorkflowRunRecord,
+  type WorkflowStateRow,
 } from './api'
 import { createSafeSelectedRunContext, underwritingCopilotRuntime } from './copilot'
 import { ApplicationSection } from './components/ApplicationSection'
@@ -48,11 +48,10 @@ function App() {
   const [application, setApplication] = useState<UnderwritingApplication>(defaultApplication)
   const [scenario, setScenario] = useState<Scenario>('happy')
   const [runId, setRunId] = useState('')
-  const [runResponse, setRunResponse] = useState<RunResponse | null>(null)
-  const [runInfo, setRunInfo] = useState<Record<string, unknown> | null>(null)
-  const [stateRows, setStateRows] = useState<Record<string, unknown>[]>([])
-  const [events, setEvents] = useState<Record<string, unknown>[]>([])
-  const [checkpoints, setCheckpoints] = useState<Record<string, unknown>[]>([])
+  const [runInfo, setRunInfo] = useState<WorkflowRunRecord | null>(null)
+  const [stateRows, setStateRows] = useState<WorkflowStateRow[]>([])
+  const [events, setEvents] = useState<WorkflowEventRecord[]>([])
+  const [checkpoints, setCheckpoints] = useState<WorkflowCheckpointRecord[]>([])
   const [history, setHistory] = useState<RunHistoryItem[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyOffset, setHistoryOffset] = useState(0)
@@ -61,6 +60,8 @@ function App() {
   const [showNewRun, setShowNewRun] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isStreamingRun, setIsStreamingRun] = useState(false)
+  const [streamEventCount, setStreamEventCount] = useState(0)
   const [lastRunActivityAt, setLastRunActivityAt] = useState<number | null>(null)
 
   const runIdRef = useRef(runId)
@@ -68,17 +69,17 @@ function App() {
   const lastRunActivityAtRef = useRef<number | null>(null)
   const pollInFlightRef = useRef(false)
 
-  const currentStatus = String(runInfo?.status ?? runResponse?.status ?? 'IDLE')
+  const currentStatus = String(runInfo?.status ?? (isStreamingRun && runId ? 'RUNNING' : 'IDLE'))
   const selectedRunAssistantContext = useMemo(
     () =>
       createSafeSelectedRunContext({
-        runId,
+        runId: runId || null,
         status: currentStatus,
         events,
         checkpoints,
-        runResponse,
+        stateRows,
       }),
-    [checkpoints, currentStatus, events, runId, runResponse],
+    [checkpoints, currentStatus, events, runId, stateRows],
   )
 
   useAgentContext({
@@ -97,6 +98,17 @@ function App() {
     setHistoryTotal(result.total)
     setHistoryOffset(result.items.length)
   }, [historySearch, historyStatus])
+
+  function selectHistoryProjection(item: RunHistoryItem): WorkflowRunRecord {
+    return {
+      id: item.workflow_run_id,
+      application_id: item.application_id,
+      applicant_name: item.applicant_name,
+      status: item.status,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+    }
+  }
 
   const loadMoreHistory = useCallback(async () => {
     const result = await getRunHistory({
@@ -125,22 +137,39 @@ function App() {
     }
     setRunInfo(run)
     setStateRows(state)
-    setEvents(ev)
-    setCheckpoints(cp)
+    setEvents(
+      [...ev].sort(
+        (left, right) =>
+          new Date(String(left.created_at ?? '')).getTime() -
+          new Date(String(right.created_at ?? '')).getTime(),
+      ),
+    )
+    setCheckpoints(
+      [...cp].sort(
+        (left, right) =>
+          new Date(String(left.created_at ?? '')).getTime() -
+          new Date(String(right.created_at ?? '')).getTime(),
+      ),
+    )
     const now = Date.now()
     setLastRunActivityAt(now)
     lastRunActivityAtRef.current = now
   }
 
-  async function selectRun(targetRunId: string) {
+  async function selectRun(item: RunHistoryItem) {
     setLoading(true)
     setError('')
     setShowNewRun(false)
-    setRunId(targetRunId)
-    runIdRef.current = targetRunId
-    setRunResponse({ workflow_run_id: targetRunId, status: 'IN_PROGRESS', outputs: [] })
+    setIsStreamingRun(false)
+    setStreamEventCount(0)
+    setRunId(item.workflow_run_id)
+    runIdRef.current = item.workflow_run_id
+    setRunInfo(selectHistoryProjection(item))
+    setStateRows([])
+    setEvents([])
+    setCheckpoints([])
     try {
-      await refreshRunData(targetRunId)
+      await refreshRunData(item.workflow_run_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -160,6 +189,11 @@ function App() {
     const createdAt = String(streamEvent.createdAt ?? '')
     const eventType = String(streamEvent.eventType ?? 'event')
     const executorName = String(streamEvent.executorName ?? 'main')
+    const workflowRunId = String(streamEvent.workflowRunId ?? runIdRef.current ?? '')
+    const now = Date.now()
+    setStreamEventCount((current) => current + 1)
+    setLastRunActivityAt(now)
+    lastRunActivityAtRef.current = now
     setEvents((current) => {
       const alreadyPresent = current.some(
         (item) =>
@@ -172,6 +206,7 @@ function App() {
         ...current,
         {
           id: `stream-${createdAt}-${eventType}-${executorName}`,
+          workflow_run_id: workflowRunId,
           created_at: createdAt,
           event_type: eventType,
           executor_name: executorName,
@@ -181,11 +216,13 @@ function App() {
     })
   }
 
-  async function runWithFallback(
+  async function runWithStream(
     targetRunId: string,
     action: 'start' | 'resume',
     runApplication?: UnderwritingApplication,
   ) {
+    setIsStreamingRun(true)
+    setStreamEventCount(0)
     try {
       await streamRun(
         {
@@ -197,20 +234,8 @@ function App() {
         },
         appendStreamEvent,
       )
-    } catch (err) {
-      if (!(err instanceof ApiError) || err.status !== 404) {
-        throw err
-      }
-      const response =
-        action === 'resume'
-          ? await resumeRun(targetRunId)
-          : await startRun({
-              workflow_run_id: targetRunId,
-              application: runApplication!,
-              fail_risk_once: scenario === 'retry',
-              crash_after_executor: scenario === 'crash-medical' ? 'medical_check' : undefined,
-            })
-      setRunResponse(response)
+    } finally {
+      setIsStreamingRun(false)
     }
   }
 
@@ -226,17 +251,25 @@ function App() {
     setShowNewRun(false)
     setRunId(targetRunId)
     runIdRef.current = targetRunId
-    setRunResponse(null)
-    setRunInfo(null)
+    const startedAt = new Date().toISOString()
+    setRunInfo({
+      id: targetRunId,
+      application_id: runApplication.application_id,
+      applicant_name: runApplication.applicant_name,
+      status: 'RUNNING',
+      created_at: startedAt,
+      updated_at: startedAt,
+    })
     setStateRows([])
     setEvents([])
     setCheckpoints([])
     try {
-      await runWithFallback(targetRunId, 'start', runApplication)
+      await runWithStream(targetRunId, 'start', runApplication)
       await refreshRunData(targetRunId)
       await refreshHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      await refreshRunData(targetRunId).catch(() => undefined)
       await refreshHistory()
     } finally {
       setLoading(false)
@@ -247,8 +280,9 @@ function App() {
     if (!runId) return
     setLoading(true)
     setError('')
+    setRunInfo((current) => (current ? { ...current, status: 'RUNNING' } : current))
     try {
-      await runWithFallback(runId, 'resume')
+      await runWithStream(runId, 'resume')
       await refreshRunData(runId)
       await refreshHistory()
     } catch (err) {
@@ -378,17 +412,28 @@ function App() {
             loading={loading}
             onSearchChange={setHistorySearch}
             onStatusChange={setHistoryStatus}
-            onSelectRun={(targetRunId) => void selectRun(targetRunId)}
+            onSelectRun={(targetRunId) => {
+              const selectedItem = history.find((item) => item.workflow_run_id === targetRunId)
+              if (selectedItem) {
+                void selectRun(selectedItem)
+              }
+            }}
             onLoadMore={() => void loadMoreHistory()}
             onRefresh={() => void refreshHistory()}
           />
         </aside>
 
         <section className="operations-center">
-          <RunTimeline runId={runId} events={events} onRefresh={() => void handleRefresh()} loading={loading} />
+          <RunTimeline
+            runId={runId}
+            events={events}
+            onRefresh={() => void handleRefresh()}
+            loading={loading}
+            isStreaming={isStreamingRun}
+            streamedEventCount={streamEventCount}
+          />
           <RunRecoveryPanel
-            runResponse={runResponse}
-            runInfo={runInfo}
+            currentStatus={currentStatus}
             stateRows={stateRows}
             events={events}
             checkpoints={checkpoints}
@@ -416,7 +461,7 @@ function App() {
 
         <RunSummaryRail
           runId={runId}
-          runResponse={runResponse}
+          currentStatus={currentStatus}
           runInfo={runInfo}
           stateRows={stateRows}
           events={events}

@@ -1,10 +1,21 @@
-# e2e-rubric
+---
+name: e2e-rubric
+description: Preserve the underwriting operator rubric across happy path, retry, crash/resume, fan-in, checkpoints, idempotency, observability, and hosted release smoke.
+---
 
-Use this skill when editing UI, API responses, or workflow behavior.
+# E2E Rubric Skill
 
-## Rubric contract
+Use this skill when editing UI behavior, API responses, workflow events, AG-UI, CopilotKit, or hosted release criteria.
 
-The UI must support validating:
+## Rubric sources
+
+- `frontend/tests/e2e/rubric.ts`
+- `frontend/tests/e2e/underwriting.spec.ts`
+- `docs/design/e2e-rubric.md`
+
+## Automated criteria
+
+The Playwright rubric must continue to validate:
 
 1. happy path decision
 2. retry behavior
@@ -15,4 +26,25 @@ The UI must support validating:
 7. idempotency skip visibility
 8. observability fields in event output
 
-Playwright tests live in `frontend/tests/e2e`.
+## Release-only criterion
+
+9. public hosted smoke confirms the public request correlates with hosted workflow/model traces and safe Foundry evaluation evidence.
+
+## Guardrails
+
+- Do not weaken rubric coverage without an explicit task.
+- Keep rubric terminology aligned across Playwright, design docs, and instruction files.
+- If a criterion changes intentionally, update the test, the rubric source, and the relevant docs together.
+
+## Required verification
+
+```bash
+make test-e2e
+```
+
+For hosted/public-lane changes, also run:
+
+```bash
+make foundry-smoke
+make foundry-eval
+```

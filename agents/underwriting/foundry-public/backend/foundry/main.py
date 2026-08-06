@@ -12,7 +12,8 @@ from app.modules.underwriting.copilot import (
     build_safe_explanation,
 )
 from app.modules.underwriting.hosted import HostedWorkflowEnvelope
-from app.modules.underwriting.service import UnderwritingService
+from app.modules.underwriting.projections import project_workflow_run
+from app.modules.underwriting.service import LocalUnderwritingService
 from opentelemetry import trace
 
 _tracer = trace.get_tracer("underwriting.foundry")
@@ -48,6 +49,43 @@ def _input_text(value: Any) -> str:
     return " ".join(parts)
 
 
+def _trace_messages(action: str, result: dict[str, Any]) -> tuple[str, str]:
+    """Return the minimum safe GenAI message content required for trace evaluation."""
+    status = str(result.get("status", "UNKNOWN"))
+    outputs = result.get("outputs")
+    decision = ""
+    if isinstance(outputs, list) and outputs and isinstance(outputs[0], dict):
+        output_decision = outputs[0].get("decision")
+        if isinstance(output_decision, str):
+            decision = output_decision
+    input_messages = [
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "type": "text",
+                    "content": f"Execute underwriting workflow action: {action}.",
+                }
+            ],
+        }
+    ]
+    output_messages = [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "text",
+                    "content": (
+                        f"Underwriting workflow finished with status: {status}."
+                        + (f" Decision: {decision}." if decision else "")
+                    ),
+                }
+            ],
+        }
+    ]
+    return json.dumps(input_messages), json.dumps(output_messages)
+
+
 def _workflow_request(payload: dict[str, Any], context: Any = None) -> dict[str, Any]:
     values = [payload.get("input"), payload.get("message"), payload.get("input_text")]
     if context is not None:
@@ -77,34 +115,23 @@ def _workflow_request(payload: dict[str, Any], context: Any = None) -> dict[str,
     return {}
 
 
-def _serialize_output(output: Any) -> Any:
-    if isinstance(output, dict):
-        return output
-    if hasattr(output, "to_dict"):
-        return output.to_dict()
-    return str(output)
-
-
 def _project_result(
-    service: UnderwritingService,
+    service: LocalUnderwritingService,
     workflow_run_id: str,
     *,
     fallback_status: str,
     outputs: list[Any] | None = None,
 ) -> dict[str, Any]:
+    projection = project_workflow_run(
+        service.repository,
+        workflow_run_id,
+        fallback_status=fallback_status,
+        outputs=outputs,
+    )
     run = service.get_run(workflow_run_id)
-    if outputs is None:
-        outputs = [
-            result["result_json"]
-            for result in service.repository.list_underwriting_results(workflow_run_id)
-            if result.get("check_type") == "final_decision"
-            and isinstance(result.get("result_json"), dict)
-        ]
-    return {
-        "workflow_run_id": workflow_run_id,
-        "status": str(run.get("status") if run is not None else fallback_status),
-        "outputs": [_serialize_output(output) for output in outputs],
-    }
+    if run is not None:
+        projection["status"] = str(run.get("status", projection["status"]))
+    return projection
 
 
 async def _handle(create_response: Any, context: Any, text_response: type[Any]) -> Any:
@@ -177,7 +204,7 @@ async def _handle(create_response: Any, context: Any, text_response: type[Any]) 
                     run_id = envelope.workflow_run_id
                     evaluation_span.set_attribute("workflow.run_id", run_id)
                     evaluation_span.set_attribute("workflow.action", envelope.action)
-                    service = UnderwritingService(settings)
+                    service = LocalUnderwritingService(settings)
                     existing = service.get_run(run_id)
                     if existing is not None and (
                         envelope.action == "start" or existing.get("status") == "COMPLETED"
@@ -213,6 +240,11 @@ async def _handle(create_response: Any, context: Any, text_response: type[Any]) 
         invocation_span.set_attribute("workflow.status", result["status"])
         if "outputs" in result:
             invocation_span.set_attribute("workflow.output_count", len(result["outputs"]))
+        input_messages, output_messages = _trace_messages(
+            str(request.get("action", "explain")), result
+        )
+        invocation_span.set_attribute("gen_ai.input.messages", input_messages)
+        invocation_span.set_attribute("gen_ai.output.messages", output_messages)
     return text_response(context, create_response, text=json.dumps(result))
 
 

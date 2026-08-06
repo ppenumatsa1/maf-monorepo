@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-08-05T17:25:18Z",
+  "generated_at": "2026-08-06T20:40:51Z",
+  "mode": "happy",
   "conversation_ids": [
-    "conv_2f5f63c195e7397400e7FDX5Re9VGkuUs3vhOvrFGwkFcVkM6C"
+    "conv_3821b67230037df300mkcGnjf0Oa6xl8shkyJ0PhCZFcdOyr6c"
   ],
-  "trace_id": "ee962a60a28c0b272b1e8293f3c786c0",
-  "workflow_run_id": "run-75bc7e1dd4",
+  "workflow_run_id": "run-smoke-20260806204039-292096",
   "decision": "APPROVED"
 }

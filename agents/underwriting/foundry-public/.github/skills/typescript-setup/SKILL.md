@@ -1,20 +1,29 @@
 ---
 name: typescript-setup
-description: How to set up a new TypeScript project
+description: Set up or extend underwriting frontend TypeScript surfaces without weakening runtime or contract safety.
 ---
 
-To set up a new repo with TypeScript, follow these steps unless you have reason to deviate from them:
+# TypeScript Setup Skill
 
- * `npm install --save-dev typescript@latest` (or use the user's package manager of choice)
- * Run `npx tsc --init` to create a `tsconfig.json` file
- * Read the tsconfig.json it generates and make the edits suggested in that file:
-   * If running server-side or local scripts, add `node` to `types` and `npm install --save-dev @types/node`
-   * Set `rootDir` to `src` and `outDir` to `dist`
-   * If using vite, esbuild, or similar bundlers, set `moduleResolution` to `bundler`
-     * If you have more specific info from the bundler info, defer to it instead
- * Create a `src` directory and add your TypeScript files there     
- * Add a build script to your `package.json` that runs `tsc`
- * If using a bundler, add the appropriate build script for it as well
+Use this skill when adding or restructuring frontend TypeScript files in the underwriting console.
 
-If you're running TypeScript code on the commandline, `tsx` is no longer necessary or recommended if node 22.18.0 or later is installed.
-Enable `erasableSyntaxOnly` in the tsconfig and run e.g. `node src/index.ts` directly.
+## Scope
+
+- `frontend/src/**/*`
+- `frontend/src/api.ts`
+- `frontend/src/copilot.ts`
+- `frontend/src/components/*`
+- frontend TypeScript configuration files
+
+## Guardrails
+
+- Preserve strict TypeScript settings; do not weaken `tsconfig` or introduce `any`/suppression comments to hide contract errors.
+- Keep browser integrations limited to the public FastAPI adapter. No direct Foundry, PostgreSQL, or secret-bearing calls from browser code.
+- Keep the CopilotKit runtime contract and selected-run allowlist in `frontend/src/copilot.ts`.
+- Prefer explicit shared types for run status, checkpoints, events, and outputs over ad hoc object indexing.
+
+## Required verification
+
+1. `cd frontend && npm run build`
+2. `cd frontend && npm run lint`
+3. `make test-e2e` when UI, API, AG-UI, or CopilotKit behavior changes

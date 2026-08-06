@@ -1,4 +1,4 @@
-# Customer Q&A: Workflow Checkpointing, Fan-in, Context, and Resilience
+# Customer Q&A: Workflow Checkpointing, Fan-in, Context, Resilience, and Release Governance
 
 This document summarizes how the **underwriting MAF prototype** answers customer questions and how behavior aligns with Microsoft Agent Framework documentation and samples.
 
@@ -42,19 +42,18 @@ Prototype repo references:
 
 ## Scope and intent
 
-- Scope: local-first prototype with a public operations console, Application
-  Insights telemetry, and a Foundry hosted durable-execution lane.
+- Scope: local-first prototype with a public operations console, Application Insights telemetry, and a Foundry hosted durable-execution lane.
 - Engine: real Microsoft Agent Framework workflow runtime.
 - Persistence: PostgreSQL for app/audit data and custom PostgreSQL-backed MAF checkpoint storage.
-- Hosting: the Foundry hosted agent is the production durable executor. The
-  public API relays browser requests and projects durable PostgreSQL data.
+- Hosting: the Foundry hosted agent is the production durable executor. The public API relays browser requests and projects durable PostgreSQL data.
+- Delivery governance: underwriting now follows the same engineering operating model as Order Resolution — one canonical hosted public lane, no compatibility shims, and evidence-driven release claims in `docs/design/issues-changes-fixes.md`.
 - Durable Extension: not used in this prototype.
 
 ---
 
 ## Microsoft grounding
 
-Microsoft describes Agent Framework workflows as explicit business-process orchestration using **executors** and **edges**. Workflows are useful when a process needs controlled execution, parallelism, HITL, checkpointing, recovery, and observability.
+Microsoft describes Agent Framework workflows as explicit business-process orchestration using **executors** and **edges**. Workflows are useful when a process needs controlled execution, parallelism, checkpointing, recovery, and observability.
 
 Docs:  
 https://learn.microsoft.com/en-us/agent-framework/workflows/
@@ -179,9 +178,9 @@ flowchart LR
   1. pass explicit message payloads for control flow, and  
   2. keep recovery-critical context in shared workflow state.
 - Shared context keys in this prototype: `expected_checks`, `completed_checks`, `child_results`, `final_decision_emitted`.
-- Runtime dependency isolation is now enforced per workflow build: the runner creates a fresh `PostgresCheckpointStorage` and Foundry client for each build/resume path, preventing mutable runtime objects from leaking context across runs.
+- Runtime dependency isolation is enforced per workflow build: the runner creates a fresh `PostgresCheckpointStorage` and Foundry client for each build/resume path, preventing mutable runtime objects from leaking context across runs.
 - Durable business/audit state remains isolated by `workflow_run_id`; fresh runtime dependencies avoid cross-run in-memory context bleed while checkpoint/business data stay in PostgreSQL.
-- Declarative workflow context sharing is not implemented in this prototype; same principle applies (explicit inputs + durable/framework-managed state).
+- Declarative workflow context sharing is not implemented in this prototype; the same principle applies (explicit inputs + durable/framework-managed state).
 
 ### 3.4 Failures, retries, backoff, timeout, and 429 handling
 
@@ -192,6 +191,27 @@ flowchart LR
 - Do not assume universal automatic 429 handling for all calls; in this prototype, retry/backoff is explicit in middleware and replay safety is enforced via idempotency.
 - Prototype resilience middleware:  
   https://github.com/ppenumatsa1/maf-underwriting-agent/blob/main/backend/app/maf/middleware/resilience.py
+
+### 3.5 What does adopting Order Resolution's operating model change?
+
+It changes **delivery governance**, not the underwriting workflow design.
+
+- The public adapter is the browser-facing boundary.
+- The hosted Responses entrypoint is the production executor.
+- PostgreSQL remains the durable recovery and audit store.
+- AG-UI and CopilotKit remain public surfaces backed by durable projections.
+- Release readiness is claimed from recorded hosted smoke, E2E, eval, and telemetry evidence.
+
+### 3.6 What does clean cutover / no shims mean here?
+
+It means we fix the hosted path rather than masking issues with alternate runtime paths.
+
+Specifically, the public lane should not introduce:
+
+- a second orchestration engine in the adapter,
+- a shadow checkpoint or history store,
+- direct browser-to-Foundry traffic,
+- local-only fallback behavior presented as production hosting.
 
 ---
 
@@ -258,7 +278,7 @@ https://github.com/ppenumatsa1/maf-underwriting-agent/blob/main/backend/tests/te
 
 ### Q: Declarative workflow context sharing?
 
-Declarative workflows are not implemented in this prototype. Same rule applies: pass explicit inputs, keep recovery-critical cross-step state framework-managed or durable, and avoid ephemeral locals for decision-critical data.
+Declarative workflows are not implemented in this prototype. The same rule applies: pass explicit inputs, keep recovery-critical cross-step state framework-managed or durable, and avoid ephemeral locals for decision-critical data.
 
 ---
 
@@ -291,17 +311,15 @@ Current position:
 
 - Standard MAF workflow runtime
 - Custom PostgreSQL checkpoint storage
-- Local Docker/PostgreSQL validation plus deployed public Container Apps and
-  Foundry Hosted Agent
+- Local Docker/PostgreSQL validation plus the documented public hosted lane
 - No Durable Extension yet
-- Hosted-only architecture deployment remains pending the declared IaC and
-  credential release gates
+- Hosted readiness claims depend on the current evidence recorded in `docs/design/issues-changes-fixes.md`
 
 ---
 
 ## 8. What this prototype proves
 
-1. Real MAF workflow runtime is used locally.
+1. Real MAF workflow runtime is used locally and in the hosted Responses lane.
 2. Parent workflow invokes child workflows.
 3. Fan-out/fan-in underwriting pattern is implemented.
 4. Fan-in aggregation is message-by-message in this prototype.
@@ -312,26 +330,21 @@ Current position:
 9. Retry/backoff is layered through middleware.
 10. Business/audit state is separated from MAF checkpoint state.
 11. Runner-level runtime dependencies are created per workflow build/resume, preventing cross-run context sharing through reused mutable objects.
+12. The public lane follows a clean-cutover model: browser -> public adapter -> hosted Responses workflow -> PostgreSQL.
 
 ---
 
 ## 9. What this prototype does not claim yet
 
 1. Durable Extension behavior.
-2. Independent child workflow resume as exposed operational model.
+2. Independent child workflow resume as an exposed operational model.
 3. `AddFanInBarrierEdge` behavior beyond documented fan-in concept.
 4. Arbitrary executor-private fields as automatically recovery-safe.
 5. Production-grade multi-tenant identity, authentication, and authorization.
+6. A live hosted release solely because architecture docs exist; that claim requires a fresh ledger entry with evidence.
 
 ---
 
 ## Short customer-facing summary
 
-This prototype runs real Microsoft Agent Framework workflows locally and in
-the Foundry hosted agent, persists checkpoints to PostgreSQL, and resumes by
-`workflow_run_id` from the latest checkpoint. It demonstrates parent-child
-fan-out/fan-in orchestration, shared-state aggregation, middleware-based
-retry/backoff, idempotent replay-safe recovery, a business-friendly operations
-console, Application Insights correlation, and safe Foundry workflow/model
-traces. The hosted runtime uses a dedicated least-privilege PostgreSQL password
-over TLS; the public API remains the browser-facing adapter.
+This prototype runs real Microsoft Agent Framework workflows locally and in the Foundry hosted agent, persists checkpoints to PostgreSQL, and resumes by `workflow_run_id` from the latest checkpoint. It demonstrates parent-child fan-out/fan-in orchestration, shared-state aggregation, middleware-based retry/backoff, idempotent replay-safe recovery, a business-friendly operations console, Application Insights correlation, safe Foundry workflow/model traces, AG-UI streaming, and a constrained CopilotKit assistant. The public lane follows a clean-cutover model with no compatibility shims: the browser calls the public adapter, and the hosted Responses workflow remains the production durable executor.

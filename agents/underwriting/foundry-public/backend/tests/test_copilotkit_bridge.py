@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import foundry.main as hosted_main
 import pytest
-from app.api.v1.routes import copilotkit
+from app.api.v1.routers import copilotkit
 from app.core.config import Settings
 from app.modules.underwriting.copilot import SafeRunExplanationRequest
 from app.modules.underwriting.copilot_bridge import UnderwritingCopilotBridge
@@ -128,7 +128,7 @@ def test_hosted_safe_explanation_does_not_start_a_local_maf_workflow(monkeypatch
             },
         }
     )
-    monkeypatch.setattr(hosted_main, "UnderwritingService", UnexpectedWorkflowService)
+    monkeypatch.setattr(hosted_main, "LocalUnderwritingService", UnexpectedWorkflowService)
 
     result = asyncio.run(
         hosted_main._handle(

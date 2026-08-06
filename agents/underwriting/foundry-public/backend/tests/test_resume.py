@@ -4,12 +4,13 @@ import asyncio
 
 from app.core.config import load_settings
 from app.infrastructure.db.engine import create_db_engine, init_db, reset_db
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.main import resume_workflow, run_workflow
 from app.modules.underwriting.models import UnderwritingApplication
 
 
-def test_crash_then_resume_from_latest_maf_checkpoint(monkeypatch) -> None:
+def test_crash_then_resume_from_latest_maf_checkpoint(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'resume.db'}")
     settings = load_settings()
     engine = create_db_engine(settings)
     init_db(engine)
@@ -35,7 +36,7 @@ def test_crash_then_resume_from_latest_maf_checkpoint(monkeypatch) -> None:
         crashed = True
     assert crashed, "run should crash for this scenario"
 
-    repo = Repository(engine)
+    repo = WorkflowRunRepository(engine)
     checkpoints_before = repo.list_checkpoints(run_id)
     assert checkpoints_before, "real MAF checkpoints should be present in postgres"
 

@@ -5,9 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 PYTHON="$ROOT_DIR/.venv/bin/python"
 
-command -v az >/dev/null
-command -v azd >/dev/null
-test -x "$PYTHON"
+require_bin() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing required binary: $1" >&2
+    exit 1
+  }
+}
 
 get_env() {
   AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
@@ -32,9 +35,7 @@ ensure_openai_runtime_role() {
   foundry_project="$(required_env FOUNDRY_PROJECT_NAME)"
   hosted_agent="$(required_env HOSTED_AGENT_NAME)"
   identity_name="${foundry_account}-${foundry_project}-${hosted_agent}-AgentIdentity"
-  principal_id="$(
-    az ad sp list --display-name "$identity_name" --query '[0].id' --output tsv
-  )"
+  principal_id="$(az ad sp list --display-name "$identity_name" --query '[0].id' --output tsv)"
   if [[ -z "$principal_id" ]]; then
     echo "Hosted agent identity '$identity_name' was not created." >&2
     exit 1
@@ -62,10 +63,21 @@ ensure_openai_runtime_role() {
   fi
 }
 
+require_bin az
+require_bin azd
+require_bin git
+[[ -x "$PYTHON" ]] || {
+  echo "Project virtual environment is required; run make install first." >&2
+  exit 1
+}
+
+"$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 "$ROOT_DIR/scripts/foundry/sync_hosted_source.sh"
 
 registry_name="$(required_env AZURE_CONTAINER_REGISTRY_NAME)"
 registry_endpoint="$(required_env AZURE_CONTAINER_REGISTRY_ENDPOINT)"
+project_endpoint="$(required_env AZURE_AI_PROJECT_ENDPOINT)"
+agent_name="$(required_env HOSTED_AGENT_NAME)"
 image_repository="underwriting-hosted"
 image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
 image="${registry_endpoint}/${image_repository}:${image_tag}"
@@ -90,8 +102,8 @@ az acr build \
   --file "$FOUNDRY_DIR/agent/Dockerfile" \
   "$FOUNDRY_DIR/agent"
 
-export AZURE_AI_PROJECT_ENDPOINT="$(required_env AZURE_AI_PROJECT_ENDPOINT)"
-export HOSTED_AGENT_NAME="$(required_env HOSTED_AGENT_NAME)"
+export AZURE_AI_PROJECT_ENDPOINT="$project_endpoint"
+export HOSTED_AGENT_NAME="$agent_name"
 export HOSTED_AGENT_IMAGE="$image"
 export DATABASE_URL="$database_url"
 export RUNTIME_DATABASE_URL="$runtime_database_url"
@@ -103,14 +115,19 @@ export AZURE_OPENAI_ENDPOINT="$(required_env AZURE_OPENAI_ENDPOINT)"
 deployment_output="$("$PYTHON" "$ROOT_DIR/scripts/foundry/deploy_hosted_container.py")"
 printf '%s\n' "$deployment_output"
 agent_version="$(printf '%s\n' "$deployment_output" | sed -n 's/^HOSTED_AGENT_VERSION=//p' | tail -n 1)"
-test -n "$agent_version"
+[[ -n "$agent_version" ]] || {
+  echo "Hosted agent deployment did not report an active version." >&2
+  exit 1
+}
 ensure_openai_runtime_role
 
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-  azd env set AGENT_UNDERWRITING_HOSTED_NAME "$HOSTED_AGENT_NAME" --cwd "$FOUNDRY_DIR" --no-prompt
+  azd env set AGENT_UNDERWRITING_HOSTED_NAME "$HOSTED_AGENT_NAME" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-  azd env set AGENT_UNDERWRITING_HOSTED_VERSION "$agent_version" --cwd "$FOUNDRY_DIR" --no-prompt
+  azd env set AGENT_UNDERWRITING_HOSTED_VERSION "$agent_version" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
   azd env set AGENT_UNDERWRITING_HOSTED_RESPONSES_ENDPOINT \
     "${AZURE_AI_PROJECT_ENDPOINT}/agents/${HOSTED_AGENT_NAME}/endpoint/protocols/openai/responses?api-version=v1" \
-    --cwd "$FOUNDRY_DIR" --no-prompt
+    --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
+
+echo "Hosted agent image deployment completed: ${image}"

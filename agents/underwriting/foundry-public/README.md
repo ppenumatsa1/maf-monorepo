@@ -17,12 +17,16 @@ Primary scenarios include happy path approvals, retryable check failures, and cr
    - User flow: [docs/design/userflow.md](docs/design/userflow.md)
 2. **Architecture + contracts**
    - Architecture: [docs/design/architecture.md](docs/design/architecture.md)
+   - Architecture decisions: [docs/design/architecture-decisions.md](docs/design/architecture-decisions.md)
    - API/event/telemetry schema: [docs/design/schema-io-telemetry.md](docs/design/schema-io-telemetry.md)
-3. **Implementation + repo shape**
+3. **Delivery model + release governance**
+   - Engineering operating model: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+   - Issues / changes / fixes ledger: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
+4. **Implementation + repo shape**
    - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
    - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
    - Delivery phases: [docs/design/implementation-phases.md](docs/design/implementation-phases.md)
-4. **Validation and operation**
+5. **Validation + operator guidance**
    - E2E rubric: [docs/design/e2e-rubric.md](docs/design/e2e-rubric.md)
    - Customer Q&A grounding: [docs/design/customer-questions-answers.md](docs/design/customer-questions-answers.md)
    - Manual testing: [docs/manual-testing.md](docs/manual-testing.md)
@@ -31,9 +35,12 @@ Primary scenarios include happy path approvals, retryable check failures, and cr
 
 | Stage | Status | Runtime path |
 | --- | --- | --- |
-| Local MAF | Implemented | Shared MAF workflow under `backend/app/maf/workflows` |
-| Public Foundry hosted agent | Implemented | Hosted Responses workflow executor under `backend/foundry/main.py`; it runs MAF and writes durable state |
-| Public operations UI/API | Implemented | React UI + FastAPI adapter relays hosted work, projects history/checkpoints, streams AG-UI progress, and embeds CopilotKit |
+| Local MAF | Implemented in repo | Shared MAF workflow under `backend/app/maf/workflows` |
+| Public Foundry hosted agent | Implemented in repo | Hosted Responses workflow executor under `backend/foundry/main.py`; it runs MAF and writes durable state |
+| Public operations UI/API | Implemented in repo | React UI + FastAPI adapter relays hosted work, projects history/checkpoints, streams AG-UI progress, and embeds CopilotKit |
+| Public release evidence | Operator-recorded | Fresh smoke/E2E/eval/telemetry evidence belongs in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md) |
+
+This README describes the supported architecture and release workflow. It does not, by itself, claim a currently live hosted deployment.
 
 ## Underwriting Flow
 
@@ -45,18 +52,25 @@ Primary scenarios include happy path approvals, retryable check failures, and cr
 6. Checkpoints and events are persisted to PostgreSQL throughout execution.
 7. Resume uses latest checkpoint for the run and idempotency prevents duplicate side effects.
 
-## Hosted Deployment Boundary
+## Canonical operating model and clean cutover
+
+Underwriting now follows the same engineering operating model and release governance shape used by Order Resolution while preserving the underwriting-specific workflow design.
+
+- **One business workflow:** fan-out/fan-in underwriting orchestration stays in MAF.
+- **Hosted public execution:** `backend/foundry/main.py` remains the public hosted Responses executor.
+- **Adapter-only public API:** the FastAPI layer starts/resumes hosted work, serves durable read models, exposes AG-UI, and hosts the CopilotKit bridge.
+- **No compatibility shims:** do not add a second orchestration engine, shadow checkpoint store, direct browser-to-Foundry path, or legacy public-lane fallback that bypasses the hosted workflow.
+- **Clean cutover rule:** deployed public traffic uses the hosted Responses lane; local execution mode exists only for isolated local validation.
+- **Evidence-driven release claims:** fresh hosted smoke, E2E, eval, and telemetry evidence must be recorded in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md) before claiming release readiness.
+
+## Hosted deployment boundary
 
 - **Local full stack** owns browser, FastAPI APIs, AG-UI stream, and isolated MAF validation.
 - **Public Foundry hosted lane** executes the agent-specific Responses workflow and owns MAF/PostgreSQL writes.
 - **Public UI/API** relays hosted start/resume, reads PostgreSQL run/state/event/checkpoint history, and exposes it to operators.
 - **Public browser path** never calls Foundry directly and does not receive Foundry credentials.
 
-The hosted runtime uses a dedicated least-privilege PostgreSQL password over
-TLS. The password is provisioned and rotated by the checked-in release script,
-injected only into the hosted runtime, and never stored in Bicep, source,
-browser configuration, or telemetry. Bicep keeps password authentication
-enabled and limits the public firewall rule to the Azure-services exception.
+The hosted runtime uses a dedicated least-privilege PostgreSQL password over TLS. The password is provisioned and rotated by the checked-in release workflow, injected only into the hosted runtime, and never stored in source, browser configuration, or telemetry.
 
 ## Quick Start (Local)
 
@@ -83,7 +97,7 @@ make up
 - Frontend: http://localhost:4173
 - Backend health: http://localhost:8000/health
 
-## Required Validation Gates
+## Required validation gates
 
 Run these before considering a change complete:
 
@@ -93,26 +107,16 @@ make quality
 make test-e2e
 ```
 
-For hosted release validation:
+For hosted release validation, run the authenticated lane and then record evidence in the delivery ledger:
 
 ```bash
 make foundry-smoke
 make foundry-eval
 ```
 
-## Foundry Public Deployment (Resource Reuse Lane)
+## Canonical public release workflow
 
-This lane reuses the existing underwriting Azure environment and deploys updated workloads into that boundary.
-
-| Resource | Name |
-| --- | --- |
-| Resource group | `rg-underwriting-readiness-0731` |
-| Foundry account/project | `azfdwhcedyxchnbtm` / `azprwhcedyxchnbtm` |
-| ACR | `azcrwhcedyxchnbtm` |
-| PostgreSQL | `azpgwhcedyxchnbtmpub` |
-| Application Insights | `azaiwhcedyxchnbtm` |
-
-Authenticated release sequence:
+Use the current operator environment and authenticated local secrets, then run the checked-in release sequence:
 
 ```bash
 make foundry-bootstrap
@@ -128,66 +132,17 @@ make foundry-smoke
 make foundry-eval
 ```
 
-`make foundry-eval` follows the same report-only Foundry trace-evaluation
-pattern used by Order Resolution: it evaluates the safe hosted conversations
-recorded by smoke/E2E after trace materialization. `make foundry-trace-eval`
-remains an alias. `make foundry-native-eval` is retained only to diagnose the
-separate native `azd` suite-generation path, which requires evaluation storage
-network access not permitted by the current organization policy.
+Release governance expectations:
 
-The provisioning step is resource-reuse Bicep for the surrounding Foundry
-resources and a normal declarative PostgreSQL server resource. It continuously
-enforces the approved PostgreSQL creation, authentication, and firewall
-posture rather than creating a parallel stack. Provide the runtime password
-only through the local authenticated release environment when running
-`make foundry-postgres-credentials`. Before `make foundry-provision`, set the
-administrator password as the local azd secret `POSTGRES_ADMIN_PASSWORD`; it
-is an ARM secure parameter and is never written to source or deployment
-output.
+1. Run local gates first.
+2. Provision and deploy the hosted lane through the checked-in sequence only.
+3. Validate happy path, retry, and crash/resume behavior through hosted smoke and browser E2E.
+4. Verify Foundry and Application Insights traces correlate on `workflow_run_id`.
+5. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
 
-### Deliberate PostgreSQL rebuild
+Treat this README as the contract for the workflow, not as a source of truth for current resource names or a declaration that a release already completed.
 
-`azpgwhcedyxchnbtmpub` and its `underwriting` database can be rebuilt only
-when a full server reset is intended. Bicep declares the discovered creation
-settings (North Central US, PostgreSQL 17, `Standard_D2ds_v5` General Purpose,
-128 GiB storage, seven-day retention, and geo-redundant backup disabled), so
-the original server name and configuration are restored declaratively.
-
-This is destructive: it permanently deletes the server and all databases.
-After `make foundry-bootstrap` has selected the local azd environment,
-explicitly opt in with the exact token:
-
-```bash
-make foundry-postgres-rebuild CONFIRM=REBUILD-azpgwhcedyxchnbtmpub
-```
-
-The versioned script accepts no alternative subscription, resource group, or
-server name. It verifies the fixed subscription, deletes only that server,
-writes a newly generated administrator password only to the selected local
-azd environment when one is not already present, waits for deletion, and then
-invokes `make foundry-provision`. It intentionally does not create the
-least-privilege runtime credential; run
-`make foundry-postgres-schema`, `make foundry-postgres-credentials`, and
-`make foundry-postgres-readiness` after the rebuild. The credential step
-reruns the idempotent schema bootstrap to protect direct use of that command.
-The provisioning bootstrap discovers the release machine's public IPv4 address
-and Bicep maintains it as the single-address `allow-release-operator` rule.
-That narrow rule permits only release-time TLS `psql` schema and credential
-operations; it does not expose the server to a public IP range.
-The public backend receives the same runtime URL through its Container Apps
-secret `runtime-db-url`; deployment explicitly overrides the former
-managed-identity database settings with password authentication.
-
-### Release evidence
-
-Hosted agent version `38` executes the real MAF workflow using the
-credential-backed PostgreSQL runtime. Version-pinned smoke, deployed UI E2E,
-trace evaluation, and Application Insights workflow-span evidence are recorded
-in [`../issues-fixes.md`](../issues-fixes.md). The native generated-suite path
-remains a non-release diagnostic because the evaluation-storage network policy
-blocks it; it does not affect the supported trace-evaluation release gate.
-
-## Local Operations Commands
+## Local operations commands
 
 - `make help`: print command catalog.
 - `make run`: run happy path underwriting workflow.
@@ -198,14 +153,11 @@ blocks it; it does not affect the supported trace-evaluation release gate.
 - `make events RUN_ID=<workflow_run_id>`: show persisted workflow events.
 - `make checkpoints RUN_ID=<workflow_run_id>`: show persisted MAF checkpoints.
 
-## AG-UI and History Surface
+## AG-UI and history surface
 
 The backend exposes `POST /api/v1/underwriting/ag-ui` for Agent Framework AG-UI streaming. The UI still relies on persisted run/state/events/checkpoints APIs as the durable source of truth for replay and refresh scenarios.
 
-The embedded CopilotKit assistant discovers
-`/api/v1/underwriting/copilotkit/info` and calls the named run-assistant route
-at the configured backend origin. It receives only allowlisted selected-run
-metadata and does not call Foundry from the browser.
+The embedded CopilotKit assistant discovers `/api/v1/underwriting/copilotkit/info` and calls the named run-assistant route at the configured backend origin. It receives only allowlisted selected-run metadata and does not call Foundry from the browser.
 
 ## Documentation Map
 
@@ -214,10 +166,13 @@ metadata and does not call Foundry from the browser.
 - PRD: [docs/design/prd.md](docs/design/prd.md)
 - User flow: [docs/design/userflow.md](docs/design/userflow.md)
 - Architecture: [docs/design/architecture.md](docs/design/architecture.md)
+- Architecture decisions: [docs/design/architecture-decisions.md](docs/design/architecture-decisions.md)
 - API/event/telemetry schema: [docs/design/schema-io-telemetry.md](docs/design/schema-io-telemetry.md)
 
 ### Delivery and implementation
 
+- Engineering operating model: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+- Issues / changes / fixes ledger: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
 - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
 - Implementation phases: [docs/design/implementation-phases.md](docs/design/implementation-phases.md)

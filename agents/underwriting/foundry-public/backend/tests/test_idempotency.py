@@ -4,12 +4,13 @@ import asyncio
 
 from app.core.config import load_settings
 from app.infrastructure.db.engine import create_db_engine, init_db, reset_db
-from app.infrastructure.repositories.underwriting_repository import Repository
+from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.main import resume_workflow, run_workflow
 from app.modules.underwriting.models import UnderwritingApplication
 
 
-def test_idempotency_prevents_duplicate_final_result_after_resume(monkeypatch) -> None:
+def test_idempotency_prevents_duplicate_final_result_after_resume(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'idempotency.db'}")
     settings = load_settings()
     engine = create_db_engine(settings)
     init_db(engine)
@@ -36,7 +37,7 @@ def test_idempotency_prevents_duplicate_final_result_after_resume(monkeypatch) -
     monkeypatch.setenv("CRASH_AFTER_EXECUTOR", "")
     asyncio.run(resume_workflow(run_id))
 
-    repo = Repository(engine)
+    repo = WorkflowRunRepository(engine)
     assert repo.count_underwriting_results_by_key("underwriting:app-idem-001:risk") == 1
     assert repo.count_underwriting_results_by_key("underwriting:app-idem-001:credit") == 1
     assert repo.count_underwriting_results_by_key("underwriting:app-idem-001:medical") == 1

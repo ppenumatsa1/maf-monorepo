@@ -12,13 +12,13 @@ from agent_framework.ag_ui import AgentFrameworkWorkflow
 
 from app.core.telemetry import annotate_current_span
 from app.modules.underwriting.models import UnderwritingApplication
-from app.modules.underwriting.service import UnderwritingHostedAdapter
+from app.modules.underwriting.service import UnderwritingService
 
 logger = logging.getLogger(__name__)
 
 
 class UnderwritingAGUIExecutor(Executor):
-    def __init__(self, service: UnderwritingHostedAdapter):
+    def __init__(self, service: UnderwritingService):
         super().__init__(id="underwriting_live_run")
         self.service = service
 
@@ -29,11 +29,11 @@ class UnderwritingAGUIExecutor(Executor):
         action = request.get("action", "start")
         annotate_current_span(workflow_run_id, action)
         if action == "resume":
-            task = asyncio.create_task(self.service.resume_workflow(workflow_run_id))
+            task = asyncio.create_task(self.service.resume_run(workflow_run_id))
         else:
             application = UnderwritingApplication(**request["application"])
             task = asyncio.create_task(
-                self.service.start_workflow(
+                self.service.start_run(
                     workflow_run_id=workflow_run_id,
                     application=application,
                     fail_risk_once=bool(request.get("fail_risk_once", False)),
@@ -70,7 +70,7 @@ class UnderwritingAGUIExecutor(Executor):
         )
 
 
-def build_underwriting_agui_workflow(service: UnderwritingHostedAdapter) -> Workflow:
+def build_underwriting_agui_workflow(service: UnderwritingService) -> Workflow:
     executor = UnderwritingAGUIExecutor(service)
     return WorkflowBuilder(
         name="underwriting-agui-live-run",
@@ -87,7 +87,7 @@ class UnderwritingAGUIWorkflow(AgentFrameworkWorkflow):
             yield event
 
 
-def build_underwriting_agui_agent(service: UnderwritingHostedAdapter) -> AgentFrameworkWorkflow:
+def build_underwriting_agui_agent(service: UnderwritingService) -> AgentFrameworkWorkflow:
     return UnderwritingAGUIWorkflow(
         workflow_factory=lambda _thread_id: build_underwriting_agui_workflow(service),
         name="underwriting-live-run",
@@ -115,7 +115,7 @@ def _parse_request(messages: list[Message]) -> dict[str, Any]:
 async def _emit_new_events(
     *,
     ctx: WorkflowContext[Never, BaseEvent],
-    service: UnderwritingHostedAdapter,
+    service: UnderwritingService,
     workflow_run_id: str,
     emitted_event_ids: set[int],
 ) -> None:
