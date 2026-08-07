@@ -74,11 +74,9 @@ create a second workflow path.
 - Seven workflow E2E cases and four selected-thread E2E cases passed.
 - The design-review gate passed.
 
-**Protected release status.** The protected `vm-maffnd-runner` deployment has
-not run for this implementation. Consequently, hosted E2E, Foundry evaluation,
-and telemetry evidence have not run and no current Azure/private release is
-claimed. Record those dated, non-secret results here only after the protected
-release path completes.
+**Protected release status.** The protected `vm-maffnd-runner` app-only
+deployment and its fresh hosted evidence completed on 2026-08-07. The observed
+release result is recorded below; older release claims remain historical only.
 
 **Release execution blocker (2026-08-07).** Deployment was explicitly
 authorized, but the mandatory Azure validation workflow could not run because
@@ -153,6 +151,47 @@ not contain an optional startup diagnostic. This does not demonstrate missing
 telemetry. The check now reports that absent legacy diagnostic as a warning;
 the protected evidence workflow remains the authority because it creates fresh
 traffic and verifies its correlated telemetry.
+
+## App-only release evidence (2026-08-07)
+
+**Deployment.** Protected app-only deployment
+[`31211280875`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31211280875)
+passed on `vm-maffnd-runner` at 19:27 UTC. It released backend revision
+`mafprv0722v3-private-backend--azd-1786130684`, frontend revision
+`mafprv0722v3-private-frontend--azd-1786130705`, and active hosted-agent
+version `24`. It did not provision infrastructure, reconcile Foundry
+connections/RBAC, or perform PostgreSQL lockdown.
+
+**Endpoint smoke.** The external frontend is
+https://mafprv0722v3-private-frontend.bravecliff-efaf81a3.eastus2.azurecontainerapps.io.
+Both the frontend root and its same-origin `/api/health` proxy returned HTTP
+200 after deployment. The backend remains internal-only.
+
+**Telemetry diagnostic.** Corrected diagnostic run
+[`31211697486`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31211697486)
+passed. It confirmed the valid Application Insights project binding and active
+hosted-agent version. Absence of a legacy startup-only session message remains
+a warning, not evidence of missing telemetry.
+
+**Fresh hosted evidence.** Protected evidence run
+[`31211703038`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31211703038)
+passed from 19:30 to 19:39 UTC. It completed low-risk order-resolution thread
+continuity (`conv_aed07c3acf0e55ee00yKL0tNPaBJzJskUOW4NielYS10xDrNtg`), high-risk
+HITL approval/resume (`conv_6b94d8e89b14d92e00mRJHYfbRs1SZxvysqlZJvg92KFdBPn0M`),
+and damaged-item HITL approval/resume
+(`conv_1f9a9199adfa59a700lx6vjqC8E0pjMvXAvSEQ8ZtjW2B54c0j`). Application
+Insights returned 112 correlated rows and four eligible Foundry evaluation
+spans for those conversations. The enforced Foundry evaluation completed with
+zero errored items.
+
+**Live RBAC review.** The Container Apps registry-pull identity has live
+`AcrPull`. The Foundry project identity has live `Foundry User`, `AcrPull`,
+and Container Registry Repository Reader assignments at the expected resource
+scopes. The shared Container Apps identity has no direct `Foundry User`
+assignment, although the complete hosted evidence passed. This differs from
+the static role expectation and is recorded as pre-existing shared-RBAC drift;
+the app-only release did not mutate it. Any reconciliation requires the
+separate full-IaC owner approval already documented above.
 
 ## Redeployment baseline
 

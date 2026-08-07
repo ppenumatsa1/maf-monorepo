@@ -102,15 +102,15 @@ limitation is not a release gate.
 
 | Gate | Where it runs | Current state | Decision owner |
 | --- | --- | --- | --- |
-| Static workflow and Bicep validation | `.github/workflows/order-resolution-private-validation.yml` | Passed: `31206115459` | Repository maintainers |
+| Static workflow and Bicep validation | `.github/workflows/order-resolution-private-validation.yml` | Passed: `31211626651` | Repository maintainers |
 | Private dependency/RBAC preflight | `scripts/foundry/validate_private_app_release.sh` via `make foundry-app-only-preflight` | Passed read-only | Private resource-group operator |
 | Private package build | `.github/workflows/order-resolution-private-package-validation.yml` | Passed: `31206155614` | Private runner operator |
 | Azure Policy compliance | Azure Policy states for `rg-maf-ora-foundry-v2` | 18 existing findings accepted as the app-only baseline; no new finding permitted | Subscription security/governance owners remediate separately |
-| App-only artifact deployment | `.github/workflows/order-resolution-private-deploy.yml` | Eligible after Azure Validate completes | Release approver |
+| App-only artifact deployment | `.github/workflows/order-resolution-private-deploy.yml` | Passed: `31211280875` | Release approver |
 | Full reconciliation | `.github/workflows/order-resolution-private-provision.yml` and `make foundry-provision-preview` | Blocked by shared-resource drift | Shared-network, Foundry, data, registry, and observability owners |
 | PostgreSQL lockdown | `make foundry-connectivity-proof` then `make foundry-postgres-lockdown` | Not eligible until after a separate fresh proof | Database owner with explicit confirmation |
-| Hosted telemetry diagnosis | `.github/workflows/order-resolution-private-observability.yml` | Runs after deployment | Release owner |
-| Hosted smoke/E2E/evaluation/telemetry evidence | `.github/workflows/order-resolution-private-evidence.yml` | Runs only after a successful deployment | Release owner |
+| Hosted telemetry diagnosis | `.github/workflows/order-resolution-private-observability.yml` | Passed: `31211697486` | Release owner |
+| Hosted smoke/E2E/evaluation/telemetry evidence | `.github/workflows/order-resolution-private-evidence.yml` | Passed: `31211703038` | Release owner |
 
 ### Required policy decision
 
@@ -132,13 +132,16 @@ full-IaC reconciliation, PostgreSQL lockdown, or any new policy violation.
 
 ## Role Assignment Verification
 
-**Status:** Verified statically on 2026-08-07.
+**Status:** Live verified after the app-only release on 2026-08-07.
 
-- Foundry project identity: Azure AI Foundry User on the Foundry account,
-  `AcrPull` and Container Registry Repository Reader on the private ACR, plus
+- Foundry project identity: `Foundry User` on the Foundry account, `AcrPull`
+  and Container Registry Repository Reader on the private ACR, plus
   resource-scoped telemetry and Log Analytics roles.
-- Backend Container App identity: Azure AI Foundry User on the Foundry account.
-- Container Apps registry-pull identity: `AcrPull` on the private ACR.
+- Container Apps registry-pull identity: live `AcrPull` on the private ACR.
+- Backend Container App identity: live `AcrPull` on the private ACR. It does
+  not have the direct `Foundry User` assignment expected by the static Bicep
+  review. The hosted E2E evidence passed, but this is pre-existing shared-RBAC
+  drift that the app-only release intentionally did not reconcile.
 - Foundry project/capability-host data paths: Storage Blob Data Contributor and
   scoped Blob Data Owner, Cosmos DB Operator and scoped SQL assignment, plus
   Search Index Data Contributor and Search Service Contributor.
@@ -164,6 +167,10 @@ Recorded 2026-08-07T14:13:52-05:00.
 | Protected package validation `31206155614` | Passed dependency preflight, hosted source sync, and package build without publishing or deployment. |
 | Azure Policy state query | 18 existing findings accepted by the user as the bounded app-only baseline; no shared-resource modification or new finding is permitted. |
 | Static Bicep RBAC review | Passed; resource-scoped roles match managed-identity data-plane operations. |
+| App-only deployment `31211280875` | Passed on `vm-maffnd-runner`: backend and frontend ACA revisions and hosted-agent version 24 released without a provision operation. |
+| Live endpoint smoke | Passed: external frontend and same-origin `/api/health` both returned HTTP 200. |
+| Hosted observability diagnosis `31211697486` | Passed: valid Application Insights project binding and active hosted-agent version 24. |
+| Hosted release evidence `31211703038` | Passed: low-risk continuity plus high-risk and damaged-item HITL approval/resume E2E, 112 correlated telemetry rows, four eligible evaluation spans, and an enforced zero-error Foundry evaluation. |
 
 ## Execution decision
 
