@@ -75,6 +75,9 @@ jobs:
           agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
       - name: Verify the selected private deployment environment
         run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Preview private Foundry infrastructure changes
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-provision-preview
       - name: Provision private Foundry infrastructure
         working-directory: agents/order-resolution/foundry-private
         run: |
