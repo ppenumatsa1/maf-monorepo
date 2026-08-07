@@ -79,8 +79,40 @@ expected = {
     "target": os.environ["EXPECTED_TARGET"],
     "resourceId": os.environ["EXPECTED_RESOURCE_ID"],
 }
-if connection != expected:
+if (
+    (connection.get("category") or "").casefold() != expected["category"].casefold()
+    or connection.get("authType") != expected["authType"]
+    or connection.get("target") != expected["target"]
+    or connection.get("resourceId") != expected["resourceId"]
+):
     sys.exit("Foundry project connection does not match the expected private dependency.")
+PY
+}
+
+require_application_insights_connection() {
+  local connection_json
+  connection_json="$(
+    az rest \
+      --method get \
+      --url "https://management.azure.com${foundry_project_id}/connections/ApplicationInsights?api-version=2025-04-01-preview" \
+      --query '{category:properties.category,authType:properties.authType,target:properties.target,resourceId:properties.metadata.ResourceId}' \
+      --output json
+  )"
+  CONNECTION_JSON="$connection_json" python3 - <<'PY'
+import json
+import os
+import sys
+
+connection = json.loads(os.environ["CONNECTION_JSON"])
+target = connection.get("target") or ""
+if (
+    connection.get("category") != "AppInsights"
+    or connection.get("authType") != "ApiKey"
+    or not target
+    or connection.get("resourceId") != target
+):
+    sys.exit("Application Insights project connection does not match its expected private dependency.")
+print(target)
 PY
 }
 
@@ -91,7 +123,6 @@ require_project_acr_roles() {
       --assignee "$foundry_project_principal_id" \
       --scope "$acr_id" \
       --include-inherited \
-      --all \
       --query '[].roleDefinitionName' \
       --output tsv
   )
@@ -209,13 +240,14 @@ foundry_public_network_access="$(
   exit 1
 }
 
-foundry_project_name="$(
+foundry_project_resource_name="$(
   az rest \
     --method get \
-    --url "https://management.azure.com${foundry_project_id}?api-version=2025-06-01" \
+    --url "https://management.azure.com${foundry_project_id}?api-version=2025-04-01-preview" \
     --query name \
     --output tsv
 )"
+foundry_project_name="${foundry_project_resource_name##*/}"
 [[ "$foundry_project_name" == "$TARGET_FOUNDRY_PROJECT" ]] || {
   echo "The selected Foundry project does not exist." >&2
   exit 1
@@ -223,7 +255,7 @@ foundry_project_name="$(
 foundry_project_principal_id="$(
   az rest \
     --method get \
-    --url "https://management.azure.com${foundry_project_id}?api-version=2025-06-01" \
+    --url "https://management.azure.com${foundry_project_id}?api-version=2025-04-01-preview" \
     --query identity.principalId \
     --output tsv
 )"
@@ -404,16 +436,10 @@ search_resource_id="$(
     --output tsv
 )"
 
-application_insights_name="$(
-  require_single_resource_name "Application Insights component" monitor app-insights component
-)"
 application_insights_resource_id="$(
-  az monitor app-insights component show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
-    --app "$application_insights_name" \
-    --query id \
-    --output tsv
+  require_application_insights_connection
 )"
+az monitor app-insights component show --ids "$application_insights_resource_id" --output none
 
 require_project_connection \
   "${cosmos_account_name}-${TARGET_FOUNDRY_PROJECT}" \
@@ -433,12 +459,6 @@ require_project_connection \
   AAD \
   "https://${search_service_name}.search.windows.net" \
   "$search_resource_id"
-require_project_connection \
-  ApplicationInsights \
-  AppInsights \
-  ApiKey \
-  "$application_insights_resource_id" \
-  "$application_insights_resource_id"
 require_project_connection \
   orderresolutionruntimesecrets \
   CustomKeys \

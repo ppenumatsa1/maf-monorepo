@@ -255,7 +255,10 @@ def validate() -> None:
         "az role assignment list",
         "az network private-endpoint show",
         "require_project_connection",
+        "require_application_insights_connection",
         "require_project_acr_roles",
+        "2025-04-01-preview",
+        "foundry_project_resource_name",
         "no secrets or Azure resources were modified",
     ):
         require(
