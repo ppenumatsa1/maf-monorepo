@@ -130,6 +130,14 @@ approve that governance exception. The policy/governance owner must authorize a
 time-bounded app-only-release exception or a shared-resource remediation plan;
 the private app-only lane must not change those resources unilaterally.
 
+**App-only policy-baseline decision (2026-08-07).** The user explicitly
+authorized the routine app-only release to proceed without stopping on the
+current 18 pre-existing audit findings. This is a bounded acceptance, not a
+remediation claim: backend/frontend revisions and the hosted-agent version may
+change, while shared infrastructure remains untouched and no new policy finding
+is permitted. Full-IaC reconciliation and PostgreSQL lockdown remain separate
+approved operations.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All

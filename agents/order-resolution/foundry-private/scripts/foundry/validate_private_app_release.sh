@@ -134,6 +134,60 @@ require_project_acr_roles() {
   done
 }
 
+require_container_apps_acr_pull() {
+  local registry_identity=""
+  for app_name in "$backend_app_name" "$frontend_app_name"; do
+    local app_registry_identity
+    local app_registry_server
+    local -a registry_values
+    mapfile -t registry_values < <(
+      az containerapp registry list \
+        --resource-group "$TARGET_RESOURCE_GROUP" \
+        --name "$app_name" \
+        --query '[0].[identity,server]' \
+        --output tsv
+    )
+    [[ "${#registry_values[@]}" == "2" ]] || {
+      echo "Container App $app_name does not have exactly one configured private ACR registry." >&2
+      exit 1
+    }
+    app_registry_identity="${registry_values[0]}"
+    app_registry_server="${registry_values[1]}"
+    [[ "$app_registry_server" == "$acr_login_server" && -n "$app_registry_identity" ]] || {
+      echo "Container App $app_name does not use the selected private ACR identity." >&2
+      exit 1
+    }
+    if [[ -z "$registry_identity" ]]; then
+      registry_identity="$app_registry_identity"
+    elif [[ "$registry_identity" != "$app_registry_identity" ]]; then
+      echo "Private backend and frontend use different ACR pull identities." >&2
+      exit 1
+    fi
+  done
+
+  local registry_principal_id
+  registry_principal_id="$(
+    az identity show \
+      --ids "$registry_identity" \
+      --query principalId \
+      --output tsv
+  )"
+  [[ -n "$registry_principal_id" ]] || {
+    echo "The private Container Apps registry identity does not have a principal ID." >&2
+    exit 1
+  }
+
+  az role assignment list \
+    --assignee "$registry_principal_id" \
+    --scope "$acr_id" \
+    --include-inherited \
+    --query '[].roleDefinitionName' \
+    --output tsv | grep -Fxq AcrPull || {
+    echo "The private Container Apps registry identity is missing AcrPull on the selected ACR." >&2
+    exit 1
+  }
+}
+
 for binary in az azd python3; do
   require_bin "$binary"
 done
@@ -466,6 +520,7 @@ require_project_connection \
   https://runtime-secrets.local \
   ""
 require_project_acr_roles
+require_container_apps_acr_pull
 
 [[ -n "$hosted_agent_name" ]] || {
   echo "HOSTED_AGENT_NAME is required." >&2
