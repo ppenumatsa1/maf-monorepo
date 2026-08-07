@@ -99,11 +99,40 @@ Path(evidence_path).write_text(
 )
 PY
 
-PLAYWRIGHT_BASE_URL="$web_url" \
-PLAYWRIGHT_ARTIFACTS_DIR="$artifacts_dir/playwright" \
-make --no-print-directory test-e2e
+declare -a stage_names=()
+declare -a stage_pids=()
 
-AZURE_ENV_NAME="$environment" make --no-print-directory eval-foundry-deployed
+start_stage() {
+  local name="$1"
+  shift
+
+  "$@" &
+  stage_names+=("$name")
+  stage_pids+=("$!")
+}
+
+# Hosted E2E does not mutate Foundry evaluation inputs, so these two gates can
+# run together after smoke. Telemetry follows them to avoid concurrent Azure
+# CLI token-cache access and to keep its diagnostics ordered.
+start_stage "hosted browser E2E" \
+  env \
+  "PLAYWRIGHT_BASE_URL=$web_url" \
+  "PLAYWRIGHT_ARTIFACTS_DIR=$artifacts_dir/playwright" \
+  make --no-print-directory test-e2e
+start_stage "Foundry evaluation" \
+  env "AZURE_ENV_NAME=$environment" \
+  make --no-print-directory eval-foundry-deployed
+
+failed_stages=()
+for index in "${!stage_pids[@]}"; do
+  if ! wait "${stage_pids[$index]}"; then
+    failed_stages+=("${stage_names[$index]}")
+  fi
+done
+if ((${#failed_stages[@]})); then
+  printf 'Hosted release validation failed: %s\n' "${failed_stages[*]}" >&2
+  exit 1
+fi
 
 AZURE_ENV_NAME="$environment" \
 RELEASE_RUN_ID="$release_run_id" \

@@ -117,6 +117,9 @@ release_validation = Path("scripts/release/validate-hosted-release.sh").read_tex
 for required in (
     'evidence["correlations"] = correlations',
     "exactly one workflow_run_id for fresh thread",
+    'start_stage "hosted browser E2E"',
+    'start_stage "Foundry evaluation"',
+    "Hosted release validation failed:",
 ):
     if required not in release_validation:
         raise SystemExit(f"Missing hosted evidence safeguard: {required}")
@@ -160,6 +163,10 @@ for required in (
     "Smoke, hosted E2E, Foundry evaluation, and telemetry validation",
     "make deploy-ci-images",
     "make release-validate",
+    "Prebuild immutable release image cache",
+    "docker/setup-buildx-action@v3",
+    "DOCKER_BUILD_CACHE=true",
+    "Cache Playwright browser",
 ):
     if required not in workflow:
         raise SystemExit(f"Missing Azure-hosted CI release safeguard: {required}")
