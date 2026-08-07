@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import {
   openAgUiThreadStream,
@@ -29,7 +29,7 @@ export default function AgUiThreadPanel({ apiBase, threadId }: Props) {
   const [frames, setFrames] = useState<AgUiFrame[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     streamRef.current?.stop();
     streamRef.current = null;
     setConnectionState("idle");

@@ -102,6 +102,13 @@ deployment password or Azure client secret is stored in GitHub. Infrastructure
 reconciliation remains outside this lane because the Azure preview reported a
 PostgreSQL modification, which the owner-confirmed guard blocks.
 
+The first cloud run correctly stopped before image push or Container Apps
+mutation when the Docker browser test exposed a selected-thread lifecycle race:
+the thread-change cleanup effect could abort a newly opened AG-UI/CopilotKit
+stream. The cleanup now uses a layout effect, so it completes before the
+selected-thread controls can initiate a stream. Focused browser, lint,
+typecheck, build, and release-guard checks passed before the retry.
+
 ## Historical source-of-truth correction (2026-07-28)
 
 The delivery record continued to describe the deleted resources as active.
