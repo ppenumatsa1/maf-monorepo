@@ -146,6 +146,14 @@ telemetry verification target after deployment. It cannot provision
 infrastructure, reconcile connections/RBAC, deploy another artifact, or
 perform PostgreSQL lockdown.
 
+**Observability diagnostic false failure (2026-08-07).** The auxiliary hosted
+observability workflow found the valid Application Insights binding and active
+hosted-agent version, then failed because an arbitrary historical session did
+not contain an optional startup diagnostic. This does not demonstrate missing
+telemetry. The check now reports that absent legacy diagnostic as a warning;
+the protected evidence workflow remains the authority because it creates fresh
+traffic and verifies its correlated telemetry.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All

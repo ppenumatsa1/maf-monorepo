@@ -70,8 +70,9 @@ diagnostic_lines="$(
       tail -20 || true
 )"
 if [[ -z "$diagnostic_lines" ]]; then
-  echo "The selected hosted-agent session has no startup observability diagnostic."
-  exit 1
+  echo "Warning: the selected hosted-agent session has no startup observability diagnostic."
+  echo "Fresh hosted E2E telemetry verification remains the release evidence authority."
+  exit 0
 fi
 
 printf '%s\n' "$diagnostic_lines" |
