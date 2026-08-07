@@ -21,6 +21,7 @@ require_fixed_line "**/__pycache__/" .gitignore
 
 grep -Fq "host: containerapp" azure.yaml
 grep -Fq "deploy_mode=app_only" scripts/skills/deployment-mode-router.sh
+grep -Fq "^(frontend/" scripts/skills/deployment-mode-router.sh
 
 python3 - <<'PY'
 import json

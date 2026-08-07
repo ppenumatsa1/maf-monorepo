@@ -15,7 +15,7 @@ if [[ -z "$changed_files" ]]; then
   exit 0
 fi
 
-if grep -Eq '^(infra/|\.azure/|docker-compose\.yml|frontend/Dockerfile|frontend/nginx\.conf|backend/Dockerfile|\.github/workflows/|infra/azure-apphosted/runtime/)' <<<"$changed_files"; then
+if grep -Eq '^(infra/|\.azure/|docker-compose\.yml|frontend/Dockerfile|frontend/nginx\.conf|backend/Dockerfile|\.github/workflows/|infra/azure-apphosted/runtime/|scripts/release/|scripts/skills/)' <<<"$changed_files"; then
   echo "deploy_mode=app_only"
   echo "validation_mode=full"
   echo "reconcile_indicator=review_required"
@@ -23,11 +23,11 @@ if grep -Eq '^(infra/|\.azure/|docker-compose\.yml|frontend/Dockerfile|frontend/
   exit 0
 fi
 
-if grep -Eq '^(backend/app/maf/|backend/app/api/v1/schemas/|backend/app/api/v1/routers/|backend/app/modules/order_resolution/|backend/evals/|backend/tests/test_workflow\.py|backend/evals/cases\.jsonl|docs/design/hitl-approval-conditions\.md)' <<<"$changed_files"; then
+if grep -Eq '^(frontend/|backend/app/maf/|backend/app/api/v1/schemas/|backend/app/api/v1/routers/|backend/app/modules/order_resolution/|backend/evals/|backend/tests/test_workflow\.py|backend/evals/cases\.jsonl|docs/design/hitl-approval-conditions\.md)' <<<"$changed_files"; then
   echo "deploy_mode=app_only"
   echo "validation_mode=full"
   echo "reconcile_indicator=not_required"
-  echo "reason=workflow_contract_or_hitl_surface_changed"
+  echo "reason=frontend_or_workflow_contract_or_hitl_surface_changed"
   exit 0
 fi
 
