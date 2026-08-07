@@ -45,21 +45,36 @@ Hosted validation and deployment are private-lane-first in the current operating
   hosted-agent connectivity. Lockdown then verifies the approved private
   endpoint, `postgresqlServer` group, private-DNS A record, and VNet link before
   disabling public access and deleting `allow-azure-services`.
-- **Release serialization and order:** provision, deploy, and observability
-  workflows share `order-resolution-private-release` concurrency and execute
-  only on `foundry-private-v2`. A clean deployment must deploy backend,
-  frontend, and the hosted agent; produce fresh connectivity proof; perform
-  PostgreSQL lockdown only when the workflow dispatch explicitly selects
-  `postgres_lockdown_confirmation=lockdown`; then run hosted E2E, enforced
-  Foundry evaluation, and telemetry validation. Optional agent refresh,
-  password repair, public-access, firewall, and administrator-user bypasses
-  are not valid release paths.
+- **Release serialization:** provision/reconciliation, app-release, and
+  observability workflows share `order-resolution-private-release` concurrency
+  and execute only on `foundry-private-v2`. Each dispatch must declare one
+  release class; concurrency does not make the classes interchangeable.
+  Optional agent refresh, password repair, public-access, firewall, and
+  administrator-user bypasses are not valid release paths.
 - **Foundry connection staging:** core provisioning creates the private
   account/project identity and required service RBAC with
   `MANAGE_PROJECT_CONNECTIONS=false`. The later private deploy stage enables
   project connections only after that identity path exists; retries wait for
   Azure identity or private-endpoint deletion propagation rather than weakening
   network controls or removing the required connections.
+
+## Safe private release boundaries (2026-08-07)
+
+Every protected private operation has exactly one of these scopes:
+
+| Release class | Scope | Required evidence and prohibition |
+| --- | --- | --- |
+| Routine app-only release | Existing ACA backend/frontend revisions and the existing hosted agent. | Validate existing private dependencies before and after the artifact release. Do not run full Bicep, reconcile shared resources, alter networking/identity, or change PostgreSQL access. |
+| Explicit bootstrap/reconciliation | Full Bicep management plane, including shared dependencies. | Capture a current preview, review every proposed change, and obtain explicit approval of the reconciliation plan before execution. A preview is not a deployment or a health proof. |
+| PostgreSQL lockdown | Canonical PostgreSQL private endpoint/DNS, public-access, and firewall controls. | Run separately, with explicit confirmation, only after the current generated connectivity proof shows both ACA and hosted-agent access to the canonical FQDN. It is never an app-only-release side effect. |
+
+Full-IaC preview run `31198356080` showed shared authoritative drift in the
+VNet/subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
+Application Insights, and Search. The operating decision is fail closed:
+full-Bicep bootstrap/reconciliation is blocked pending owner-approved intended
+state for those resources. Do not normalize, accept, or deploy that drift under
+the routine app-only release label, and do not claim deployment success from
+the preview.
 
 ## Approved selected-thread and frontend alignment
 
@@ -147,6 +162,9 @@ A change is done only when all applicable items are true:
 | Change type | Required local gates | Required hosted gates |
 | --- | --- | --- |
 | App-only behavior (no hosting/IaC change) | `make test`, `make eval-backend`, `make test-e2e`, `./scripts/skills/design-review-skill.sh` | None |
+| Routine app-only release | Applicable application gates and validation of existing private dependencies | Private-runner ACA revision and hosted-agent release only; no full Bicep or PostgreSQL lockdown |
+| Bootstrap/reconciliation | IaC review and a current full-Bicep preview with an approved reconciliation decision | Approved private-runner full-Bicep execution, then applicable deployment and telemetry evidence |
+| PostgreSQL lockdown | Fresh generated ACA/hosted-agent connectivity proof for the canonical FQDN | Separately confirmed lockdown; record proof, access result, and subsequent applicable release evidence |
 | HITL/business-rule change | local gates + targeted HITL rule assertions | Hosted smoke for `ORD-1001`, `ORD-1009` (+ approve/reject when applicable) |
 | MAF/Foundry runtime change | local gates + focused hosted-entry tests + `make eval-backend` | Private Foundry deploy + smoke + E2E evidence + enforced conversation trace evaluation + correlated telemetry verification |
 | IaC/network/identity/deploy workflow change | local gates as applicable + IaC review | `azure-validation` -> `azure-deployment` -> `azure-telemetry-validation` |
@@ -174,8 +192,12 @@ The CI workflow (`.github/workflows/ci.yml`) enforces this model in two lightwei
 
 For each release-impacting change, capture:
 
+- Release class (routine app-only, bootstrap/reconciliation, or PostgreSQL
+  lockdown) and why that scope is sufficient
 - Commit SHA and changed surfaces
 - Gate results (pass/fail + command or run ID)
+- For full Bicep, the preview run, reviewed drift decision, and approval; for
+  PostgreSQL lockdown, the separately confirmed generated connectivity proof
 - Hosted version and conversation/thread identifiers
 - Foundry trace evidence (version-scoped)
 - App Insights correlation evidence (`workflow_run_id`, `thread_id`, exception status)

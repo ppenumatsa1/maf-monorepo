@@ -8,7 +8,8 @@ PROJECT_ROOT := $(CURDIR)
 	validate-quick validate-full clean \
 	foundry-up foundry-preflight foundry-iac-validate foundry-release-preflight foundry-package \
 	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
-	foundry-app-deploy foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
+	foundry-app-deploy foundry-app-images-verify foundry-app-only-preflight foundry-hosted-app-deploy \
+	foundry-app-only-release foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
 
 help:
 	@echo "Available targets:"
@@ -44,6 +45,10 @@ help:
 	@echo "  foundry-project-connections - Provision Foundry connections after project identity propagation"
 	@echo "  foundry-deploy  - Deploy hosted agent to Foundry (after provision/up)"
 	@echo "  foundry-app-deploy - Deploy private backend and public frontend Container Apps"
+	@echo "  foundry-app-only-preflight - Read-only validation of existing private app-release dependencies"
+	@echo "  foundry-app-images-verify - Verify active Container App revisions use the selected private ACR"
+	@echo "  foundry-hosted-app-deploy - Build, push, and activate a hosted-agent version without provisioning"
+	@echo "  foundry-app-only-release - Deploy only ACA revisions and a hosted-agent image/version"
 	@echo "  foundry-connectivity-proof - Record ACA and hosted-agent PostgreSQL connectivity proof"
 	@echo "  foundry-postgres-lockdown - Disable PostgreSQL public access using recorded connectivity proof"
 	@echo "  foundry-evidence - Collect hosted E2E, evaluation, and telemetry evidence"
@@ -295,6 +300,24 @@ foundry-app-deploy:
 	@test -f frontend/Dockerfile
 	cd infra/foundry-hosted && azd deploy backend --no-prompt
 	cd infra/foundry-hosted && azd deploy frontend --no-prompt
+
+foundry-app-images-verify:
+	./scripts/foundry/verify_private_app_images.sh
+
+foundry-app-only-preflight:
+	./scripts/foundry/validate_private_app_release.sh
+
+foundry-hosted-app-deploy: ensure-foundry-deploy-env
+	@test -f backend/Dockerfile.hosted
+	@test -f backend/foundry/main.py
+	@./scripts/foundry/sync_hosted_source.sh
+	@./scripts/foundry/deploy_hosted_container.sh
+
+foundry-app-only-release:
+	$(MAKE) foundry-app-only-preflight
+	$(MAKE) foundry-app-deploy
+	$(MAKE) foundry-app-images-verify
+	$(MAKE) foundry-hosted-app-deploy
 
 foundry-connectivity-proof:
 	./scripts/foundry/verify_private_connectivity.sh

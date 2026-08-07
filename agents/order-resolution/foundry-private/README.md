@@ -112,19 +112,37 @@ receives a Foundry or database credential: Nginx proxies `/api` to the
 internal-ingress FastAPI Container App, and the backend uses managed identity
 for the private Foundry Responses endpoint.
 
+### Safe release boundaries (effective 2026-08-07)
+
+Classify every protected operation before it starts. These are separate
+operations, not interchangeable steps of one routine release:
+
+| Operation | Permitted scope | Required decision and evidence |
+| --- | --- | --- |
+| Routine app-only release | Existing ACA backend/frontend revisions and the existing hosted agent only. | Validate the existing private dependencies and release the application artifacts. Do not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
+| Bootstrap or reconciliation | Full Bicep management-plane scope. | First capture a preview, review every shared-resource change, and obtain explicit approval for the accepted reconciliation plan. |
+| PostgreSQL lockdown | The canonical PostgreSQL private-access controls only. | A separately confirmed operation after a fresh generated ACA and hosted-agent connectivity proof for the canonical FQDN. It is never implied by an app-only release. |
+
+IaC preview run `31198356080` detected shared authoritative drift in the VNet
+and subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
+Application Insights, and Search. This is a no-go for full Bicep application
+until the resource owners approve a reconciliation plan. The preview is
+evidence only: it does not establish that an application was deployed or that
+any dependency is healthy.
+
 PR validation remains credential-free. Protected manual workflows
 `order-resolution-private-provision.yml` and
 `order-resolution-private-deploy.yml` run only on the
 `foundry-private-v2` self-hosted runner in `foundry-private-env`, using Azure
-OIDC and the runner's retained private AZD environment. Provision, deploy, and
-observability dispatches share one release concurrency group. A deploy dispatch
-requires both `confirmation=deploy` and
-`postgres_lockdown_confirmation=lockdown`; this is the explicit workflow
-confirmation for the irreversible database cutover. The release sequence always
-deploys backend, frontend, and the hosted agent, generates a fresh
-connectivity proof, performs the confirmed lockdown, then runs hosted E2E,
-enforced Foundry evaluation, and telemetry evidence. It has no password-repair,
-public-access, firewall, or administrator-user bypass.
+OIDC and the runner's retained private AZD environment. Provision,
+reconciliation, application release, and observability dispatches share one
+release concurrency group. A routine app-only release is restricted to the
+existing ACA revisions and hosted agent and validates its existing
+dependencies. It must not accept or repair the previewed shared-resource drift.
+Bootstrap/reconciliation remains an explicitly approved full-Bicep operation.
+PostgreSQL lockdown requires its own explicit confirmation and current
+generated proof; do not bundle it into an app-only release. No operation may use
+password-repair, public-access, firewall, or administrator-user bypasses.
 
 The same source-of-truth target is available only from the private runner:
 
@@ -133,13 +151,17 @@ make foundry-provision-preview
 make foundry-release
 ```
 
-`foundry-release` records ACA and hosted-agent connectivity in
+`make foundry-provision-preview` is for the explicit
+bootstrap/reconciliation decision and must not be treated as an app-only
+preflight. `make foundry-release` is the full staged release path; do not use
+it to characterize a routine app-only release. The generated connectivity proof
+records ACA and hosted-agent connectivity in
 `backend/.foundry/results/private-connectivity-proof.json` before it disables
 PostgreSQL public access and removes the temporary Azure-services firewall rule.
-For a manual staged run, execute `make foundry-connectivity-proof` before
-`make foundry-postgres-lockdown`; the lockdown target rejects missing, stale, or
-mismatched proof for the canonical `POSTGRES_SERVER_NAME` FQDN. The current
-recorded target is
+For the separate PostgreSQL operation, execute
+`make foundry-connectivity-proof` before `make foundry-postgres-lockdown`; the
+lockdown target rejects missing, stale, or mismatched proof for the canonical
+`POSTGRES_SERVER_NAME` FQDN. The current recorded target is
 `maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
 the AZD environment changes.
 
@@ -151,10 +173,12 @@ only after that account name has been purged from Azure.
 Clean provisioning is staged: `make foundry-provision` creates the private
 account, project, identities, and RBAC without storing Foundry connection
 secrets. After the project identity has propagated, run
-`make foundry-project-connections`; the protected deploy workflow performs this
-stage before application deployment. If Azure reports that a private endpoint
-is still deleting, wait for that operation to finish and retry the same stage;
-do not open public access or remove the connection.
+`make foundry-project-connections` only in the separately approved
+bootstrap/reconciliation operation. A routine app-only release validates those
+existing connections read-only and does not recreate them. If Azure reports
+that a private endpoint is still deleting, wait for that operation to finish
+and retry the approved provisioning stage; do not open public access or remove
+the connection.
 
 ### Private runner recovery
 

@@ -4,6 +4,39 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## Shared authoritative drift decision (2026-08-07)
+
+**Evidence.** Full-IaC preview run `31198356080` reported shared authoritative
+drift in the VNet/subnets, ACA environment, Foundry account/project/models,
+ACR, Cosmos, Application Insights, and Search.
+
+**Decision.** The preview is not deployment evidence. No full Bicep apply,
+shared-resource reconciliation, PostgreSQL lockdown, or application deployment
+success is claimed from this run. Full bootstrap/reconciliation is blocked
+until the responsible owners review the changes and explicitly approve the
+intended state for every shared resource.
+
+**Safe release boundary.** A routine app-only release may change only existing
+ACA backend/frontend revisions and the existing hosted agent, while validating
+the existing private dependencies. It must not invoke full Bicep, accept or
+repair the reported drift, or change PostgreSQL access. PostgreSQL lockdown is
+a separate, explicitly confirmed operation that requires a fresh generated
+proof of ACA and hosted-agent connectivity to the canonical FQDN.
+
+**Implementation.** The protected app-only workflow runs
+`make foundry-app-only-release`: its read-only preflight verifies the selected
+private topology, five required Foundry project connections, and the project
+identity's private-ACR roles before it deploys existing ACA revisions and a
+hosted-agent version. It then confirms active ACA revisions use the selected
+private ACR. The workflow contract rejects full Bicep, connection/RBAC
+reconciliation, connectivity proof, lockdown, and evidence collection from
+this release class.
+
+**Open blocker/question.** Who owns and approves the intended state for each
+previewed shared resource, and which differences (if any) are authorized for
+reconciliation? Until that decision is recorded, do not progress a full-IaC
+operation. No deployment was performed by this documentation update.
+
 ## Foundry Private selected-thread implementation and local evidence (2026-08-07)
 
 **Delivered implementation.** Coordinated private-lane work completed the

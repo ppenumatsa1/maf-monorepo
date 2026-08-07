@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 WORKFLOWS = Path(".github/workflows")
 DEPLOYMENT_WORKFLOWS = (
     "order-resolution-private-provision.yml",
@@ -56,11 +55,12 @@ def validate_deployment_workflow(name: str) -> None:
     require(text, "tenant-id: ${{ vars.AZURE_TENANT_ID }}", name)
     require(text, "subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}", name)
     require(text, "azd config set auth.useAzCliAuth true", name)
-    require(
-        text,
-        f"{PRIVATE_PREFIX}/scripts/foundry/validate_private_runner_environment.sh",
-        name,
-    )
+    if name == "order-resolution-private-provision.yml":
+        require(
+            text,
+            f"{PRIVATE_PREFIX}/scripts/foundry/validate_private_runner_environment.sh",
+            name,
+        )
     require(
         text,
         f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
@@ -69,10 +69,15 @@ def validate_deployment_workflow(name: str) -> None:
     forbid(text, "pull_request:", name)
     forbid(text, "push:", name)
     forbid(text, "workflow_call:", name)
-    require(text, "secrets.POSTGRES_ADMIN_PASSWORD", name)
-    if text.count("secrets.") != 1:
+    if name == "order-resolution-private-provision.yml":
+        require(text, "secrets.POSTGRES_ADMIN_PASSWORD", name)
+    if name == "order-resolution-private-provision.yml" and text.count("secrets.") != 1:
         raise AssertionError(
             f"{name} may reference only the PostgreSQL admin password secret."
+        )
+    if name == "order-resolution-private-deploy.yml" and "secrets." in text:
+        raise AssertionError(
+            f"{name} must not read secrets during an app-only private release."
         )
     for target in EXPECTED_TARGETS:
         require(text, target, name)
@@ -110,38 +115,12 @@ def validate() -> None:
 
     deploy_name = "order-resolution-private-deploy.yml"
     deploy = (WORKFLOWS / deploy_name).read_text()
-    require(deploy, "make foundry-app-deploy", deploy_name)
-    require(deploy, "make foundry-project-connections", deploy_name)
-    require(deploy, "make foundry-deploy", deploy_name)
-    require(deploy, "make foundry-connectivity-proof", deploy_name)
-    require(deploy, "make foundry-postgres-lockdown", deploy_name)
-    require(deploy, "make foundry-evidence", deploy_name)
+    require(deploy, "make foundry-app-only-release", deploy_name)
     require(deploy, "uses: actions/setup-python@v5", deploy_name)
     require(deploy, 'python-version: "3.12"', deploy_name)
     require(
         deploy,
-        "Refresh federated Azure identity before hosted-agent release",
-        deploy_name,
-    )
-    require_order(
-        deploy,
-        (
-            "Refresh federated Azure identity before hosted-agent release",
-            "Synchronize Foundry hosted-agent deployment role",
-            "make foundry-deploy",
-        ),
-        deploy_name,
-    )
-    require(deploy, "postgres_lockdown_confirmation:", deploy_name)
-    require(
-        deploy,
-        "inputs.postgres_lockdown_confirmation == 'lockdown'",
-        deploy_name,
-    )
-    require(deploy, "\n  evidence:\n    needs: deploy", deploy_name)
-    require(
-        deploy,
-        "Verify active Container Apps use private ACR images",
+        "Validate existing private dependencies and deploy app-only release",
         deploy_name,
     )
     forbid(deploy, "refresh_hosted_agent:", deploy_name)
@@ -149,21 +128,144 @@ def validate() -> None:
     forbid(deploy, "run_smoke:", deploy_name)
     forbid(deploy, "run_evidence:", deploy_name)
     forbid(deploy, "make foundry-hosted-refresh", deploy_name)
+    forbid(deploy, "postgres_lockdown_confirmation:", deploy_name)
+    forbid(deploy, "azd ext install", deploy_name)
+    forbid(deploy, "bootstrap_private_azd_environment.sh", deploy_name)
+    forbid(deploy, "ensure_foundry_azd_defaults.sh", deploy_name)
+    forbid(deploy, "assign_private_foundry_project_manager.sh", deploy_name)
+    forbid(deploy, "make foundry-provision", deploy_name)
+    forbid(deploy, "make foundry-project-connections", deploy_name)
+    forbid(deploy, "make foundry-deploy", deploy_name)
+    forbid(deploy, "make foundry-connectivity-proof", deploy_name)
+    forbid(deploy, "make foundry-postgres-lockdown", deploy_name)
+    forbid(deploy, "make foundry-evidence", deploy_name)
+    forbid(deploy, "\n  evidence:\n", deploy_name)
+    makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
+    app_only_preflight_body = makefile.split(
+        "foundry-app-only-preflight:\n", maxsplit=1
+    )[1].split("\n\nfoundry-hosted-app-deploy:", maxsplit=1)[0]
+    require(
+        app_only_preflight_body,
+        "./scripts/foundry/validate_private_app_release.sh",
+        "foundry-app-only-preflight Make target",
+    )
+    app_only_release_body = makefile.split(
+        "foundry-app-only-release:\n", maxsplit=1
+    )[1].split("\n\nfoundry-connectivity-proof:", maxsplit=1)[0]
     require_order(
-        deploy,
+        app_only_release_body,
         (
-            "make foundry-project-connections",
-            "make foundry-app-deploy",
-            "make foundry-deploy",
-            "make foundry-connectivity-proof",
-            "make foundry-postgres-lockdown",
-            "\n  evidence:\n    needs: deploy",
-            "make foundry-evidence",
+            "$(MAKE) foundry-app-only-preflight",
+            "$(MAKE) foundry-app-deploy",
+            "$(MAKE) foundry-app-images-verify",
+            "$(MAKE) foundry-hosted-app-deploy",
         ),
-        deploy_name,
+        "foundry-app-only-release Make target",
+    )
+    for forbidden_target in (
+        "foundry-provision",
+        "foundry-project-connections",
+        "foundry-deploy",
+        "foundry-connectivity-proof",
+        "foundry-postgres-lockdown",
+        "foundry-evidence",
+    ):
+        forbid(
+            app_only_release_body,
+            forbidden_target,
+            "foundry-app-only-release Make target",
+        )
+    hosted_app_deploy_body = makefile.split(
+        "foundry-hosted-app-deploy:", maxsplit=1
+    )[1].split("\n\nfoundry-app-only-release:", maxsplit=1)[0]
+    require(
+        hosted_app_deploy_body,
+        "./scripts/foundry/sync_hosted_source.sh",
+        "foundry-hosted-app-deploy Make target",
+    )
+    require(
+        hosted_app_deploy_body,
+        "./scripts/foundry/deploy_hosted_container.sh",
+        "foundry-hosted-app-deploy Make target",
+    )
+    for forbidden_operation in (
+        "ensure_foundry_azd_defaults.sh",
+        "foundry-package",
+        "azd provision",
+        "azd deploy",
+    ):
+        forbid(
+            hosted_app_deploy_body,
+            forbidden_operation,
+            "foundry-hosted-app-deploy Make target",
+        )
+    app_image_verify_body = makefile.split(
+        "foundry-app-images-verify:\n", maxsplit=1
+    )[1].split("\n\nfoundry-app-only-preflight:", maxsplit=1)[0]
+    require(
+        app_image_verify_body,
+        "./scripts/foundry/verify_private_app_images.sh",
+        "foundry-app-images-verify Make target",
     )
 
-    makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
+    app_release_validation = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/validate_private_app_release.sh"
+    ).read_text()
+    for value in (
+        "az cognitiveservices account show",
+        "az cognitiveservices account deployment show",
+        "az rest",
+        "az containerapp env show",
+        "az containerapp show",
+        "az acr show",
+        "az role assignment list",
+        "az network private-endpoint show",
+        "require_project_connection",
+        "require_project_acr_roles",
+        "no secrets or Azure resources were modified",
+    ):
+        require(
+            text=app_release_validation,
+            value=value,
+            workflow="private app-release validation",
+        )
+    for forbidden_operation in (
+        "RUNTIME_DATABASE_URL",
+        "DATABASE_URL",
+        "POSTGRES_ADMIN_PASSWORD",
+        "azd env set",
+        "azd provision",
+        "azd deploy",
+    ):
+        forbid(
+            app_release_validation,
+            forbidden_operation,
+            "private app-release validation",
+        )
+
+    app_image_validation = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/verify_private_app_images.sh"
+    ).read_text()
+    for value in (
+        "latestReadyRevisionName",
+        "az containerapp revision show",
+        "selected private ACR",
+    ):
+        require(
+            text=app_image_validation,
+            value=value,
+            workflow="private app image validation",
+        )
+
+    hosted_container_deploy = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/deploy_hosted_container.sh"
+    ).read_text()
+    require(
+        hosted_container_deploy,
+        "az acr repository show",
+        "private hosted-agent image verification",
+    )
+
     release_body = makefile.split("foundry-release:\n", maxsplit=1)[1].split(
         "\n\nfoundry-smoke:", maxsplit=1
     )[0]
@@ -410,6 +512,13 @@ def validate() -> None:
     provision_name = "order-resolution-private-provision.yml"
     provision = (WORKFLOWS / provision_name).read_text()
     require(provision, "make foundry-provision", provision_name)
+    require(provision, "preview_only:", provision_name)
+    require(provision, "make foundry-provision-preview", provision_name)
+    require(
+        provision,
+        "if: ${{ inputs.preview_only != true }}",
+        provision_name,
+    )
 
     validation_name = "order-resolution-private-validation.yml"
     validation = (WORKFLOWS / validation_name).read_text()

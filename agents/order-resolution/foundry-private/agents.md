@@ -26,13 +26,21 @@ This file describes expected behavior for coding agents working in this reposito
   hosted-agent connectivity proof. `POSTGRES_SERVER_NAME` and
   `RUNTIME_DATABASE_URL` must identify that same FQDN; only the generated,
   current connectivity-proof artifact can authorize lockdown.
-- Private provision, deploy, and observability workflows share one serialized
-  release group on `foundry-private-v2`. Clean deployment always deploys
-  backend, frontend, and the hosted agent before fresh connectivity proof;
-  PostgreSQL lockdown additionally requires explicit workflow confirmation and
-  is followed by hosted E2E, enforced evaluation, and telemetry. Do not add
-  optional agent-refresh, administrator-password, public-access, or firewall
-  bypasses.
+- Private provision, reconciliation, app-release, and observability workflows
+  share one serialized release group on `foundry-private-v2`. Classify the
+  operation before dispatch: a routine app-only release changes only existing
+  ACA revisions and the existing hosted agent, and validates existing
+  dependencies; it must not invoke full Bicep or change PostgreSQL access.
+  Bootstrap/reconciliation is a separately approved full-Bicep operation.
+  PostgreSQL lockdown is a separate explicitly confirmed, proof-gated
+  operation, never an app-only release side effect. Do not add optional
+  agent-refresh, administrator-password, public-access, or firewall bypasses.
+- Preview run `31198356080` found shared authoritative drift in the VNet and
+  subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
+  Application Insights, and Search. Do not apply or normalize that drift during
+  a routine application release and do not claim deployment success from the
+  preview. Full Bicep remains blocked pending reviewed, explicit reconciliation
+  approval.
 - Core provisioning stages Foundry connections until the project managed
   identity and service RBAC exist. The later private deploy stage enables those
   connections; identity propagation and private-endpoint deletion failures

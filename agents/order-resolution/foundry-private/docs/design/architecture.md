@@ -385,13 +385,24 @@ The supported private execution surfaces are:
    state.
 
 GitHub Actions validation remains credential-free. Protected private provision,
-deploy, and observability workflows serialize on
+reconciliation, application-release, and observability workflows serialize on
 `order-resolution-private-release` and run only on `foundry-private-v2` in the
-retained private environment. A clean private release deploys backend,
-frontend, and hosted agent; produces current connectivity proof; performs the
-optional PostgreSQL lockdown only with its explicit confirmation; then runs
-hosted E2E, enforced evaluation, and telemetry validation. Do not add
-administrator-password, public-access, firewall, or alternate runner bypasses.
+retained private environment. The following boundaries preserve the distinction
+between application delivery and shared infrastructure authority:
+
+| Operation | Architectural scope | Boundary |
+| --- | --- | --- |
+| Routine app-only release | Existing ACA backend/frontend revisions and existing hosted agent. | Validates existing private dependencies; does not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
+| Bootstrap/reconciliation | Full Bicep management plane. | Requires a current preview and explicit approved reconciliation plan before execution. |
+| PostgreSQL lockdown | Canonical PostgreSQL private-access controls. | Separate explicitly confirmed operation after fresh generated ACA and hosted-agent connectivity proof for the canonical FQDN. |
+
+Preview run `31198356080` found shared authoritative drift in the VNet/subnets,
+ACA environment, Foundry account/project/models, ACR, Cosmos, Application
+Insights, and Search. Full-Bicep bootstrap/reconciliation is therefore blocked
+until owners approve the intended state. The preview neither deploys the
+application nor establishes private dependency health; it must not be reported
+as deployment success. Do not add administrator-password, public-access,
+firewall, or alternate-runner bypasses.
 
 The private resources were intentionally torn down; a fresh private release
 requires new dated evidence. Nothing in this architecture update is a

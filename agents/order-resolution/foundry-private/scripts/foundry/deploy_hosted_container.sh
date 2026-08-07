@@ -90,6 +90,18 @@ done
   exit 1
 }
 
+image_digest="$(
+  az acr repository show \
+    --name "$registry_name" \
+    --image "${image_repository}:${image_tag}" \
+    --query digest \
+    --output tsv
+)"
+[[ -n "$image_digest" ]] || {
+  echo "Hosted-agent image was not found in the selected private ACR after push." >&2
+  exit 1
+}
+
 export FOUNDRY_PROJECT_ENDPOINT="$project_endpoint"
 export FOUNDRY_HOSTED_AGENT_NAME="$agent_name"
 export FOUNDRY_IMAGE="$image"
@@ -117,4 +129,5 @@ agent_endpoint="${project_endpoint}/agents/${agent_name}/endpoint/protocols/open
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_NAME "$agent_name" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_VERSION "$agent_version" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_RESPONSES_ENDPOINT "$agent_endpoint" >/dev/null
+echo "Verified hosted-agent image in private ACR: ${image}"
 echo "Hosted agent image deployment completed: ${image}"

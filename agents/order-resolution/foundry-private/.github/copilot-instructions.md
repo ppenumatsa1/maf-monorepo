@@ -50,12 +50,23 @@ removed only after fresh explicit ACA and hosted-agent connectivity proof.
 Only the generated proof artifact may authorize lockdown; it must not be
 replaced by a manual environment flag.
 
-Private provision, deploy, and observability workflows must serialize on the
-same release group and run only on `foundry-private-v2`. A clean release deploys
-backend, frontend, and the hosted agent before fresh connectivity proof; it
-locks PostgreSQL only after explicit workflow confirmation, then runs hosted
-E2E, enforced evaluation, and telemetry. Do not add optional refresh,
-administrator-password, public-access, or firewall bypasses to that path.
+Private provision, reconciliation, app-release, and observability workflows
+must serialize on the same release group and run only on `foundry-private-v2`.
+Classify the operation first: a routine app-only release changes only existing
+ACA revisions and the existing hosted agent, then validates existing
+dependencies. It must not run full Bicep, reconcile shared resources, or change
+PostgreSQL access. Bootstrap/reconciliation is a separately approved
+full-Bicep operation. PostgreSQL lockdown is a separate explicitly confirmed,
+generated-proof-gated operation and is never implied by an app-only release.
+Do not add optional refresh, administrator-password, public-access, or
+firewall bypasses to any path.
+
+Preview run `31198356080` found shared authoritative drift in the VNet and
+subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
+Application Insights, and Search. Do not apply or normalize this drift during
+an app-only release, and do not claim deployment success from the preview. Full
+Bicep remains blocked until a reviewed reconciliation plan is explicitly
+approved.
 
 Clean private provisioning stages Foundry project connections behind
 `MANAGE_PROJECT_CONNECTIONS=false` until the project identity and required RBAC
