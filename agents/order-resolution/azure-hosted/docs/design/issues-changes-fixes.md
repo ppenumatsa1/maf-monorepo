@@ -111,6 +111,12 @@ read-only request. Client-only frame/run identifiers now use
 Focused browser, lint, typecheck, build, and release-guard checks passed before
 the retry.
 
+The subsequent CI attempt deployed the tested image digests and passed smoke
+plus hosted workflow E2E, then stopped before final evidence because the Docker
+Playwright container left root-owned result files in the mounted workspace.
+The Compose test service now runs as the invoking host/runner UID and GID so
+the following hosted selected-thread E2E can clean and write its own artifacts.
+
 ## Historical source-of-truth correction (2026-07-28)
 
 The delivery record continued to describe the deleted resources as active.

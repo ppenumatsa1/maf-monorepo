@@ -65,6 +65,7 @@ services:
 
   playwright:
     image: mcr.microsoft.com/playwright:v1.62.1-noble
+    user: "${DOCKER_E2E_UID:-1000}:${DOCKER_E2E_GID:-1000}"
     profiles: ["test"]
     depends_on:
       - backend

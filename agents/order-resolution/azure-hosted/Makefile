@@ -226,6 +226,8 @@ docker-test: ensure-frontend ensure-playwright
 	MOCK_MCP_PORT="$${ports[1]}" \
 	BACKEND_PORT="$${ports[2]}" \
 	FRONTEND_PORT="$${ports[3]}" \
+	DOCKER_E2E_UID="$$(id -u)" \
+	DOCKER_E2E_GID="$$(id -g)" \
 	PLAYWRIGHT_ARTIFACTS_DIR="/workspace/$${artifacts_dir}" \
 	docker compose --project-name "$${project}" --env-file $(COMPOSE_ENV_FILE) --profile test up "$${build_args[@]}" --abort-on-container-exit --exit-code-from playwright playwright
 

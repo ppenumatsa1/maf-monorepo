@@ -22,6 +22,8 @@ require_fixed_line "**/__pycache__/" .gitignore
 grep -Fq "host: containerapp" azure.yaml
 grep -Fq "deploy_mode=app_only" scripts/skills/deployment-mode-router.sh
 grep -Fq "^(frontend/" scripts/skills/deployment-mode-router.sh
+grep -Fq 'user: "${DOCKER_E2E_UID:-1000}:${DOCKER_E2E_GID:-1000}"' docker-compose.yml
+grep -Fq 'DOCKER_E2E_UID="$$(id -u)"' Makefile
 
 python3 - <<'PY'
 import json
