@@ -57,6 +57,9 @@ jobs:
       - name: Validate existing private app-release dependencies
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-app-only-preflight
+      - name: Sync hosted-agent package context
+        working-directory: agents/order-resolution/foundry-private
+        run: ./scripts/foundry/sync_hosted_source.sh
       - name: Package private release images without publishing
         working-directory: agents/order-resolution/foundry-private/infra/foundry-hosted
         run: azd package --no-prompt

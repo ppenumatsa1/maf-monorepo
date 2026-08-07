@@ -158,6 +158,7 @@ def validate() -> None:
         "subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}",
         "azd config set auth.useAzCliAuth true",
         "make foundry-app-only-preflight",
+        "./scripts/foundry/sync_hosted_source.sh",
         "azd package --no-prompt",
         f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
     ):
