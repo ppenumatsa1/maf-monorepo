@@ -57,3 +57,23 @@ excluded from the app-release critical path.
 | App Insights correlation | 18:19:03–18:19:31 | 28s | Two exact pairs, zero exceptions |
 | **Cloud app-release job** | **18:11:00–18:19:37** | **8m 37s** | **Passed** |
 | **End-to-end CI workflow** | **18:08:12–18:19:38** | **11m 26s** | **Passed** |
+
+## Verified critical-path optimization
+
+Run [`31214807222`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31214807222)
+verified the optimized lane without removing any gate. The official Docker
+build action prewarmed GitHub Actions cache layers, the Docker E2E job loaded
+those same layers before testing the exact local images, Playwright browser
+cache was restored, and hosted E2E ran concurrently with Foundry evaluation.
+Telemetry remained after both to avoid Azure CLI token-cache contention.
+
+| Metric | Before | Optimized | Improvement |
+| --- | ---: | ---: | ---: |
+| Cloud app-release job | 8m 37s | 5m 54s | 2m 43s (32%) |
+| End-to-end CI workflow | 11m 26s | 9m 24s | 2m 02s (18%) |
+| Exact-image build in release job | 2m 30s | 16s | 2m 14s |
+
+The cache prebuild remains unpushed and runs in parallel with source gates.
+The tested images are still the only images pushed and deployed. Backend and
+frontend Container App updates remain sequential to preserve the previous
+mixed-version failure boundary.

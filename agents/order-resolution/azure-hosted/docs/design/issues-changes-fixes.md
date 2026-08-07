@@ -133,6 +133,23 @@ App Insights correlation with zero exceptions. The deployment plan records the
 non-secret endpoints, digests, evaluation IDs, and telemetry evidence. No
 infrastructure reconciliation occurred.
 
+### Release critical-path optimization (2026-08-07)
+
+The cloud release job initially took 8m 37s. The final optimization keeps the
+same gates and exact-image invariant while prebuilding unpushed Docker layers
+through the GitHub Actions cache, caching Playwright browsers, and running
+hosted browser E2E with the independent Foundry evaluation after smoke.
+Telemetry remains after those two gates to avoid concurrent Azure CLI token
+cache access; backend/frontend Container App updates also remain sequential to
+avoid a mixed-version partial deployment.
+
+The first raw Buildx cache attempt did not expose GitHub runtime credentials,
+so it rebuilt every layer. It was replaced with `docker/build-push-action`,
+which supplies those credentials. Verified run
+[`31214807222`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31214807222)
+reported cached backend/frontend layers and passed every gate in 5m 54s for
+the cloud job and 9m 24s end-to-end, versus 8m 37s and 11m 26s respectively.
+
 ## Historical source-of-truth correction (2026-07-28)
 
 The delivery record continued to describe the deleted resources as active.
