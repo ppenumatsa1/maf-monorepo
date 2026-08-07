@@ -235,21 +235,8 @@ build-release-images:
 	@set -euo pipefail; \
 	[[ -n "$${BACKEND_IMAGE:-}" ]] || { echo "BACKEND_IMAGE is required."; exit 1; }; \
 	[[ -n "$${FRONTEND_IMAGE:-}" ]] || { echo "FRONTEND_IMAGE is required."; exit 1; }; \
-	build_image() { \
-		local image="$$1"; \
-		local context="$$2"; \
-		local cache_scope="$$3"; \
-		if [[ "$${DOCKER_BUILD_CACHE:-false}" == "true" ]]; then \
-			docker buildx build --load \
-				--cache-from "type=gha,scope=$${cache_scope}" \
-				--cache-to "type=gha,mode=max,scope=$${cache_scope},ignore-error=true" \
-				--tag "$${image}" "$${context}"; \
-		else \
-			docker build --tag "$${image}" "$${context}"; \
-		fi; \
-	}; \
-	build_image "$${BACKEND_IMAGE}" backend order-resolution-azure-hosted-backend; \
-	build_image "$${FRONTEND_IMAGE}" frontend order-resolution-azure-hosted-frontend
+	docker build --tag "$${BACKEND_IMAGE}" backend; \
+	docker build --tag "$${FRONTEND_IMAGE}" frontend
 
 deploy-ci-images:
 	./scripts/release/deploy-ci-images.sh

@@ -165,7 +165,8 @@ for required in (
     "make release-validate",
     "Prebuild immutable release image cache",
     "docker/setup-buildx-action@v3",
-    "DOCKER_BUILD_CACHE=true",
+    "docker/build-push-action@v6",
+    "ignore-error=true",
     "Cache Playwright browser",
 ):
     if required not in workflow:

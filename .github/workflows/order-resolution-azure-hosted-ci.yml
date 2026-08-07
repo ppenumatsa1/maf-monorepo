@@ -177,17 +177,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Prebuild unpushed immutable release images
-        working-directory: agents/order-resolution/azure-hosted
+      - name: Define immutable release images
+        id: images
         run: |
           set -euo pipefail
           release_tag="ci-${GITHUB_SHA}"
           backend_image="${AZURE_CONTAINER_REGISTRY_ENDPOINT}/maf-order-resolution-agent/backend-maf-ora-azure:${release_tag}"
           frontend_image="${AZURE_CONTAINER_REGISTRY_ENDPOINT}/maf-order-resolution-agent/frontend-maf-ora-azure:${release_tag}"
-          DOCKER_BUILD_CACHE=true \
-            BACKEND_IMAGE="$backend_image" \
-            FRONTEND_IMAGE="$frontend_image" \
-            make build-release-images
+          echo "backend_image=${backend_image}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${frontend_image}" >> "$GITHUB_OUTPUT"
+      - name: Prebuild unpushed backend image cache
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/order-resolution/azure-hosted/backend
+          load: false
+          push: false
+          tags: ${{ steps.images.outputs.backend_image }}
+          cache-from: type=gha,scope=order-resolution-azure-hosted-backend
+          cache-to: type=gha,mode=max,scope=order-resolution-azure-hosted-backend,ignore-error=true
+      - name: Prebuild unpushed frontend image cache
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/order-resolution/azure-hosted/frontend
+          load: false
+          push: false
+          tags: ${{ steps.images.outputs.frontend_image }}
+          cache-from: type=gha,scope=order-resolution-azure-hosted-frontend
+          cache-to: type=gha,mode=max,scope=order-resolution-azure-hosted-frontend,ignore-error=true
 
   docker-e2e:
     name: Required cloud Docker E2E
@@ -247,7 +263,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - name: Build the immutable release images
-        working-directory: agents/order-resolution/azure-hosted
+        id: release-images
         run: |
           set -euo pipefail
           release_tag="ci-${GITHUB_SHA}"
@@ -256,10 +272,26 @@ jobs:
           echo "RELEASE_RUN_ID=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
           echo "BACKEND_IMAGE=${backend_image}" >> "$GITHUB_ENV"
           echo "FRONTEND_IMAGE=${frontend_image}" >> "$GITHUB_ENV"
-          DOCKER_BUILD_CACHE=true \
-            BACKEND_IMAGE="$backend_image" \
-            FRONTEND_IMAGE="$frontend_image" \
-            make build-release-images
+          echo "backend_image=${backend_image}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${frontend_image}" >> "$GITHUB_OUTPUT"
+      - name: Build immutable backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/order-resolution/azure-hosted/backend
+          load: true
+          push: false
+          tags: ${{ steps.release-images.outputs.backend_image }}
+          cache-from: type=gha,scope=order-resolution-azure-hosted-backend
+          cache-to: type=gha,mode=max,scope=order-resolution-azure-hosted-backend,ignore-error=true
+      - name: Build immutable frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/order-resolution/azure-hosted/frontend
+          load: true
+          push: false
+          tags: ${{ steps.release-images.outputs.frontend_image }}
+          cache-from: type=gha,scope=order-resolution-azure-hosted-frontend
+          cache-to: type=gha,mode=max,scope=order-resolution-azure-hosted-frontend,ignore-error=true
       - name: Run Docker E2E profile
         working-directory: agents/order-resolution/azure-hosted
         run: BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" make docker-test
