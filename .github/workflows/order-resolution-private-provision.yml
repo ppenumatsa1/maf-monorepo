@@ -14,6 +14,11 @@ on:
         required: true
         type: boolean
         default: false
+      preview_only:
+        description: Run the private infrastructure preview without applying changes.
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -79,6 +84,7 @@ jobs:
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-provision-preview
       - name: Provision private Foundry infrastructure
+        if: ${{ inputs.preview_only != true }}
         working-directory: agents/order-resolution/foundry-private
         run: |
           set -euo pipefail
