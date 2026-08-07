@@ -156,9 +156,7 @@ def _fake_responses_types() -> tuple[
 
 
 def test_hosted_image_release_uses_private_safe_environment_settings() -> None:
-    release_script = (
-        Path(__file__).parents[2] / "scripts/foundry/deploy_hosted_container.py"
-    )
+    release_script = Path(__file__).parents[2] / "scripts/foundry/deploy_hosted_container.py"
     release_text = release_script.read_text()
 
     assert '"FOUNDRY_DEPLOYMENT_PROFILE"' not in release_text
@@ -172,7 +170,9 @@ def test_hosted_image_release_uses_private_safe_environment_settings() -> None:
     assert '"FOUNDRY_PROJECTS_ENDPOINT":' not in release_text
     assert '"FOUNDRY_RUNTIME_DATABASE_URL":' not in release_text
     assert '"FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT":' not in release_text
-    assert '"AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
+    assert (
+        '"AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
+    )
     assert "connections.orderresolutionruntimesecrets.credentials.database_url" in release_text
     assert "create_version_with_transient_retry" in release_text
     assert "HttpResponseError" in release_text

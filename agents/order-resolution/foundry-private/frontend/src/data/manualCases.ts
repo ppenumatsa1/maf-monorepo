@@ -1,5 +1,5 @@
 import manualCases from "./manualCases.json";
-import { WorkflowStatus } from "../types/workflow";
+import type { WorkflowStatus } from "../types/workflow";
 
 export type ManualCase = {
   id: string;

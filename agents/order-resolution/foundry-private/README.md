@@ -24,14 +24,20 @@ If someone starts from this README, this path should let them understand and run
 3. **Delivery model (how work is governed)**
    - Canonical contract: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
    - Repo instructions: [.github/copilot-instructions.md](.github/copilot-instructions.md), [agents.md](agents.md)
-4. **Implementation + repo shape**
+4. **Approved selected-thread guidance**
+   - [AG-UI React integration](.github/skills/ag-ui-react-integration-ts/SKILL.md)
+   - [AG-UI FastAPI streaming](.github/skills/ag-ui-streaming-fastapi-py/SKILL.md)
+   - [TypeScript setup](.github/skills/typescript-setup/SKILL.md),
+     [TypeScript updates](.github/skills/typescript-update/SKILL.md), and the
+     [E2E operator rubric](.github/skills/e2e-rubric/SKILL.md)
+5. **Implementation + repo shape**
    - Backend runtime details: [backend/README.md](backend/README.md)
    - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
    - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
-5. **IaC + deployment lane**
+6. **IaC + deployment lane**
    - Infra overview: [infra/README.md](infra/README.md)
    - Foundry-hosted private VNet lane: [infra/foundry-hosted/README.md](infra/foundry-hosted/README.md)
-6. **Validation + operations/SRE**
+7. **Validation + operations/SRE**
    - Scripts and validation commands: [scripts/README.md](scripts/README.md)
    - Operational run history and RCA log: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 
@@ -45,6 +51,35 @@ If someone starts from this README, this path should let them understand and run
 
 MAF internals are split for maintainability into `backend/app/maf/prompts`,
 `agents`, `tools`, `executors`, `runner`, and `workflows`.
+
+## Approved Selected-Thread Alignment
+
+The approved private-lane design adds an **optional, read-only** selected-thread
+experience. It does not alter the native SSE timeline, durable history, one MAF
+workflow path, or checkpoint-keyed HITL:
+
+- `GET /api/chat/stream/{thread_id}/ag-ui` is the additive native AG-UI
+  projection for one existing thread.
+- `GET /api/copilotkit/info` (and `GET /api/copilotkit`) is static, redacted
+  discovery. `POST /api/copilotkit` selects one existing `threadId`; compatible
+  `runId`, `messages`, `state`, `tools`, `context`, and `forwardedProps`
+  values are discarded.
+- CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK. Its
+  approved context is limited to opaque thread identity, normalized status,
+  safe event metadata, pending-approval count, and output presence.
+- These projections may expose only safe lifecycle/tool labels, validated
+  checkpoint IDs and approval decisions, and generic terminal/error text.
+  Order/customer and policy data, MCP/RAG content, tool inputs/results,
+  prompts, raw model output, checkpoint payloads, reviewer comments,
+  credentials, and secrets remain private backend concerns.
+
+The private frontend integration, strict TypeScript/lint scripts, and focused
+selected-thread browser coverage are implemented and locally validated. The
+recorded local evidence is 127 passing tests, a 10/10 deterministic evaluation,
+seven workflow E2E cases, four selected-thread E2E cases, and a passing design
+review. This local evidence is not a protected private release: deployment on
+`vm-maffnd-runner`, hosted E2E, Foundry evaluation, and telemetry evidence have
+not yet been run for this implementation.
 
 ## Historical Foundry trace evidence (2026-07-27)
 
@@ -160,7 +195,8 @@ after hosted E2E; do not run a local evaluation as a substitute.
 
 2. Configure backend environment.
 
-- Copy backend env template and edit values in [backend/.env.example](backend/.env.example) and [backend/.env](backend/.env).
+- Copy [backend/.env.example](backend/.env.example) to `backend/.env` and edit
+  its values.
 - Core local mode:
 
 ```bash
@@ -216,6 +252,15 @@ Baseline behavior checks:
 
 - ORD-1001 should usually complete without HITL.
 - ORD-1009 should require HITL.
+
+### Selected-thread frontend local evidence
+
+The implemented selected-thread UI passed its strict TypeScript/frontend gates,
+128 tests, a 10/10 deterministic evaluation, seven workflow E2E cases, four
+selected-thread E2E cases, and the design-review gate. This is local evidence
+only. The protected `vm-maffnd-runner` deployment, hosted E2E, Foundry
+evaluation, and telemetry evidence remain required before a private release is
+claimed.
 
 ## Deploy to Foundry (Hosted Agent)
 

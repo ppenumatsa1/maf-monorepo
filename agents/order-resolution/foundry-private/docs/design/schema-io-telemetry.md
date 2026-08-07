@@ -40,7 +40,14 @@ The legacy SSE stream is unchanged at `/api/chat/stream/{thread_id}`. A parallel
 }
 ```
 
-Native workflow events remain the source of truth. The rich stream maps stages to step lifecycle events, tool calls to tool lifecycle/result events, terminal outputs to assistant text and run-finished events, HITL/checkpoints to custom events, failures to run-error events, and unknown native events to raw events. Each SSE frame contains one rich envelope with one or more AG-UI-compatible events; clients that need native AG-UI framing should flatten `events` in order. The stream emits `RUN_STARTED` in the first rich envelope for each subscription.
+Native workflow events remain the source of truth. The rich stream maps stages to
+step lifecycle events, tool calls to tool lifecycle/result events, terminal
+outputs to assistant text and run-finished events, HITL/checkpoints to custom
+events, failures to run-error events, and unknown native events to raw events.
+Each SSE frame contains one rich envelope with one or more AG-UI-compatible
+events; clients that need native AG-UI framing should flatten `events` in
+order. The stream emits `RUN_STARTED` in the first rich envelope for each
+subscription.
 
 In the private ACA lane, the browser reaches both streams through the frontend's
 same-origin `/api` proxy. The internal Responses wrapper tails the persisted
@@ -118,3 +125,36 @@ identity and writes one exact `operation_Id` per conversation to
 `telemetry-verification.json`. Foundry evaluates only those three persisted
 trace IDs using trace-level query/response mappings, with no correlated
 exceptions. The release artifact also includes `foundry-report.json`.
+
+## Approved redacted selected-thread projections
+
+The approved private-lane contract reserves two optional, read-only
+selected-thread surfaces:
+
+- `GET /api/chat/stream/{thread_id}/ag-ui`
+- `GET /api/copilotkit/info` (with `GET /api/copilotkit` as an alias) and
+`POST /api/copilotkit`
+
+The discovery response is static and redacted. A CopilotKit bridge request may
+use one existing `threadId` as a selector; `runId`, `messages`, `state`,
+`tools`, `context`, and `forwardedProps` are accepted only for client
+compatibility and must be discarded. Neither projection starts a run, resumes
+one, or submits a HITL decision.
+
+The projection allows only `RUN_STARTED`, safe `STEP_*` and `TOOL_CALL_*`
+frames, CUSTOM checkpoint/approval summaries containing validated UUIDs and an
+approved/rejected decision, generic terminal/error text, and `RUN_FINISHED`.
+It must not reuse the `/rich` envelope as a redacted assistant stream.
+
+No order/customer or policy data, policy-evidence IDs, MCP/RAG input or
+result, tool arguments/results, prompt, raw model output, reviewer comment,
+checkpoint payload, credential, or secret belongs in these projections. A
+failed optional projection must not disrupt native SSE or durable workflow
+APIs. CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
+
+The private frontend integration and its typecheck, lint, build, and focused
+browser gates are implemented and locally validated: 128 tests passed, the
+deterministic evaluation completed 10/10, seven workflow and four
+selected-thread E2E cases passed, and design review passed. The protected
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+evidence have not run; the local result is not a private-release claim.

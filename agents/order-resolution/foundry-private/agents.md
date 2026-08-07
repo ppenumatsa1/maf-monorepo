@@ -7,7 +7,16 @@ This file describes expected behavior for coding agents working in this reposito
 - Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
 - Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol in the ACR-built `backend/Dockerfile.hosted` image).
 - Current hosted gate posture is private-lane-first; use private Foundry for hosted validation/deployment unless the canonical operating model is explicitly revised.
-- Frontend: React + Vite, consumes SSE workflow events.
+- Frontend: React + Vite, consumes stable native SSE workflow events. The
+  approved selected-thread AG-UI/CopilotKit surface is optional and read-only;
+  its frontend implementation and focused modern frontend gates are complete
+  and locally validated. The protected private deployment, hosted E2E, Foundry
+  evaluation, and telemetry evidence remain outstanding.
+- CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
+  `GET /api/copilotkit/info` (or `GET /api/copilotkit`) is static discovery.
+  `POST /api/copilotkit` selects one existing `threadId` and ignores compatible
+  `runId`, `messages`, `state`, `tools`, `context`, and `forwardedProps`
+  values.
 - Private browser delivery: external frontend ACA proxies same-origin `/api` to
   internal FastAPI ACA; the backend reaches private Foundry Responses and
   PostgreSQL through the VNet. Do not expose a backend ingress or browser
@@ -29,7 +38,13 @@ This file describes expected behavior for coding agents working in this reposito
   connections; identity propagation and private-endpoint deletion failures
   require a retry after Azure completes, never a security workaround.
 - Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
-- Event streaming: legacy SSE remains the stable contract; additive rich events are exposed for AG-UI-compatible clients.
+- Event streaming: native SSE remains the stable contract; rich events and the
+  approved selected-thread AG-UI projection are additive and do not replace it.
+  The selected-thread projection must allowlist only generic lifecycle/tool
+  labels, validated checkpoint IDs and approval decisions, and generic
+  terminal/error text. It must never expose order/customer or policy data,
+  MCP/RAG content, tool arguments/results, prompts, model output, checkpoint
+  payloads, reviewer comments, credentials, or secrets.
 - Backend package boundaries:
   - `backend/app/api/v1/routers/*` owns HTTP/SSE routes.
   - `backend/app/api/v1/schemas/*` owns API contracts.
@@ -58,6 +73,10 @@ This file describes expected behavior for coding agents working in this reposito
 - MAF middleware should centralize cross-cutting runtime behavior such as correlation, redaction/enrichment, usage/event observation, and explicit failure events
 - HITL telemetry must preserve checkpoint trace context so approval/resume spans stay correlated with the original workflow operation
 - additive rich event streams must preserve the native event payload and must not replace or rename stable SSE event types
+- an AG-UI or CopilotKit failure must leave native SSE, durable history, and
+  checkpoint-keyed HITL controls usable
+- selected-thread requests are read-only: they cannot start, resume, approve,
+  reject, or otherwise mutate a workflow
 
 6. Never remove coverage for:
 
@@ -109,6 +128,15 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, pgvector, and Azure PostgreSQL persistence.
+- `ag-ui-streaming-fastapi-py`: additive, redacted AG-UI and CopilotKit
+  projections of durable workflow events in the private wrapper topology.
+- `ag-ui-react-integration-ts`: React selected-thread UI, additive AG-UI
+  consumption, and safe CopilotKit context.
+- `typescript-setup`: strict TypeScript boundaries for new frontend surfaces.
+- `typescript-update`: strict TypeScript and React updates that preserve
+  workflow contracts.
+- `e2e-rubric`: operator coverage for native SSE, durable HITL, optional
+  AG-UI, CopilotKit safety, and private wrapper boundaries.
 
 Legacy shim paths have been removed. Do not add code that imports or recreates `app/models.py`, `app/config.py`, `app/db.py`, `app/state.py`, `app/workflow_run_repository.py`, `app/rag_repository.py`, `workflows/*`, `tools/*`, or root `app/api/*` router shims.
 Also do not reintroduce removed Foundry adapter/proxy surfaces such as `/api/foundry*` or `backend/app/foundry/*`.
@@ -132,3 +160,11 @@ When architecture or execution policies change, update these instruction files i
 - `.github/copilot-instructions.md`
 - `agents.md`
 - `docs/design/engineering-operating-model.md`
+
+The selected-thread implementation includes strict type checking, frontend
+build/lint, focused Playwright coverage, and the retained `make test-e2e`
+suite. Recorded local evidence is 127 passing tests, a 10/10 deterministic
+evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
+passing design review. Do not treat it as protected-release evidence: the
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+steps remain outstanding.

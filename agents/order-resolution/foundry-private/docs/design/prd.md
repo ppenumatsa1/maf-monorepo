@@ -14,8 +14,11 @@ Build a demo-ready multi-agent orchestration using Microsoft Agent Framework-ali
 - Checkpointing and resume for durable pauses.
 - Observability with OTEL and App Insights-ready exporters.
 - Evals with baseline dataset and report.
-- AGUI-style streaming events over SSE.
-- FastAPI backend consumed by React + Vite UI.
+- Stable native SSE, plus approved optional redacted AG-UI selected-thread
+  projections and a read-only CopilotKit bridge.
+- React + Vite UI consumes the stable FastAPI API/SSE contract locally and,
+  in the private lane, through the external frontend's same-origin proxy to
+  the internal wrapper.
 
 ## Non-Goals (v1)
 
@@ -26,12 +29,16 @@ Build a demo-ready multi-agent orchestration using Microsoft Agent Framework-ali
 ## Acceptance Criteria
 
 1. User request triggers all 3 agent stages in order.
-2. At least one tool call and one MCP call event are emitted.
+2. A policy-lookup `tool.call` event is emitted while order/customer and
+   policy data, MCP/RAG execution content, and credentials remain backend-only
+   for selected-thread consumers.
 3. HITL request is emitted for high-risk actions and can be approved/rejected.
 4. Workflow resumes from checkpoint and produces final output.
 5. Follow-up messages within the same thread use prior memory.
 6. OTEL traces are created and configurable for App Insights export.
 7. Eval harness produces report with pass/fail metrics.
+8. Private browser traffic remains same-origin through the wrapper; it never
+   receives a Foundry or database credential.
 
 ## Delivery contract
 

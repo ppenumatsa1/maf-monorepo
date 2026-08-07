@@ -9,11 +9,12 @@ The product journey is:
 
 Current status:
 
-| Stage            | Status      | What is actually wired today                                                                                     |
-| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Local MAF        | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
-| Foundry-hosted   | Implemented | Responses-native hosted entrypoint runs the same shared MAF workflow. |
+| Stage | Status | What is actually wired today |
+| --- | --- | --- |
+| Local MAF | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
+| Foundry-hosted | Implemented | Responses-native hosted entrypoint runs the same shared MAF workflow. |
 | Private web path | Implemented locally; private-release validation pending | External frontend ACA proxies same-origin API/SSE requests to the internal FastAPI wrapper, which dispatches to private Foundry Responses and replays persisted PostgreSQL events. |
+| Selected-thread AG-UI/CopilotKit UI | Implemented and locally validated; protected release evidence pending | Optional read-only views consume an allowlisted durable-event projection for one existing thread without changing the native timeline or HITL controls. |
 
 Operational status note (2026-07-18):
 
@@ -48,7 +49,40 @@ persists workflow events/checkpoints in PostgreSQL. The frontend polls a newly
 created conversation until its durable projection is available, then consumes
 the unchanged native SSE events. Browser runtime configuration contains no
 backend or Foundry endpoint; only the internal wrapper reaches private data
-planes.
+planes. The Container Apps environment remains VNet-integrated on its dedicated
+subnet; it does not reuse the Foundry agent-host subnet.
+
+## Optional selected-thread flow
+
+The selected-thread design is additive and is not a second workflow path:
+
+1. The operator starts, selects, or reopens an existing workflow thread using
+   the existing native timeline and durable-history APIs.
+2. An optional AG-UI view may request
+   `GET /api/chat/stream/{thread_id}/ag-ui`. A CopilotKit view first discovers
+   static metadata at `GET /api/copilotkit/info` (or `GET /api/copilotkit`),
+   then posts the selected existing `threadId` to `POST /api/copilotkit`.
+3. The internal wrapper reads/tails the durable projection and returns only
+   allowlisted lifecycle labels, safe tool labels, validated checkpoint IDs and
+   approval decisions, and generic terminal/error text.
+4. Supplied compatibility fields (`runId`, `messages`, `state`, `tools`,
+   `context`, and `forwardedProps`) are discarded. The projection cannot start,
+   resume, approve, reject, or otherwise mutate the workflow.
+5. If either optional view is unavailable, malformed, or disconnected, the
+   operator continues with the native SSE timeline, workflow history, and HITL
+   controls.
+
+The browser receives no order/customer or policy data, MCP/RAG content, tool
+arguments/results, prompts, raw model output, checkpoint payloads, reviewer
+comments, credentials, or secrets from these views. CopilotKit in this design
+means `@copilotkit/react-core`, not the GitHub Copilot SDK.
+
+The private frontend implementation and its strict typecheck, lint, build, and
+focused Playwright coverage are complete and locally validated: 128 tests
+passed, the deterministic evaluation completed 10/10, seven workflow and four
+selected-thread E2E cases passed, and design review passed. The protected
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+evidence are not yet run; this local evidence is not a release claim.
 
 ## End-to-End Happy Path (UI -> API -> Backend -> Postgres)
 
@@ -151,7 +185,11 @@ Primary file touchpoints in this path:
 
 - The existing `tool.call` event now includes `policy_evidence_ids` (chunk IDs from retrieval) and `policy_retrieval` metadata (`provider`, `query_id`, `count`).
 - Event type contracts are unchanged.
-- The stable SSE stream remains the primary contract. A parallel rich stream at `/api/chat/stream/{thread_id}/rich` projects native workflow events into AG-UI-compatible lifecycle, step, tool, text/output, HITL/custom, and raw events, and the current UI consumes it for live timeline updates.
+- The stable SSE stream remains the primary contract. A parallel rich stream at
+  `/api/chat/stream/{thread_id}/rich` remains additive for compatible
+  consumers; it is not the approved redacted selected-thread assistant
+  surface. The dedicated `/ag-ui` and CopilotKit contracts above must remain
+  optional and privacy-safe.
 
 ## API Pagination Contracts
 

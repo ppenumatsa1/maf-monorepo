@@ -61,6 +61,39 @@ Hosted validation and deployment are private-lane-first in the current operating
   Azure identity or private-endpoint deletion propagation rather than weakening
   network controls or removing the required connections.
 
+## Approved selected-thread and frontend alignment
+
+The approved selected-thread design is an additive private-lane operator view,
+not a new workflow, deployment route, or browser-to-private-data-plane path:
+
+- Native SSE, durable workflow history, and checkpoint-keyed HITL remain the
+  operator source of truth. AG-UI and CopilotKit must fail independently
+  without making those contracts unavailable.
+- The external frontend continues to call only its same-origin `/api` proxy.
+  The internal FastAPI wrapper tails durable PostgreSQL events after its
+  non-streaming initial Foundry Responses dispatch. The browser never calls
+  private Foundry, PostgreSQL, or MCP/RAG services.
+- `GET /api/chat/stream/{thread_id}/ag-ui` and `POST /api/copilotkit` select
+  one existing thread and return only allowlisted lifecycle/tool labels,
+  validated checkpoint IDs and approval decisions, and generic terminal/error
+  text. `GET /api/copilotkit/info` (and its `GET /api/copilotkit` alias) is
+  static, redacted discovery.
+- CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
+  `runId`, `messages`, `state`, `tools`, `context`, and `forwardedProps` are
+  compatibility input only and must be discarded. No selected-thread
+  projection can start, resume, approve, reject, or otherwise mutate a run.
+- Order/customer and policy data, policy evidence, MCP/RAG content, tool
+  arguments/results, prompts, raw model output, reviewer comments, checkpoint
+  payloads, credentials, and secrets remain backend-only.
+
+The private frontend implementation and its strict TypeScript/lint/build
+scripts and focused selected-thread browser tests are complete and locally
+validated: 128 tests passed, the deterministic evaluation completed 10/10,
+seven workflow and four selected-thread E2E cases passed, and design review
+passed. This is not protected-release evidence. The `vm-maffnd-runner`
+deployment, hosted E2E, Foundry evaluation, and telemetry verification have
+not run for this implementation.
+
 ## Inputs and authority
 
 ### 1) Product and architecture inputs (user/team authority)
@@ -119,6 +152,7 @@ A change is done only when all applicable items are true:
 | IaC/network/identity/deploy workflow change | local gates as applicable + IaC review | `azure-validation` -> `azure-deployment` -> `azure-telemetry-validation` |
 | Persistence/checkpoint/idempotency change | local gates + restart/resume/idempotency assertions | Hosted smoke for resume and duplicate HITL response behavior |
 | Private browser/ACA/network change | local gates + IaC review + Bicep preview | Private-runner deployment, external-frontend Playwright, private DNS/public-access checks, and telemetry correlation |
+| Selected-thread AG-UI/CopilotKit frontend implementation | Strict TypeScript check, frontend build/lint, focused selected-thread Playwright, and `make test-e2e` | Private-runner release evidence only when the change affects the hosted private browser/wrapper contract |
 
 `make eval-foundry` remains report-only for ad hoc/local use. The private release
 workflow first exercises low-risk and HITL scenarios once, then enforces Foundry
@@ -152,3 +186,11 @@ For each release-impacting change, capture:
 - `ORD-1001`: low-risk path, no HITL expected.
 - `ORD-1009`: high-risk path, HITL expected and resumable.
 - Damaged item: HITL expected.
+
+## Evidence record
+
+The local selected-thread evidence is 127 passing tests, a 10/10 deterministic
+evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
+passing design review. The protected `vm-maffnd-runner` deployment, hosted E2E,
+Foundry evaluation, and telemetry evidence remain unrun. Record those results
+only after they occur; do not infer a private release from local evidence.

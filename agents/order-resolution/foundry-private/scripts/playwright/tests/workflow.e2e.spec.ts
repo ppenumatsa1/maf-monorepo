@@ -32,7 +32,7 @@ async function openStudioWithHealthyHistory(page: Page) {
   expect(new URL(response.url()).origin).toBe(new URL(page.url()).origin);
   await expect.poll(() =>
     page.evaluate(() => window.__APP_CONFIG__),
-  ).toEqual({});
+  ).toBeUndefined();
   await expect(
     page.getByText(/Unexpected token|not valid JSON|<!doctype/i),
   ).toHaveCount(0);

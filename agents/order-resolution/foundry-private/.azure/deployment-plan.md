@@ -1,7 +1,7 @@
 # Foundry Private Deployment Plan
 
-> **Status:** Prepared for monorepo application redeployment. Infrastructure
-> provisioning remains blocked until its preview contains no unreviewed drift.
+> **Status:** Ready for Validation. Infrastructure provisioning remains blocked
+> until its preview contains no unreviewed drift.
 
 ## Target
 

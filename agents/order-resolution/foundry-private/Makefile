@@ -1,11 +1,13 @@
 SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env
+PROJECT_ROOT := $(CURDIR)
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-foundry-deploy-env ensure-test-postgres \
-	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e manual-matrix \
+	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e test-e2e-selected-thread manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
-	foundry-up foundry-preflight foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
+	foundry-up foundry-preflight foundry-iac-validate foundry-release-preflight foundry-package \
+	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
 
 help:
@@ -24,7 +26,8 @@ help:
 	@echo "  eval-backend    - Run deterministic workflow contract eval harness"
 	@echo "  eval-foundry    - Run report-only Foundry evaluator run"
 	@echo "  eval-all        - Run deterministic and Foundry evals"
-	@echo "  test-e2e        - Run Playwright tests locally"
+	@echo "  test-e2e        - Run workflow and selected-thread Playwright tests locally"
+	@echo "  test-e2e-selected-thread - Run focused selected-thread integration tests"
 	@echo "  manual-matrix   - Run ORD-1001..ORD-1010 manual verification matrix"
 	@echo "  parity-all      - Run fast parity gate across local + Azure + Foundry"
 	@echo "  run-mock-mcp    - Start local authenticated MCP simulator"
@@ -33,6 +36,9 @@ help:
 	@echo "  validate-full   - Full validation (test + eval + e2e + design-review)"
 	@echo "  foundry-up      - Self-contained Foundry hosted-agent azd up (BYO VNET + private deps)"
 	@echo "  foundry-preflight - Verify private release inputs without changing Azure"
+	@echo "  foundry-iac-validate - Compile private IaC without writing a generated template"
+	@echo "  foundry-release-preflight - Run independent read-only release checks concurrently"
+	@echo "  foundry-package - Freshly sync hosted source and validate AZD packaging"
 	@echo "  foundry-provision-preview - Preview private infrastructure changes without applying them"
 	@echo "  foundry-provision - Provision private core infrastructure without Foundry secret connections"
 	@echo "  foundry-project-connections - Provision Foundry connections after project identity propagation"
@@ -105,9 +111,18 @@ eval-foundry: ensure-backend-env
 
 eval-all: eval-backend eval-foundry
 
-test-e2e:
+test-e2e-selected-thread:
 	@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
+		cd frontend && PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" npm run test:e2e -- tests/e2e/selected-thread-integrations.spec.ts; \
+	else \
+		cd frontend && npm run test:e2e -- tests/e2e/selected-thread-integrations.spec.ts; \
+	fi
+
+test-e2e:
+	@set -euo pipefail; \
+	if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
 		cd scripts/playwright && npm run test:e2e; \
+		PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" $(MAKE) -C "$(PROJECT_ROOT)" test-e2e-selected-thread; \
 	else \
 		$(MAKE) ensure-backend-env ensure-test-postgres; \
 		backend_port="$$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"; \
@@ -155,6 +170,7 @@ test-e2e:
 			exit 1; \
 		fi; \
 		cd scripts/playwright && PLAYWRIGHT_BASE_URL="$${frontend_url}" npm run test:e2e; \
+		PLAYWRIGHT_BASE_URL="$${frontend_url}" $(MAKE) -C "$(PROJECT_ROOT)" test-e2e-selected-thread; \
 		e2e_status="$$?"; \
 		kill "$${backend_pid}" "$${frontend_pid}" 2>/dev/null || true; \
 		wait "$${backend_pid}" 2>/dev/null || true; \
@@ -239,6 +255,16 @@ foundry-up:
 foundry-preflight:
 	./scripts/foundry/preflight_private_release.sh
 
+foundry-iac-validate:
+	az bicep build --file infra/foundry-hosted/iac/main.bicep --stdout >/dev/null
+
+foundry-release-preflight:
+	@$(MAKE) -j2 foundry-preflight foundry-iac-validate
+
+foundry-package:
+	./scripts/foundry/sync_hosted_source.sh
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt
+
 foundry-provision-preview: foundry-preflight
 	./scripts/foundry/ensure_foundry_azd_defaults.sh
 	cd infra/foundry-hosted && azd provision --preview --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
@@ -261,7 +287,7 @@ foundry-deploy: ensure-foundry-deploy-env
 	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
 	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
-	@./scripts/foundry/sync_hosted_source.sh
+	@$(MAKE) foundry-package
 	@./scripts/foundry/deploy_hosted_container.sh
 
 foundry-app-deploy:
@@ -294,6 +320,7 @@ foundry-evidence: ensure-backend-env
 
 foundry-release:
 	$(MAKE) test
+	$(MAKE) foundry-release-preflight
 	$(MAKE) foundry-provision-preview
 	$(MAKE) foundry-provision
 	$(MAKE) foundry-project-connections

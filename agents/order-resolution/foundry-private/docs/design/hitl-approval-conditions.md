@@ -8,6 +8,15 @@ This document defines the exact conditions that trigger human approval (`hitl.re
 - Foundry-hosted Responses entrypoint runs the same workflow.
 - Therefore, the trigger behavior below is the shared production contract across hosts.
 
+The approved optional AG-UI and CopilotKit selected-thread views are read-only
+redacted projections. They may show only safe approval state and validated
+checkpoint identifiers; they cannot submit a decision and never receive
+order/customer or policy data, MCP/RAG content, prompts, raw model output,
+reviewer comments, or checkpoint payloads. Their private frontend
+implementation is complete and locally validated. The protected
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+evidence remain unrun and are not asserted by this document.
+
 ## Scope
 
 - MAF SDK workflow: `backend/app/maf/workflows/order_resolution.py`

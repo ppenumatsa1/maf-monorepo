@@ -6,7 +6,8 @@ This guide provides end-to-end manual test examples for:
 2. high-risk flow with HITL pause and resume
 3. failure and recovery behavior
 
-Scenarios are aligned with the rubric in [scripts/rubric/e2e-rubric.md](scripts/rubric/e2e-rubric.md).
+Scenarios are aligned with the rubric in
+[scripts/rubric/e2e-rubric.md](../scripts/rubric/e2e-rubric.md).
 
 ## Preconditions
 
@@ -18,10 +19,11 @@ make up
 
 2. Confirm backend and frontend are reachable.
 
-- Backend health: [backend/app/main.py](backend/app/main.py)
-- UI: [frontend/src/App.tsx](frontend/src/App.tsx)
+- Backend health: [backend/app/main.py](../backend/app/main.py)
+- UI: [frontend/src/App.tsx](../frontend/src/App.tsx)
 
-3. Ensure Postgres is running and schema is initialized via [backend/app/core/database.py](backend/app/core/database.py).
+3. Ensure Postgres is running and schema is initialized via
+   [backend/app/core/database.py](../backend/app/core/database.py).
 
 4. Open the UI and keep browser devtools network tab visible for SSE validation.
 
@@ -52,6 +54,35 @@ For each run, verify these signals from timeline/API:
 - `conversation_messages`
 - `checkpoints` (when applicable)
 - `approvals` (when applicable)
+
+## Selected-thread local verification
+
+The private-lane selected-thread AG-UI and CopilotKit UI is implemented as an
+optional, read-only addition. Its local verification against an existing thread
+includes:
+
+1. The AG-UI view requests only
+   `GET /api/chat/stream/{thread_id}/ag-ui` through the frontend's same-origin
+   proxy.
+2. CopilotKit (`@copilotkit/react-core`, not the GitHub Copilot SDK) reads
+   static discovery from `GET /api/copilotkit/info` and sends only the selected
+   existing `threadId` to `POST /api/copilotkit`.
+3. Confirm the views show only generic lifecycle/tool labels, validated
+   checkpoint IDs and approval decisions, and generic terminal/error text.
+   They must not display order/customer or policy data, policy-evidence IDs,
+   MCP/RAG content, tool inputs/results, prompts, raw model output, reviewer
+   comments, checkpoint payloads, credentials, or secrets.
+4. Supply compatible `messages`, `state`, `tools`, `context`, and
+   `forwardedProps` input through a test client and confirm that it cannot
+   start, resume, approve, reject, or otherwise alter a workflow.
+5. Make an optional projection unavailable or malformed and confirm the native
+   SSE timeline, durable history, and HITL controls remain available.
+
+The recorded local evidence is 127 passing tests, a 10/10 deterministic
+evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
+passing design review. These results do not establish a hosted private release:
+the protected `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation,
+and telemetry evidence have not yet run for this implementation.
 
 ## ORD-1001 to ORD-1010 Cross-Use-Case Matrix
 
@@ -330,7 +361,8 @@ ORDER BY requested_at DESC;
 
 ## Pass Guidance
 
-Use the rubric in [scripts/rubric/e2e-rubric.md](scripts/rubric/e2e-rubric.md):
+Use the rubric in
+[scripts/rubric/e2e-rubric.md](../scripts/rubric/e2e-rubric.md):
 
 1. Target minimum `10/12`.
 2. Any score `0` in sequential orchestration, HITL gate/resume, or checkpoint durability is a fail.

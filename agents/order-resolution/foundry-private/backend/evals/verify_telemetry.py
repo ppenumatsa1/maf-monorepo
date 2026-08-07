@@ -140,9 +140,7 @@ def _query_row(
     if not response.tables or not response.tables[0].rows:
         return {}
     table = response.tables[0]
-    columns = [
-        column if isinstance(column, str) else column.name for column in table.columns
-    ]
+    columns = [column if isinstance(column, str) else column.name for column in table.columns]
     return dict(zip(columns, table.rows[0], strict=True))
 
 

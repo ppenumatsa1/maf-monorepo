@@ -4,6 +4,56 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## Foundry Private selected-thread implementation and local evidence (2026-08-07)
+
+**Delivered implementation.** Coordinated private-lane work completed the
+redacted, optional selected-thread AG-UI/CopilotKit implementation, strict
+frontend quality tooling, focused E2E coverage, and accompanying skills and
+documentation. The implementation preserves the private topology and does not
+create a second workflow path.
+
+**Invariants captured.**
+
+- The sequential MAF workflow, stable native SSE event types, durable
+  PostgreSQL history, and checkpoint-keyed HITL pause/resume remain the
+  operator source of truth.
+- AG-UI and CopilotKit are additive read-only projections of one existing
+  selected thread. They cannot start, resume, approve, reject, or otherwise
+  mutate a workflow.
+- The selected runtime integration is CopilotKit
+  (`@copilotkit/react-core`), not the GitHub Copilot SDK. Only `threadId` is
+  meaningful bridge input; compatible messages, state, tool, context, and
+  forwarded-property inputs are discarded.
+- Projections may expose only safe lifecycle/tool labels, validated checkpoint
+  IDs and approval decisions, and generic terminal/error text. Order/customer
+  and policy data, policy evidence, MCP/RAG content, tool arguments/results,
+  prompts, model output, reviewer comments, checkpoint payloads, credentials,
+  and secrets remain backend-only.
+- The external frontend -> same-origin proxy -> internal FastAPI wrapper ->
+  private Foundry Responses/PostgreSQL topology, dedicated ACA subnet,
+  private data planes, managed identity, and connectivity-proof/lockdown
+  controls are preserved.
+
+**Local validation evidence.**
+
+- 128 tests passed.
+- The deterministic evaluation completed 10/10.
+- Seven workflow E2E cases and four selected-thread E2E cases passed.
+- The design-review gate passed.
+
+**Protected release status.** The protected `vm-maffnd-runner` deployment has
+not run for this implementation. Consequently, hosted E2E, Foundry evaluation,
+and telemetry evidence have not run and no current Azure/private release is
+claimed. Record those dated, non-secret results here only after the protected
+release path completes.
+
+**Release execution blocker (2026-08-07).** Deployment was explicitly
+authorized, but the mandatory Azure validation workflow could not run because
+the environment denied access to the installed validation workflow script
+before any preflight action. No direct `azd` or Azure command was substituted
+for that gate. The protected release remains pending until the validation
+workflow can execute and hand off to the existing `vm-maffnd-runner` path.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All

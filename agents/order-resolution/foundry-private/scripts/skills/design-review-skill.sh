@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 REPORT_FILE="backend/.foundry/results/report.json"
-REPORT_BACKUP=".git/.design-review-report.backup.json"
+GIT_TOPLEVEL="$(git rev-parse --show-toplevel)"
+REPORT_BACKUP="$(git -C "$GIT_TOPLEVEL" rev-parse --path-format=absolute --git-path design-review-report.backup.json)"
 restore_report=0
 
 cleanup() {
@@ -28,6 +29,27 @@ assert_contains() {
     echo "[FAIL] Missing rubric/test requirement: $label"
     echo "  file: $file"
     echo "  expected text: $pattern"
+    exit 1
+  fi
+}
+
+require_playwright_runtime() {
+  local directory="$1"
+  local executable_path
+
+  if [[ ! -x "$directory/node_modules/.bin/playwright" ]]; then
+    echo "[FAIL] Playwright is not installed in $directory." >&2
+    echo "Run: (cd $directory && npm ci)" >&2
+    exit 1
+  fi
+
+  executable_path="$(
+    cd "$directory"
+    node -e 'const { chromium } = require("@playwright/test"); process.stdout.write(chromium.executablePath())'
+  )"
+  if [[ ! -x "$executable_path" ]]; then
+    echo "[FAIL] Chromium is not installed for Playwright in $directory." >&2
+    echo "Run: (cd $directory && npx playwright install chromium)" >&2
     exit 1
   fi
 }
@@ -78,21 +100,8 @@ assert_contains "$E2E_SPEC_FILE" "not valid JSON" "HTML-as-JSON UI regression gu
 echo "[PASS] Rubric and required flow coverage checks succeeded"
 
 step "Playwright E2E"
-if [[ ! -f backend/.env && -f backend/.env.example ]]; then
-  cp backend/.env.example backend/.env
-fi
-
-if [[ ! -d scripts/playwright/node_modules ]]; then
-  (cd scripts/playwright && npm ci)
-fi
-
-if [[ ! -x scripts/playwright/node_modules/.bin/playwright ]]; then
-  (cd scripts/playwright && npm ci)
-fi
-
-if [[ ! -d "${HOME}/.cache/ms-playwright" ]]; then
-  (cd scripts/playwright && npx playwright install --with-deps chromium)
-fi
+require_playwright_runtime scripts/playwright
+require_playwright_runtime frontend
 
 if ! make test-e2e; then
   echo "[FAIL] E2E validation failed."

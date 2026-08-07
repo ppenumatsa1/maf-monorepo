@@ -63,9 +63,10 @@ def test_telemetry_queries_filter_exact_agent_and_conversations() -> None:
 
 
 def test_trace_ids_parses_a_dynamic_json_result() -> None:
-    assert _trace_ids(
-        {"evaluation_trace_ids": '["trace-damaged", "trace-low", "trace-low"]'}
-    ) == ["trace-damaged", "trace-low"]
+    assert _trace_ids({"evaluation_trace_ids": '["trace-damaged", "trace-low", "trace-low"]'}) == [
+        "trace-damaged",
+        "trace-low",
+    ]
 
 
 def test_query_row_accepts_string_columns_from_logs_query_client() -> None:

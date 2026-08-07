@@ -1,4 +1,4 @@
-import { WorkflowStatus } from "../../types/workflow";
+import type { WorkflowStatus } from "../../types/workflow";
 
 type Props = {
   status: WorkflowStatus;

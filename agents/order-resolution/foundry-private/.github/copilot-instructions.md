@@ -13,6 +13,17 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - Keep HITL behavior deterministic and testable.
 - Keep API response contracts stable for frontend and Playwright tests.
 - Keep the legacy SSE event stream stable; expose richer AG-UI-compatible events only as additive surfaces.
+- Treat `/api/chat/stream/{thread_id}/ag-ui` and `POST /api/copilotkit` as
+  redacted selected-thread projections, not replacements for native SSE or
+  `/rich` envelopes.
+- Preserve private data boundaries: the browser must not call private Foundry,
+  PostgreSQL, or MCP/RAG services directly. Redact order/customer and policy
+  data, MCP/RAG results, tool arguments/results, prompts, model output,
+  checkpoint state, reviewer comments, credentials, and secrets from
+  selected-thread AG-UI and assistant projections.
+- Use CopilotKit (`@copilotkit/react-core`) for the approved selected-thread
+  assistant UI. It is distinct from the GitHub Copilot SDK, which is not this
+  application's runtime integration.
 
 ## Delivery formalization
 
@@ -51,6 +62,14 @@ Clean private provisioning stages Foundry project connections behind
 exist. Enable connections only in the later private deploy stage; on identity
 or private-endpoint deletion timing failures, retry after propagation rather
 than removing a connection or weakening network security.
+
+`GET /api/copilotkit/info` (with `GET /api/copilotkit` as an alias) returns
+static, redacted runtime discovery only. `POST /api/copilotkit` verifies and
+selects an existing `threadId`; compatible `runId`, `messages`, `state`,
+`tools`, `context`, and `forwardedProps` inputs are discarded. Its output may
+contain only safe lifecycle/tool labels, validated checkpoint IDs and approval
+decisions, and generic terminal/error text. It must never start, resume, or
+alter a workflow.
 
 ## Workflow Guardrails
 
@@ -91,6 +110,9 @@ than removing a connection or weakening network security.
     explicit failure event emission.
   - Do not replace stable native SSE events with rich/AG-UI events; expose rich
     events through additive routes/adapters.
+  - Keep AG-UI and CopilotKit selected-thread views optional; their failure
+    must not make native SSE, durable workflow reads, or HITL controls
+    unavailable.
 
 ## Local Validation Commands
 
@@ -132,6 +154,15 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, pgvector, and Azure PostgreSQL persistence.
+- `ag-ui-streaming-fastapi-py`: additive, redacted AG-UI and CopilotKit
+  projections of durable workflow events.
+- `ag-ui-react-integration-ts`: React selected-thread UI, additive AG-UI
+  consumption, and safe CopilotKit context.
+- `typescript-setup`: strict TypeScript boundaries for new frontend surfaces.
+- `typescript-update`: strict TypeScript and React updates that preserve
+  workflow contracts.
+- `e2e-rubric`: operator coverage for native SSE, durable HITL, optional
+  AG-UI, CopilotKit safety, and private wrapper boundaries.
 
 ## Baseline Test Inputs
 
@@ -149,3 +180,10 @@ When behavior changes, update these docs in the same PR:
 - `docs/design/engineering-operating-model.md`
 - `.github/copilot-instructions.md`
 - `agents.md`
+
+The selected-thread frontend, strict TypeScript/lint scripts, and focused
+browser coverage are implemented and locally validated: 128 tests passed, the
+deterministic evaluation is 10/10, seven workflow and four selected-thread E2E
+cases passed, and design review passed. This does not claim protected-release
+evidence. The `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation,
+and telemetry verification remain required before a private release claim.

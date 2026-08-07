@@ -1,4 +1,4 @@
-import { WorkflowEvent, WorkflowRunDetails } from "../../types/workflow";
+import type { WorkflowEvent, WorkflowRunDetails } from "../../types/workflow";
 
 type Props = {
   details: WorkflowRunDetails | null;

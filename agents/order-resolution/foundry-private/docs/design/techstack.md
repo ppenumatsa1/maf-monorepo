@@ -13,6 +13,8 @@
 - React 18
 - Vite 5
 - TypeScript
+- `@copilotkit/react-core` for the implemented optional read-only
+  AG-UI/CopilotKit view; this is not the GitHub Copilot SDK.
 
 ## Data and Durability
 
@@ -24,12 +26,19 @@
 - MCP via streamable HTTP endpoint (`MCP_SERVER_URL`)
 - OTEL exporters configurable by environment variables
 - App Insights enabled by setting OTLP endpoint to Azure Monitor/OpenTelemetry collector
+- Private lane: external frontend Container App, same-origin proxy, internal
+  FastAPI wrapper, managed-identity private Foundry Responses, private
+  PostgreSQL, and VNet/private DNS boundaries
+- Approved AG-UI/CopilotKit projections are allowlisted durable-event views.
+  They must not receive order/customer or policy data, MCP/RAG content, tool
+  arguments/results, prompts, raw model output, reviewer comments, checkpoint
+  payloads, credentials, or secrets.
 
 ## Skills Baseline
 
-Use only the task-specific skills below; do not load the full Microsoft skills catalog.
-The curated baseline contains five vendored Microsoft skills and two local
-(repository-owned) skills.
+Use only the task-specific skills below; do not load the full Microsoft skills
+catalog. The curated baseline combines vendored Microsoft skills with
+repository-owned workflow, privacy, and frontend-boundary skills.
 
 | Skill | Use for | Source |
 |---|---|---|
@@ -40,6 +49,11 @@ The curated baseline contains five vendored Microsoft skills and two local
 | `fastapi-router-py` | FastAPI HTTP route work | Microsoft `skills` |
 | `pydantic-models-py` | Pydantic v2 API contract work | Microsoft `skills` |
 | `postgres-psycopg-py` | PostgreSQL, Psycopg, pgvector, and Azure PostgreSQL persistence | Repository-owned |
+| `ag-ui-streaming-fastapi-py` | Additive, redacted AG-UI/CopilotKit durable-event projections | Repository-owned |
+| `ag-ui-react-integration-ts` | Private selected-thread React integration and safe CopilotKit context | Repository-owned |
+| `typescript-setup` | Strict TypeScript setup for new frontend surfaces | Repository-owned |
+| `typescript-update` | Strict React/TypeScript updates that preserve workflow contracts | Repository-owned |
+| `e2e-rubric` | Native SSE, HITL, selected-thread privacy, and wrapper-boundary operator coverage | Repository-owned |
 
 The five Microsoft skills are vendored from
 [`microsoft/skills`](https://github.com/microsoft/skills) commit
@@ -52,3 +66,10 @@ they encode this application's workflow and persistence boundaries. The MAF skil
 grounded in current Microsoft Learn Agent Framework guidance and the installed
 `agent-framework-foundry` package; it intentionally does not target
 `agent-framework-azure-ai` or `AzureAIAgentsProvider`.
+
+The selected-thread UI's strict typecheck, lint, build, and focused Playwright
+gates are implemented and locally validated: 128 tests passed, the
+deterministic evaluation completed 10/10, seven workflow and four
+selected-thread E2E cases passed, and design review passed. The protected
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+evidence remain unrun and are not implied by the local results.
