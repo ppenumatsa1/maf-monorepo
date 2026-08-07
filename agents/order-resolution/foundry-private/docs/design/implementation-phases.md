@@ -8,17 +8,18 @@
 - Evals baseline complete.
 - Design docs complete.
 
-## Phase 2
+## Phase 2 (Completed)
 
 - Private Foundry hosted parity with VNet/private endpoint networking, PostgreSQL runtime configuration, App Insights telemetry, and HITL trace correlation.
 - Keep `WORKFLOW_MODE=maf_sdk`, `STORE_PROVIDER=postgres`, `RAG_PROVIDER=pgvector`, and `MEMORY_PROVIDER=postgres` for local/hosted parity.
 - Keep HITL rules deterministic and preserve frontend/API event contracts.
 
-## Phase 3
+## Phase 3 (Completed)
 
 - Compatibility shims have been removed now that local and private-hosted parity is green.
 - Add a MAF middleware seam for telemetry/correlation, event enrichment/redaction, streamed model usage observation, session/run context, and explicit failure-event behavior.
-- Add an additive AG-UI-compatible rich event stream for future CopilotKit-style React consumption while preserving the legacy SSE stream.
+- Added additive, redacted selected-thread AG-UI and CopilotKit projections
+  while preserving native SSE as the stable workflow contract.
 - Foundry-hosted runtime is Responses-native as the hosted contract.
 - Keep hosted/runtime namespaces limited to the current package layout; do not reintroduce legacy `backend/app/foundry/*` adapter namespaces.
 - Keep Azure AI Search deferred until Foundry-hosted retrieval architecture is proven.

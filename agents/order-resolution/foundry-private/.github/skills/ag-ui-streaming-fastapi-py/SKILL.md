@@ -51,7 +51,7 @@ the private Foundry lane.
 
 ## Verification
 
-The current selected-thread implementation has local evidence of 127 passing
+The current selected-thread implementation has local evidence of 128 passing
 tests, a 10/10 deterministic evaluation, seven workflow E2E cases, four
 selected-thread E2E cases, and a passing design review. When a projection or
 bridge implementation changes:
@@ -65,5 +65,6 @@ bridge implementation changes:
 4. prove an optional AG-UI/CopilotKit failure does not break native SSE or
    durable-history behavior.
 
-This is not a protected-release claim. The `vm-maffnd-runner` deployment,
-hosted E2E, Foundry evaluation, and telemetry evidence remain outstanding.
+The local evidence is distinct from protected-release evidence. The
+`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+record are documented in `docs/design/issues-changes-fixes.md`.

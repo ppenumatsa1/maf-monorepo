@@ -1,0 +1,11 @@
+flowchart LR
+    Operator["Operator"] --> Frontend["External React frontend"]
+    Frontend -->|same-origin API and SSE| Wrapper["Internal FastAPI wrapper"]
+    Wrapper --> Workflow["Sequential MAF workflow"]
+    Workflow --> Tools["Local tools, MCP, and RAG"]
+    Wrapper -->|start and resume| Foundry["Private Foundry Responses"]
+    Foundry --> Workflow
+    Wrapper -->|read and tail projections| Store[("Private PostgreSQL")]
+    Workflow -->|events and checkpoints| Store
+    Frontend -.->|selected existing thread only| Projection["Redacted AG-UI and CopilotKit projection"]
+    Projection -->|allowlisted durable events| Store

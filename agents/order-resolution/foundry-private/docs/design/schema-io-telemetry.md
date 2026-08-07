@@ -157,4 +157,6 @@ browser gates are implemented and locally validated: 128 tests passed, the
 deterministic evaluation completed 10/10, seven workflow and four
 selected-thread E2E cases passed, and design review passed. The protected
 `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-evidence have not run; the local result is not a private-release claim.
+evidence are recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+The local result remains distinct from that private-release evidence.

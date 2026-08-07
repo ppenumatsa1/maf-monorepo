@@ -1,0 +1,14 @@
+flowchart TD
+    Frontend["React frontend"] --> Routes["FastAPI routes and schemas"]
+    Routes --> Service["Order resolution service"]
+    Service --> Runner["MAF runner and workflow"]
+    Hosted["Foundry hosted entrypoint"] -->|same workflow composition| Service
+    Runner --> Stages["Triage, retrieval, resolution, and HITL stages"]
+    Stages --> Adapters["PostgreSQL, MCP, RAG, Foundry, and event adapters"]
+    Runner --> Events["Native workflow events"]
+    Events --> Projector["Event bus and projector"]
+    Projector --> Store[("Durable workflow state")]
+    Store --> Streams["Native SSE and read models"]
+    Streams --> Frontend
+    Store --> Projection["Redacted selected-thread projection"]
+    Projection -.-> Frontend

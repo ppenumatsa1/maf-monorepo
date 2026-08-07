@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Operator
+    participant UI as External frontend
+    participant API as Internal FastAPI wrapper
+    participant Host as Private Foundry Responses
+    participant WF as Hosted sequential MAF workflow
+    participant DB as Private PostgreSQL
+
+    Operator->>UI: Submit order issue
+    UI->>API: Same-origin API request
+    API->>DB: Create dispatch and durable run projection
+    API->>Host: Managed-identity start
+    Host->>WF: Run triage, retrieval, and resolution
+    WF->>DB: Persist messages, events, and checkpoints
+    alt Low-risk resolution
+        WF->>DB: Submit idempotent resolution and output
+        API-->>UI: Read durable projection and native SSE
+    else Approval required
+        WF->>DB: Save checkpoint and pending approval
+        API-->>UI: Tail persisted native SSE events
+        Operator->>UI: Approve or reject
+        UI->>API: Same-origin HITL response
+        API->>Host: Checkpoint-keyed response
+        Host->>WF: Resume the same workflow
+        WF->>DB: Persist terminal output
+        API-->>UI: Tail persisted terminal event
+    end

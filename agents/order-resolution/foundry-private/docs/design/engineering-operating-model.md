@@ -105,9 +105,10 @@ The private frontend implementation and its strict TypeScript/lint/build
 scripts and focused selected-thread browser tests are complete and locally
 validated: 128 tests passed, the deterministic evaluation completed 10/10,
 seven workflow and four selected-thread E2E cases passed, and design review
-passed. This is not protected-release evidence. The `vm-maffnd-runner`
-deployment, hosted E2E, Foundry evaluation, and telemetry verification have
-not run for this implementation.
+passed. Protected deployment, hosted E2E, Foundry evaluation, and telemetry
+verification are recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+Local gates remain distinct from hosted release evidence.
 
 ## Inputs and authority
 
@@ -211,8 +212,9 @@ For each release-impacting change, capture:
 
 ## Evidence record
 
-The local selected-thread evidence is 127 passing tests, a 10/10 deterministic
+The local selected-thread evidence is 128 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
 passing design review. The protected `vm-maffnd-runner` deployment, hosted E2E,
-Foundry evaluation, and telemetry evidence remain unrun. Record those results
-only after they occur; do not infer a private release from local evidence.
+Foundry evaluation, and telemetry evidence are recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+Do not infer a future private release from local evidence alone.

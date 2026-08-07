@@ -195,6 +195,7 @@ When behavior changes, update these docs in the same PR:
 The selected-thread frontend, strict TypeScript/lint scripts, and focused
 browser coverage are implemented and locally validated: 128 tests passed, the
 deterministic evaluation is 10/10, seven workflow and four selected-thread E2E
-cases passed, and design review passed. This does not claim protected-release
-evidence. The `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation,
-and telemetry verification remain required before a private release claim.
+cases passed, and design review passed. Protected-release evidence from
+`vm-maffnd-runner` is recorded in
+`docs/design/issues-changes-fixes.md`; do not infer future release results
+from local evidence alone.

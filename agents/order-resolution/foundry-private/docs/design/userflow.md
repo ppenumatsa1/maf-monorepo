@@ -13,8 +13,8 @@ Current status:
 | --- | --- | --- |
 | Local MAF | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
 | Foundry-hosted | Implemented | Responses-native hosted entrypoint runs the same shared MAF workflow. |
-| Private web path | Implemented locally; private-release validation pending | External frontend ACA proxies same-origin API/SSE requests to the internal FastAPI wrapper, which dispatches to private Foundry Responses and replays persisted PostgreSQL events. |
-| Selected-thread AG-UI/CopilotKit UI | Implemented and locally validated; protected release evidence pending | Optional read-only views consume an allowlisted durable-event projection for one existing thread without changing the native timeline or HITL controls. |
+| Private web path | Implemented and protected-release verified | External frontend ACA proxies same-origin API/SSE requests to the internal FastAPI wrapper, which dispatches to private Foundry Responses and replays persisted PostgreSQL events. |
+| Selected-thread AG-UI/CopilotKit UI | Implemented, locally validated, and release-evidenced | Optional read-only views consume an allowlisted durable-event projection for one existing thread without changing the native timeline or HITL controls. |
 
 Operational status note (2026-07-18):
 
@@ -81,8 +81,9 @@ The private frontend implementation and its strict typecheck, lint, build, and
 focused Playwright coverage are complete and locally validated: 128 tests
 passed, the deterministic evaluation completed 10/10, seven workflow and four
 selected-thread E2E cases passed, and design review passed. The protected
-`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-evidence are not yet run; this local evidence is not a release claim.
+`vm-maffnd-runner` release evidence is recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07);
+the local gates remain separate from that hosted proof.
 
 ## End-to-End Happy Path (UI -> API -> Backend -> Postgres)
 

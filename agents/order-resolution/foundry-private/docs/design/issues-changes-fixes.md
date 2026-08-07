@@ -193,6 +193,30 @@ the static role expectation and is recorded as pre-existing shared-RBAC drift;
 the app-only release did not mutate it. Any reconciliation requires the
 separate full-IaC owner approval already documented above.
 
+## Documentation and diagram parity (2026-08-07)
+
+**Gap identified.** The selected-thread implementation, focused skills, and
+Private-specific agent/Copilot instructions were already present, but
+`architecture.md` had replaced the five visual views in the Foundry Public
+baseline with prose. Several Private documents also still described the
+protected deployment, hosted E2E, Foundry evaluation, and telemetry evidence
+as unrun.
+
+**Correction.** The Private architecture now has Mermaid logical-decision,
+logical-boundary, hosted HITL sequence, development-ownership, and physical
+topology diagrams. The sources are retained in `docs/design/diagrams/`. The
+embedded diagrams preserve the Private boundary: only the frontend has
+external ingress; the wrapper, Foundry, ACR, PostgreSQL, and private DNS stay
+inside private paths; AG-UI and CopilotKit are read-only selected-thread
+projections.
+
+**Documentation alignment.** Architecture, technology, user-flow, operating
+model, schema/telemetry, HITL, phase, and instruction documents now link to
+the dated release record above instead of duplicating an obsolete pending
+state. Private-only codebase/implementation-phase documents remain additive.
+The Public `issues-fixes.md` ledger is intentionally represented by this more
+complete Private `issues-changes-fixes.md`; no duplicate ledger was created.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All

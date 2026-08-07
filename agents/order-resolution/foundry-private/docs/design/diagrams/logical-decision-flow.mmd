@@ -1,0 +1,14 @@
+flowchart TD
+    Issue["Customer order issue"] --> Identify["Identify order and issue"]
+    Identify --> Triage["Triage request"]
+    Triage --> Retrieve["Retrieve order, policy, MCP, and RAG evidence"]
+    Retrieve --> Policy["Apply deterministic resolution policy"]
+    Policy --> Approval{"HITL approval required?"}
+    Approval -->|No| Submit["Submit idempotent resolution"]
+    Submit --> Completed["Publish completed outcome"]
+    Approval -->|Yes| Checkpoint["Create durable checkpoint"]
+    Checkpoint --> Request["Request human approval"]
+    Request --> Decision{"Reviewer decision"}
+    Decision -->|Approve| Resume["Resume same workflow from checkpoint"]
+    Resume --> Submit
+    Decision -->|Reject| Escalate["Publish escalated outcome"]

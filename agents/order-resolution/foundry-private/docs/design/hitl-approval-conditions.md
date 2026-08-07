@@ -15,7 +15,9 @@ order/customer or policy data, MCP/RAG content, prompts, raw model output,
 reviewer comments, or checkpoint payloads. Their private frontend
 implementation is complete and locally validated. The protected
 `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-evidence remain unrun and are not asserted by this document.
+evidence are recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+This document remains the behavior contract rather than the evidence ledger.
 
 ## Scope
 

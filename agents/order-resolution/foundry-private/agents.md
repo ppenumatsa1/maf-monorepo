@@ -10,8 +10,9 @@ This file describes expected behavior for coding agents working in this reposito
 - Frontend: React + Vite, consumes stable native SSE workflow events. The
   approved selected-thread AG-UI/CopilotKit surface is optional and read-only;
   its frontend implementation and focused modern frontend gates are complete
-  and locally validated. The protected private deployment, hosted E2E, Foundry
-  evaluation, and telemetry evidence remain outstanding.
+  and locally validated. Protected deployment, hosted E2E, Foundry evaluation,
+  and telemetry evidence are recorded in
+  `docs/design/issues-changes-fixes.md`.
 - CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
   `GET /api/copilotkit/info` (or `GET /api/copilotkit`) is static discovery.
   `POST /api/copilotkit` selects one existing `threadId` and ignores compatible
@@ -171,8 +172,8 @@ When architecture or execution policies change, update these instruction files i
 
 The selected-thread implementation includes strict type checking, frontend
 build/lint, focused Playwright coverage, and the retained `make test-e2e`
-suite. Recorded local evidence is 127 passing tests, a 10/10 deterministic
+suite. Recorded local evidence is 128 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. Do not treat it as protected-release evidence: the
-`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-steps remain outstanding.
+passing design review. The protected release evidence is recorded in
+`docs/design/issues-changes-fixes.md`; do not infer future release results
+from local evidence alone.

@@ -57,16 +57,23 @@ The logical view follows one customer issue from intake through ordered
 assessment, deterministic resolution policy, and either automatic completion
 or an explicit human decision:
 
-```text
-customer issue
-  -> identify order and issue
-  -> triage
-  -> retrieve order, policy, MCP, and configured RAG information
-  -> apply deterministic resolution policy
-  -> [low risk] submit idempotent resolution -> completed outcome
-  -> [approval required] durable checkpoint -> reviewer decision
-       -> approve -> resume the same workflow -> completed outcome
-       -> reject -> escalation outcome
+Diagram source: [logical-decision-flow.mmd](diagrams/logical-decision-flow.mmd).
+
+```mermaid
+flowchart TD
+    Issue["Customer order issue"] --> Identify["Identify order and issue"]
+    Identify --> Triage["Triage request"]
+    Triage --> Retrieve["Retrieve order, policy, MCP, and RAG evidence"]
+    Retrieve --> Policy["Apply deterministic resolution policy"]
+    Policy --> Approval{"HITL approval required?"}
+    Approval -->|No| Submit["Submit idempotent resolution"]
+    Submit --> Completed["Publish completed outcome"]
+    Approval -->|Yes| Checkpoint["Create durable checkpoint"]
+    Checkpoint --> Request["Request human approval"]
+    Request --> Decision{"Reviewer decision"}
+    Decision -->|Approve| Resume["Resume same workflow from checkpoint"]
+    Resume --> Submit
+    Decision -->|Reject| Escalate["Publish escalated outcome"]
 ```
 
 ### Business Decision Model
@@ -92,6 +99,22 @@ The model can summarize or explain a case, but it does not replace the
 deterministic policy or HITL decision.
 
 ### Logical Responsibility Boundaries
+
+Diagram source: [logical-boundaries.mmd](diagrams/logical-boundaries.mmd).
+
+```mermaid
+flowchart LR
+    Operator["Operator"] --> Frontend["External React frontend"]
+    Frontend -->|same-origin API and SSE| Wrapper["Internal FastAPI wrapper"]
+    Wrapper --> Workflow["Sequential MAF workflow"]
+    Workflow --> Tools["Local tools, MCP, and RAG"]
+    Wrapper -->|start and resume| Foundry["Private Foundry Responses"]
+    Foundry --> Workflow
+    Wrapper -->|read and tail projections| Store[("Private PostgreSQL")]
+    Workflow -->|events and checkpoints| Store
+    Frontend -.->|selected existing thread only| Projection["Redacted AG-UI and CopilotKit projection"]
+    Projection -->|allowlisted durable events| Store
+```
 
 | Boundary | Responsibility | Prohibited shortcut |
 | --- | --- | --- |
@@ -124,14 +147,46 @@ The private frontend implementation and corresponding strict
 TypeScript/lint/build and focused selected-thread browser gates are complete
 and locally validated: 128 tests passed, the deterministic evaluation completed
 10/10, seven workflow and four selected-thread E2E cases passed, and design
-review passed. This is not private-release evidence: the protected
-`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-verification remain unrun.
+review passed. The protected app-only deployment and its hosted smoke, E2E,
+telemetry, and enforced Foundry evaluation are recorded separately in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
 
 ## Process View
 
 The process view describes sequential execution, durable handoff, and
 checkpoint-keyed approval/resume.
+
+Diagram source: [hosted-hitl-sequence.mmd](diagrams/hosted-hitl-sequence.mmd).
+
+```mermaid
+sequenceDiagram
+    actor Operator
+    participant UI as External frontend
+    participant API as Internal FastAPI wrapper
+    participant Host as Private Foundry Responses
+    participant WF as Hosted sequential MAF workflow
+    participant DB as Private PostgreSQL
+
+    Operator->>UI: Submit order issue
+    UI->>API: Same-origin API request
+    API->>DB: Create dispatch and durable run projection
+    API->>Host: Managed-identity start
+    Host->>WF: Run triage, retrieval, and resolution
+    WF->>DB: Persist messages, events, and checkpoints
+    alt Low-risk resolution
+        WF->>DB: Submit idempotent resolution and output
+        API-->>UI: Read durable projection and native SSE
+    else Approval required
+        WF->>DB: Save checkpoint and pending approval
+        API-->>UI: Tail persisted native SSE events
+        Operator->>UI: Approve or reject
+        UI->>API: Same-origin HITL response
+        API->>Host: Checkpoint-keyed response
+        Host->>WF: Resume the same workflow
+        WF->>DB: Persist terminal output
+        API-->>UI: Tail persisted terminal event
+    end
+```
 
 ### Local Order-Resolution Flow
 
@@ -229,6 +284,25 @@ boundary. The local FastAPI route and Foundry Responses host are distinct
 adapters to that shared behavior; the private wrapper delegates and tails
 durable state rather than orchestrating a parallel workflow.
 
+Diagram source: [development-ownership.mmd](diagrams/development-ownership.mmd).
+
+```mermaid
+flowchart TD
+    Frontend["React frontend"] --> Routes["FastAPI routes and schemas"]
+    Routes --> Service["Order resolution service"]
+    Service --> Runner["MAF runner and workflow"]
+    Hosted["Foundry hosted entrypoint"] -->|same workflow composition| Service
+    Runner --> Stages["Triage, retrieval, resolution, and HITL stages"]
+    Stages --> Adapters["PostgreSQL, MCP, RAG, Foundry, and event adapters"]
+    Runner --> Events["Native workflow events"]
+    Events --> Projector["Event bus and projector"]
+    Projector --> Store[("Durable workflow state")]
+    Store --> Streams["Native SSE and read models"]
+    Streams --> Frontend
+    Store --> Projection["Redacted selected-thread projection"]
+    Projection -.-> Frontend
+```
+
 ### Core Modules and Ownership
 
 | Concern | Source ownership | Responsibility |
@@ -240,7 +314,7 @@ durable state rather than orchestrating a parallel workflow.
 | MAF workflow | `backend/app/maf/*` | Prompts, agents, tools, sequential stages, HITL, runner, and middleware. |
 | Adapters | `backend/app/infrastructure/*` | PostgreSQL repositories, checkpoint/session/idempotency stores, MCP/RAG, Foundry Responses client, and event bus. |
 | Foundry host | `backend/foundry/main.py` | Responses protocol parsing, invocation tracing, and construction of the same hosted MAF path. |
-| Browser UI | `frontend/src/*` | Native timeline and approval presentation; approved follow-on work adds optional selected-thread AG-UI/CopilotKit presentation. |
+| Browser UI | `frontend/src/*` | Native timeline and approval presentation, plus optional read-only selected-thread AG-UI/CopilotKit presentation. |
 
 `RUNTIME_TARGET=local_maf` runs the workflow from FastAPI for local validation.
 `RUNTIME_TARGET=responses_wrapper` makes FastAPI the private Responses wrapper:
@@ -293,16 +367,31 @@ SSE, durable history endpoints, or the workflow:
 
 The private design has exactly one externally reachable application component:
 
-```text
-Public internet
-  -> external frontend Container App (only external ingress)
-  -> same-origin /api and SSE proxy
-  -> internal FastAPI wrapper Container App
-  -> private Foundry Responses hosted agent
-  -> private PostgreSQL workflow and HITL state
+Diagram source:
+[private-physical-topology.mmd](diagrams/private-physical-topology.mmd).
 
-Private supporting services: ACR, Foundry project connections, private DNS,
-and Azure Monitor managed telemetry ingestion.
+```mermaid
+flowchart LR
+    Browser["Operator browser"] -->|HTTPS| Frontend["External frontend Container App"]
+    subgraph Environment["VNet-integrated Container Apps environment"]
+        Frontend -->|same-origin API and SSE proxy| Wrapper["Internal FastAPI wrapper Container App"]
+    end
+    subgraph PrivateServices["Private services"]
+        Foundry["Foundry Responses hosted agent"]
+        Database[("PostgreSQL workflow and HITL state")]
+        Registry["Private ACR"]
+        Monitor["Application Insights"]
+        DNS["Private DNS"]
+    end
+    Wrapper -->|managed identity start and resume| Foundry
+    Wrapper -->|durable projections| Database
+    Foundry -->|workflow state| Database
+    Registry -->|private image pulls| Frontend
+    Registry -->|private image pulls| Wrapper
+    Wrapper -.->|correlated telemetry| Monitor
+    Foundry -.->|workflow and model telemetry| Monitor
+    Wrapper -.->|private resolution| DNS
+    Foundry -.->|private resolution| DNS
 ```
 
 The Container Apps environment is VNet-integrated on a dedicated subnet. It
@@ -370,7 +459,7 @@ projections; none creates another orchestration path.
 | `ORD-1009` high-amount delay, approved | Deterministic threshold requires approval. | The workflow saves a checkpoint, pauses, and resumes once from it after approval; duplicate approval is idempotent. | Timeline shows `checkpoint.created`, `hitl.request`, `hitl.response`, and terminal output; traces correlate wait and resume. |
 | Damaged item, rejected | Damaged-item policy requires review; reviewer rejects proposed action. | Checkpoint resolves once and the workflow records rejection without the side-effecting submission. | Durable event history ends in `escalated`; approval audit identifies reviewer and decision. |
 | Private wrapper restart/reconnect | Browser request remains tied to one Foundry conversation/thread and durable run state. | Wrapper replays/tails PostgreSQL `workflow_events`, not an in-memory bus. | Operator can reload history and native SSE without duplicate dispatch or loss of pending approval. |
-| Selected-thread assistance | Assistant may present lifecycle state but cannot decide or perform a resolution. | AG-UI/CopilotKit reads allowlisted persisted projections only. | The UI receives safe labels/status/checkpoint summaries; raw order/policy/MCP/RAG/checkpoint data remains server-side. Local implementation and validation are complete; protected release evidence remains unrun. |
+| Selected-thread assistance | Assistant may present lifecycle state but cannot decide or perform a resolution. | AG-UI/CopilotKit reads allowlisted persisted projections only. | The UI receives safe labels/status/checkpoint summaries; raw order/policy/MCP/RAG/checkpoint data remains server-side. Local and protected release evidence are recorded in the release ledger. |
 
 ## Execution Surfaces and Release Behavior
 
@@ -404,11 +493,13 @@ application nor establishes private dependency health; it must not be reported
 as deployment success. Do not add administrator-password, public-access,
 firewall, or alternate-runner bypasses.
 
-The private resources were intentionally torn down; a fresh private release
-requires new dated evidence. Nothing in this architecture update is a
-deployment, proof, or release claim.
+The protected app-only release is recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+It did not reconcile the shared-resource drift or perform PostgreSQL lockdown.
+This architecture document remains design intent; it does not substitute for
+dated release evidence.
 
-## Required Verification for Future Implementation
+## Required Verification
 
 | Concern | Required evidence when the corresponding work occurs |
 | --- | --- |
@@ -420,8 +511,8 @@ deployment, proof, or release claim.
 | Private hosted release proof | Private-runner release, then dated non-secret evidence in `issues-changes-fixes.md` |
 
 Baseline scenarios are `ORD-1001` (low risk, no HITL), `ORD-1009` (high
-amount, HITL), and a damaged-item message (HITL). A release-ready claim needs
-the recorded private connectivity proof, hosted smoke/E2E, Foundry evaluation,
-and Application Insights correlation required by
-[engineering-operating-model.md](engineering-operating-model.md). It must not
-be inferred from source configuration or this architecture document.
+amount, HITL), and a damaged-item message (HITL). Future release-ready claims
+need the applicable recorded private connectivity proof, hosted smoke/E2E,
+Foundry evaluation, and Application Insights correlation required by
+[engineering-operating-model.md](engineering-operating-model.md). They must
+not be inferred from source configuration or this architecture document.

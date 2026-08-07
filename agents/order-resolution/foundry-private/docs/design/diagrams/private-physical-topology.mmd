@@ -1,0 +1,21 @@
+flowchart LR
+    Browser["Operator browser"] -->|HTTPS| Frontend["External frontend Container App"]
+    subgraph Environment["VNet-integrated Container Apps environment"]
+        Frontend -->|same-origin API and SSE proxy| Wrapper["Internal FastAPI wrapper Container App"]
+    end
+    subgraph PrivateServices["Private services"]
+        Foundry["Foundry Responses hosted agent"]
+        Database[("PostgreSQL workflow and HITL state")]
+        Registry["Private ACR"]
+        Monitor["Application Insights"]
+        DNS["Private DNS"]
+    end
+    Wrapper -->|managed identity start and resume| Foundry
+    Wrapper -->|durable projections| Database
+    Foundry -->|workflow state| Database
+    Registry -->|private image pulls| Frontend
+    Registry -->|private image pulls| Wrapper
+    Wrapper -.->|correlated telemetry| Monitor
+    Foundry -.->|workflow and model telemetry| Monitor
+    Wrapper -.->|private resolution| DNS
+    Foundry -.->|private resolution| DNS
