@@ -1,8 +1,8 @@
 # Foundry Private Deployment Plan
 
-> **Status:** Full bootstrap/reconciliation is blocked pending approved
-> resolution of shared authoritative drift. Routine app-only release is a
-> separate, bounded operation; no deployment is recorded by this plan.
+> **Status:** Ready for Validation — routine app-only release only. Full
+> bootstrap/reconciliation is blocked pending approved resolution of shared
+> authoritative drift; no deployment is recorded by this plan.
 
 ## Target
 
