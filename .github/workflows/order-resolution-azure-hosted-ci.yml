@@ -227,6 +227,15 @@ jobs:
           else
             make docker-test
           fi
+      - name: Publish Docker E2E failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-hosted-docker-e2e-diagnostics-${{ github.run_id }}
+          path: |
+            agents/order-resolution/azure-hosted/scripts/playwright/test-results/
+            agents/order-resolution/azure-hosted/frontend/test-results/
+          if-no-files-found: warn
       - name: Deploy the tested immutable images
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         working-directory: agents/order-resolution/azure-hosted
