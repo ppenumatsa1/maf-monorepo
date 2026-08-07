@@ -117,6 +117,14 @@ Playwright container left root-owned result files in the mounted workspace.
 The Compose test service now runs as the invoking host/runner UID and GID so
 the following hosted selected-thread E2E can clean and write its own artifacts.
 
+That retry passed Docker E2E, app deployment, smoke, both hosted browser suites,
+and the report-only Foundry evaluation. The final telemetry gate found the
+expected App Insights data but rejected it because Azure CLI emits KQL results
+as a list of dictionaries rather than the Log Analytics REST table-and-row
+shape. The verifier now accepts both documented shapes while preserving exact
+thread/workflow-run pairing, the fresh-release timestamp, and the zero-exception
+requirement.
+
 ## Historical source-of-truth correction (2026-07-28)
 
 The delivery record continued to describe the deleted resources as active.

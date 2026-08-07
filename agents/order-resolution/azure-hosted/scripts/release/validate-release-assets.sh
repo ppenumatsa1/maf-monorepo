@@ -106,6 +106,7 @@ for required in (
     'evidence.get("correlations")',
     'threadId == {json.dumps(thread_id)} and workflowRunId == {json.dumps(workflow_run_id)}',
     "exceptionCount",
+    "Azure CLI flattens one KQL result row",
     "for (( pair_index = 0; pair_index < pair_count; pair_index++ ))",
     '--subscription "$AZURE_SUBSCRIPTION_ID"',
 ):

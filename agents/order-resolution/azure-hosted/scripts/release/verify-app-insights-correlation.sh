@@ -190,27 +190,41 @@ from pathlib import Path
     not_before,
 ) = sys.argv[1:]
 payload = json.loads(Path(telemetry_path).read_text(encoding="utf-8"))
-tables = payload.get("tables")
-if not isinstance(tables, list) or len(tables) != 1:
-    raise SystemExit(1)
-columns = tables[0].get("columns")
-rows = tables[0].get("rows")
-if not isinstance(columns, list) or not isinstance(rows, list) or len(rows) != 1:
-    raise SystemExit(1)
-column_indexes = {
-    column.get("name"): index
-    for index, column in enumerate(columns)
-    if isinstance(column, dict) and isinstance(column.get("name"), str)
-}
-if not {"telemetryCount", "exceptionCount", "operationIds"} <= column_indexes.keys():
-    raise SystemExit(1)
-row = rows[0]
-if not isinstance(row, list):
-    raise SystemExit(1)
-try:
-    telemetry_count = int(row[column_indexes["telemetryCount"]])
-    exception_count = int(row[column_indexes["exceptionCount"]])
-except (TypeError, ValueError, IndexError):
+if isinstance(payload, list):
+    # Azure CLI flattens one KQL result row into a list of dictionaries.
+    if len(payload) != 1 or not isinstance(payload[0], dict):
+        raise SystemExit(1)
+    result = payload[0]
+    try:
+        telemetry_count = int(result["telemetryCount"])
+        exception_count = int(result["exceptionCount"])
+    except (KeyError, TypeError, ValueError):
+        raise SystemExit(1)
+elif isinstance(payload, dict):
+    # Keep accepting the Log Analytics REST API table-and-row response shape.
+    tables = payload.get("tables")
+    if not isinstance(tables, list) or len(tables) != 1:
+        raise SystemExit(1)
+    columns = tables[0].get("columns")
+    rows = tables[0].get("rows")
+    if not isinstance(columns, list) or not isinstance(rows, list) or len(rows) != 1:
+        raise SystemExit(1)
+    column_indexes = {
+        column.get("name"): index
+        for index, column in enumerate(columns)
+        if isinstance(column, dict) and isinstance(column.get("name"), str)
+    }
+    if not {"telemetryCount", "exceptionCount", "operationIds"} <= column_indexes.keys():
+        raise SystemExit(1)
+    row = rows[0]
+    if not isinstance(row, list):
+        raise SystemExit(1)
+    try:
+        telemetry_count = int(row[column_indexes["telemetryCount"]])
+        exception_count = int(row[column_indexes["exceptionCount"]])
+    except (TypeError, ValueError, IndexError):
+        raise SystemExit(1)
+else:
     raise SystemExit(1)
 if telemetry_count <= 0 or exception_count != 0:
     raise SystemExit(1)
