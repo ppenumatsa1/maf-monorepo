@@ -34,8 +34,13 @@ scripts/skills/deployment-mode-router.sh
 
    - `validation_mode=quick` -> run `quick-validation`
    - `validation_mode=full` -> run `local-validation`
-   - `deploy_mode=app_only` -> use `azd deploy`
-   - `deploy_mode=full` -> use `azd provision && azd deploy`
+   - `deploy_mode=app_only` -> use the checked-in `make foundry-release`
+     sequence, which fresh-packages and deploys the approved application legs.
+   - Every automatic route is `app_only`; router output never authorizes
+     provisioning.
+   - Provisioning is exceptional: require a reviewed preview plus
+     `FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
+     `FOUNDRY_INFRA_RECONCILIATION_REFERENCE` before `make foundry-provision`.
 3. Run independent focused reviews in parallel when safe.
 4. Apply only material fixes from focused reviews.
 5. Run `docs-sync` after code/IaC behavior is settled.
@@ -44,6 +49,13 @@ scripts/skills/deployment-mode-router.sh
 8. Run `azure-deployment` only when the plan is validated and the user wants deployment.
 9. Run `azure-telemetry-validation` after hosted deployment when App Insights telemetry is in scope.
 10. Run `design-review` last to confirm the deterministic local gate.
+
+The app-only release reuses the existing PostgreSQL database and retained
+public-lane resources. Its blocking path is selected validation plus Bicep
+build, fresh package/readiness, backend/frontend/hosted-agent deployment,
+Application Insights connection, smoke, hosted E2E, report-only evaluation,
+and correlated telemetry. A quick validation selection changes only local
+validation scope; it does not weaken later hosted gates.
 
 For frontend or hosted endpoint readiness, require Playwright evidence in both local and hosted modes where applicable. Hosted proof must use `PLAYWRIGHT_BASE_URL=<frontend-url> make test-e2e` and must fail if Workflow History shows `Unexpected token`, `not valid JSON`, or `<!doctype`, which means the frontend received HTML instead of API JSON.
 

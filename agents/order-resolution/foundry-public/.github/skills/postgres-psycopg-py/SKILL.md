@@ -41,8 +41,10 @@ events, conversation messages, checkpoints, approvals, sessions, and evaluation 
   database and RBAC configuration support it. Require TLS for hosted connections.
 - Keep credentials and connection strings in environment/secret configuration, never in source
   code or logs.
-- Preserve the existing Azure deployment boundary: Bicep provisions the server and application
-  configuration provides `DATABASE_URL`; backend persistence code remains provider-neutral.
+- Preserve the existing Azure deployment boundary: Bicep does not provision or
+  rebuild the PostgreSQL server or `maf_workflow` database; application
+  configuration supplies the TLS `DATABASE_URL` as a Container Apps secret and
+  backend persistence code remains provider-neutral.
 
 ## Dynamic guidance
 

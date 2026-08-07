@@ -27,6 +27,43 @@ def test_api_health_endpoint_alias() -> None:
     assert payload["service"] == "maf-orchestration-backend"
 
 
+def test_copilotkit_discovery_is_static_and_redacted() -> None:
+    response = client.get("/api/copilotkit")
+    info_response = client.get("/api/copilotkit/info")
+
+    assert response.status_code == 200
+    assert info_response.status_code == 200
+    expected_discovery = {
+        "version": "1.0",
+        "agents": {
+            "order-resolution-thread-assistant": {
+                "name": "Order Resolution Thread Assistant",
+                "className": "OrderResolutionThreadAssistant",
+                "description": (
+                    "Provides a read-only, redacted durable-event view for a selected workflow "
+                    "thread."
+                ),
+            }
+        },
+        "audioFileTranscriptionEnabled": False,
+        "mode": "sse",
+        "threadEndpoints": {
+            "list": False,
+            "inspect": False,
+            "mutations": False,
+            "realtimeMetadata": False,
+        },
+        "a2uiEnabled": False,
+    }
+    assert response.json() == expected_discovery
+    assert info_response.json() == expected_discovery
+    serialized = response.text.lower()
+    assert "ord-1009" not in serialized
+    assert "credential" not in serialized
+    assert "checkpoint" not in serialized
+    assert "prompt" not in serialized
+
+
 def test_chat_run_starts_workflow() -> None:
     response = client.post(
         "/api/chat/run",

@@ -69,5 +69,36 @@ if [[ "${1:-}" == "--check" ]]; then
   exit 0
 fi
 
+wait_for_fresh_e2e_evidence() {
+  local not_before="${FOUNDRY_E2E_EVIDENCE_NOT_BEFORE:-}"
+  local evidence_file="${HOSTED_E2E_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-e2e-evidence.json}"
+  local max_attempts="${FOUNDRY_EVAL_EVIDENCE_MAX_ATTEMPTS:-240}"
+  local poll_seconds="${FOUNDRY_EVAL_EVIDENCE_POLL_SECONDS:-5}"
+  local generated_at
+
+  [[ -n "$not_before" ]] || return 0
+  command -v jq >/dev/null 2>&1 || {
+    echo "Missing required binary while awaiting hosted E2E evidence: jq" >&2
+    exit 1
+  }
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    if [[ -f "$evidence_file" ]]; then
+      generated_at="$(jq -r '.generated_at // empty' "$evidence_file" 2>/dev/null || true)"
+      if [[ -n "$generated_at" ]] &&
+        [[ "$generated_at" == "$not_before" || "$generated_at" > "$not_before" ]]; then
+        return 0
+      fi
+    fi
+    echo "Awaiting fresh hosted E2E evidence for trace evaluation (${attempt}/${max_attempts})."
+    sleep "$poll_seconds"
+  done
+
+  echo "Timed out waiting for hosted E2E evidence generated after this release began." >&2
+  exit 1
+}
+
+wait_for_fresh_e2e_evidence
+
 cd "$ROOT_DIR/backend"
 exec "$ROOT_DIR/backend/.venv/bin/python" -m evals.foundry_eval_runner

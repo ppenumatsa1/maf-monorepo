@@ -98,6 +98,19 @@ For non-HITL scenarios:
 - No `hitl.request` event
 - Final `workflow.output.status=completed`
 
+## Public-lane boundary
+
+The released v15 public lane preserves these trigger rules and
+checkpoint-keyed, idempotent resume semantics. The native timeline remains the
+operator contract. The optional AG-UI and CopilotKit selected-thread views are
+read-only redacted projections: they may show that approval is pending or
+resolved, but cannot submit a decision and never receive order, policy,
+MCP/RAG, prompt, reviewer-comment, or checkpoint-state payloads.
+
+The checkpoint stores sanitized trace context so the public approval request
+can restore correlation for `workflow.hitl_resume`; that internal context is
+not a browser projection.
+
 ## Existing Coverage
 
 - `backend/tests/test_workflow.py` includes:

@@ -14,10 +14,13 @@ Current status:
 | --- | --- | --- |
 | Local MAF | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
 | Public Foundry-hosted | Implemented | Responses-native hosted entrypoint runs the same shared MAF workflow. |
-| Public browser wrapper | Validated | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
+| Public browser wrapper | Released v15 | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
 
-The hosted release and current evidence are recorded in
-`docs/design/issues-changes-fixes.md`.
+The v15 release evidence is recorded in `issues-changes-fixes.md`. It includes
+hosted Responses smoke, two fresh hosted-E2E conversations, a completed
+two-conversation trace evaluation, and correlated telemetry with zero
+exceptions. Repository configuration and this flow description are not a
+substitute for that dated evidence.
 
 ## Current Runtime User Flow (Implemented Path)
 
@@ -147,7 +150,12 @@ the durable projection is being created, the UI polls the selected thread.
 
 - The existing `tool.call` event now includes `policy_evidence_ids` (chunk IDs from retrieval) and `policy_retrieval` metadata (`provider`, `query_id`, `count`).
 - Event type contracts are unchanged.
-- The stable SSE stream remains the primary contract. A parallel rich stream at `/api/chat/stream/{thread_id}/rich` projects native workflow events into AG-UI-compatible lifecycle, step, tool, text/output, HITL/custom, and raw events, and the current UI consumes it for live timeline updates.
+- The stable SSE stream remains the primary contract. A parallel rich stream at `/api/chat/stream/{thread_id}/rich` remains additive for compatible consumers and does not replace native events.
+- The current selected-thread UI uses `/api/chat/stream/{thread_id}/ag-ui`;
+  it and the `POST /api/copilotkit` bridge expose only a redacted durable-event
+  projection. They cannot start, resume, approve, or reject a workflow. Order,
+  policy, MCP/RAG, prompt, raw-model, checkpoint-state, credential, and secret
+  data remain backend concerns.
 
 ## API Pagination Contracts
 

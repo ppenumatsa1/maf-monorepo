@@ -2,7 +2,8 @@
 
 ## Backend
 
-- Python 3.10+
+- Python 3.12 for the API container and Python 3.13 for the hosted-agent
+  container
 - FastAPI + Uvicorn
 - Pydantic v2
 - httpx for MCP HTTP tool calls
@@ -11,9 +12,10 @@
 
 ## Frontend
 
-- React 18
-- Vite 5
+- React 19
+- Vite 8
 - TypeScript
+- `@copilotkit/react-core` for the optional, read-only selected-thread view
 
 ## Data and Durability
 
@@ -28,6 +30,9 @@
   Flexible Server, and Application Insights
 - App Insights enabled through `APPLICATIONINSIGHTS_CONNECTION_STRING`; FastAPI
   health and SSE request spans are excluded to keep workflow telemetry visible
+- AG-UI-compatible selected-thread SSE and CopilotKit are redacted durable-event
+  projections; they do not receive MCP/RAG content, order/policy payloads, raw
+  model output, or credentials
 
 ## Skills Baseline
 

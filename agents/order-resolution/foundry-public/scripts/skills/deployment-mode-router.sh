@@ -5,29 +5,35 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 base_ref="${1:-HEAD}"
-changed_files="$(git diff --name-only --relative "$base_ref" -- .)"
+tracked_changes="$(git diff --name-only --relative "$base_ref" -- .)"
+untracked_changes="$(git ls-files --others --exclude-standard -- .)"
+changed_files="$(printf '%s\n%s\n' "$tracked_changes" "$untracked_changes" | sed '/^$/d' | sort -u)"
 
 if [[ -z "$changed_files" ]]; then
   echo "deploy_mode=app_only"
   echo "validation_mode=quick"
+  echo "infrastructure_reconciliation=not_requested"
   echo "reason=no_changed_files"
   exit 0
 fi
 
-if grep -Eq '^(infra/|\.azure/|docker-compose\.yml|frontend/Dockerfile|frontend/nginx\.conf|backend/Dockerfile|\.github/workflows/)' <<<"$changed_files"; then
-  echo "deploy_mode=full"
+if grep -Eq '^infra/' <<<"$changed_files"; then
+  echo "deploy_mode=app_only"
   echo "validation_mode=full"
-  echo "reason=infra_or_runtime_surface_changed"
+  echo "infrastructure_reconciliation=required"
+  echo "reason=infrastructure_change_requires_explicit_reconciliation"
   exit 0
 fi
 
-if grep -Eq '^(backend/app/maf/|backend/app/api/v1/schemas/|backend/app/api/v1/routers/|backend/app/modules/order_resolution/|backend/evals/|backend/tests/test_workflow\.py|backend/evals/cases\.jsonl|docs/design/hitl-approval-conditions\.md)' <<<"$changed_files"; then
+if grep -Eq '^(Makefile|scripts/|\.azure/|docker-compose\.yml|backend/Dockerfile(\.hosted)?|frontend/Dockerfile|frontend/nginx\.conf|pyproject\.toml|backend/requirements(\-dev)?\.txt|frontend/package(-lock)?\.json|\.env\.example|\.github/workflows/|backend/|frontend/)' <<<"$changed_files"; then
   echo "deploy_mode=app_only"
   echo "validation_mode=full"
-  echo "reason=workflow_contract_or_hitl_surface_changed"
+  echo "infrastructure_reconciliation=not_requested"
+  echo "reason=runtime_or_package_surface_changed"
   exit 0
 fi
 
 echo "deploy_mode=app_only"
 echo "validation_mode=quick"
-echo "reason=application_only_change"
+echo "infrastructure_reconciliation=not_requested"
+echo "reason=non_runtime_change"

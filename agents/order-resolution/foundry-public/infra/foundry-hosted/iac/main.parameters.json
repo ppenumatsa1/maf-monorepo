@@ -5,12 +5,6 @@
     "foundryAccountName": {
       "value": "${FOUNDRY_ACCOUNT_NAME}"
     },
-    "restoreFoundryAccount": {
-      "value": "${RESTORE_FOUNDRY_ACCOUNT=false}"
-    },
-    "traceReaderPrincipalId": {
-      "value": "${FOUNDRY_TRACE_READER_PRINCIPAL_ID}"
-    },
     "foundryProjectName": {
       "value": "${FOUNDRY_PROJECT_NAME}"
     },
@@ -35,26 +29,8 @@
     "frontendImageName": {
       "value": "${SERVICE_FRONTEND_IMAGE_NAME=mcr.microsoft.com/k8se/quickstart:latest}"
     },
-    "createPostgresServer": {
-      "value": "${CREATE_POSTGRES_SERVER=true}"
-    },
-    "postgresServerName": {
-      "value": "${POSTGRES_SERVER_NAME}"
-    },
-    "postgresAdminUsername": {
-      "value": "${POSTGRES_ADMIN_USERNAME}"
-    },
-    "postgresAdminPassword": {
-      "value": "${POSTGRES_ADMIN_PASSWORD}"
-    },
-    "postgresDatabaseName": {
-      "value": "${POSTGRES_DATABASE_NAME}"
-    },
     "runtimeDatabaseUrl": {
       "value": "${RUNTIME_DATABASE_URL}"
-    },
-    "postgresLocation": {
-      "value": "${POSTGRES_LOCATION}"
     }
   }
 }

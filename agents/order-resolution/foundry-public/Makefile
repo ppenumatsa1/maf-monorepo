@@ -3,9 +3,14 @@ COMPOSE_ENV_FILE ?= $(if $(wildcard backend/.env),backend/.env,backend/.env.exam
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-test-postgres \
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-foundry-config eval-all test-e2e manual-matrix \
+	test-e2e-selected-thread \
 	run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
-	foundry-up foundry-provision foundry-deploy foundry-smoke foundry-release foundry-postgres-readiness
+	foundry-bootstrap foundry-iac-build foundry-package foundry-up foundry-provision foundry-provision-ready \
+	foundry-postgres-readiness foundry-backend-deploy foundry-backend-deploy-ready \
+	foundry-frontend-deploy foundry-frontend-deploy-ready foundry-app-deploy \
+	foundry-deploy foundry-deploy-ready foundry-release-deploy foundry-smoke \
+	foundry-hosted-e2e foundry-appinsights-connection foundry-telemetry foundry-release
 
 help:
 	@echo "Available targets:"
@@ -24,17 +29,25 @@ help:
 	@echo "  eval-foundry    - Run report-only Foundry evaluator using nested azd configuration"
 	@echo "  eval-foundry-config - Verify the selected nested azd evaluator configuration"
 	@echo "  eval-all        - Run deterministic and Foundry evals"
-	@echo "  test-e2e        - Run Playwright tests locally (isolated dynamic Docker ports)"
+	@echo "  test-e2e        - Run workflow and selected-thread Playwright tests"
+	@echo "  test-e2e-selected-thread - Run the focused selected-thread integration test"
 	@echo "  manual-matrix   - Run ORD-1001..ORD-1010 manual verification matrix"
 	@echo "  run-mock-mcp    - Start local authenticated MCP simulator"
 	@echo "  docker-test     - Run Playwright tests in Docker compose profile"
 	@echo "  validate-quick  - Fast redeploy validation (Playwright + smoke if API_URL set)"
 	@echo "  validate-full   - Full validation (test + eval + e2e + design-review)"
-	@echo "  foundry-up      - Reset bootstrap images, then provision and deploy the public Foundry hosted agent"
-	@echo "  foundry-provision - Reset bootstrap images, then provision public Foundry infrastructure only"
-	@echo "  foundry-deploy  - Deploy hosted agent to public Foundry"
+	@echo "  foundry-bootstrap - Refresh local AZD defaults for the existing public target"
+	@echo "  foundry-iac-build - Compile the public Foundry Bicep template"
+	@echo "  foundry-package - Freshly sync hosted source and validate AZD packaging"
+	@echo "  foundry-provision - Apply the approved full infrastructure route"
+	@echo "  foundry-app-deploy - Verify readiness once, then deploy backend and frontend concurrently"
+	@echo "  foundry-deploy  - Verify readiness, package, and deploy the hosted agent"
+	@echo "  foundry-release-deploy - Package, verify readiness once, and deploy all runtime legs concurrently"
 	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
-	@echo "  foundry-release - Run authenticated local public release gates and deployment"
+	@echo "  foundry-hosted-e2e - Run hosted Responses low/high-risk and approval-resume checks"
+	@echo "  foundry-eval    - Run the report-only Foundry trace-evaluation gate"
+	@echo "  foundry-telemetry - Verify Application Insights after hosted E2E evidence exists"
+	@echo "  foundry-release - Run the authenticated, gated public release DAG"
 	@echo "  clean           - Remove caches and test artifacts"
 
 bootstrap: install-backend install-frontend
@@ -80,14 +93,25 @@ eval-backend: ensure-backend-env ensure-test-postgres
 eval-foundry: ensure-backend-env
 	./scripts/foundry/run_foundry_eval.sh
 
+foundry-eval: eval-foundry
+
 eval-foundry-config:
 	./scripts/foundry/run_foundry_eval.sh --check
 
 eval-all: eval-backend eval-foundry
 
-test-e2e:
+test-e2e-selected-thread:
 	@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
+		cd frontend && PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" npm run test:e2e -- tests/e2e/selected-thread-integrations.spec.ts; \
+	else \
+		cd frontend && npm run test:e2e -- tests/e2e/selected-thread-integrations.spec.ts; \
+	fi
+
+test-e2e:
+	@set -euo pipefail; \
+	if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
 		cd scripts/playwright && npm run test:e2e; \
+		PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" $(MAKE) test-e2e-selected-thread; \
 	else \
 		set -euo pipefail; \
 		free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'; }; \
@@ -117,6 +141,7 @@ test-e2e:
 			sleep 1; \
 		done; \
 		PLAYWRIGHT_BASE_URL="$${frontend_url}" bash -c 'cd scripts/playwright && npm run test:e2e'; \
+		PLAYWRIGHT_BASE_URL="$${frontend_url}" $(MAKE) test-e2e-selected-thread; \
 	fi
 
 manual-matrix:
@@ -186,25 +211,62 @@ validate-full:
 	$(MAKE) test-e2e
 	./scripts/skills/design-review-skill.sh
 
-foundry-up:
+foundry-bootstrap:
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
+
+foundry-iac-build:
+	az bicep build --file infra/foundry-hosted/iac/main.bicep
+
+foundry-package:
 	./scripts/foundry/sync_hosted_source.sh
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $(MAKE) foundry-deploy
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill ../../scripts/foundry/verify_project_appinsights_connection.sh
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt
 
 foundry-provision:
+	@if [[ "$${FOUNDRY_INFRA_RECONCILIATION_APPROVED:-false}" != "true" || -z "$${FOUNDRY_INFRA_RECONCILIATION_REFERENCE:-}" ]]; then \
+		echo "Refusing provision: set FOUNDRY_INFRA_RECONCILIATION_APPROVED=true and a non-secret FOUNDRY_INFRA_RECONCILIATION_REFERENCE after review."; \
+		exit 2; \
+	fi
+	$(MAKE) foundry-iac-build
+	$(MAKE) foundry-provision-ready
+
+foundry-provision-ready:
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
-foundry-deploy: ensure-backend-env
+foundry-backend-deploy: foundry-postgres-readiness
+	$(MAKE) foundry-backend-deploy-ready
+
+foundry-backend-deploy-ready:
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
+
+foundry-frontend-deploy:
+	$(MAKE) foundry-frontend-deploy-ready
+
+foundry-frontend-deploy-ready:
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
+
+foundry-app-deploy:
+	$(MAKE) foundry-postgres-readiness
+	$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready
+
+foundry-deploy: foundry-postgres-readiness
+	$(MAKE) foundry-package
+	$(MAKE) foundry-deploy-ready
+
+foundry-deploy-ready:
 	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
-	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
-	@./scripts/foundry/sync_hosted_source.sh
-	@./scripts/foundry/deploy_hosted_container.sh
+	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_hosted_container.sh
+
+foundry-release-deploy:
+	$(MAKE) foundry-package
+	$(MAKE) foundry-postgres-readiness
+	$(MAKE) -j3 foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready
+
+foundry-up:
+	$(MAKE) foundry-provision
+	$(MAKE) foundry-release-deploy
+	$(MAKE) foundry-appinsights-connection
 
 foundry-smoke:
 	@if [[ -n "$${SMOKE_THREAD_ID:-}" ]]; then \
@@ -216,10 +278,21 @@ foundry-smoke:
 foundry-postgres-readiness:
 	./scripts/foundry/check_public_postgres_readiness.sh
 
+foundry-hosted-e2e:
+	./scripts/foundry/hosted_e2e.sh
+
+foundry-appinsights-connection:
+	./scripts/foundry/verify_project_appinsights_connection.sh
+
+foundry-telemetry:
+	./scripts/foundry/verify_telemetry.sh
+
 foundry-release:
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_public_dev.sh
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -rf backend/.pytest_cache scripts/playwright/test-results scripts/playwright/playwright-report
+	rm -rf backend/.pytest_cache \
+		scripts/playwright/test-results scripts/playwright/playwright-report \
+		frontend/test-results frontend/playwright-report

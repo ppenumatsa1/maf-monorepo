@@ -58,9 +58,19 @@ class ResolutionExecutor:
                 operation=lambda: submit_resolution(action=action, order_id=order_id),
             )
             output = {
-                "message": f"Resolution complete. Action '{action}' submitted for order {order_id}.",
+                "message": self._completion_message(action=action, order_id=order_id),
                 "submission_id": submission_id,
                 "status": "completed",
             }
             await emit(thread_id, output)
             self._memory_store.append_message(thread_id, "assistant", output["message"])
+
+    @staticmethod
+    def _completion_message(*, action: str, order_id: str) -> str:
+        if action == "issue_partial_refund":
+            return (
+                f"Your partial refund has been submitted for order {order_id}. "
+                "It will be returned to your original payment method within 5-10 business days; "
+                "you will receive a confirmation once processing is complete."
+            )
+        return f"Resolution complete. Action '{action}' submitted for order {order_id}."

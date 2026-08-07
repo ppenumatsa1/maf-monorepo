@@ -22,15 +22,6 @@
     },
     "foundryEvaluationDeploymentName": {
       "value": "gpt-4o-mini-evaluation"
-    },
-    "foundryEvaluationDeploymentCapacity": {
-      "value": 10
-    },
-    "foundryEvaluationModelVersion": {
-      "value": ""
-    },
-    "postgresServerName": {
-      "value": "maffndpgbfscpfhjr7sp4cu"
     }
   }
 }

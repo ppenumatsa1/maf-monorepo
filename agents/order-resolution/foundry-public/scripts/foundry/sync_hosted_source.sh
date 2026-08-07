@@ -12,7 +12,12 @@ fi
 
 rm -rf "${TARGET_DIR}"
 mkdir -p "${TARGET_DIR}"
-tar --exclude='.env' --exclude='.venv' --exclude='tests' --exclude='.pytest_cache' --exclude='__pycache__' \
+tar --exclude='.env' --exclude='.venv' --exclude='tests' --exclude='.pytest_cache' --exclude='__pycache__' --exclude='*/__pycache__' \
   --exclude='.foundry/results' --exclude='tmp-foundry-sample' \
   -C "${SOURCE_DIR}" -cf - . | tar -C "${TARGET_DIR}" -xf -
 cp "${SOURCE_DIR}/Dockerfile.hosted" "${TARGET_DIR}/Dockerfile"
+
+if find "${TARGET_DIR}" -type d -name '__pycache__' -print -quit | grep -q .; then
+  echo "Hosted source sync retained a nested __pycache__ directory." >&2
+  exit 1
+fi

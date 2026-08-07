@@ -41,3 +41,6 @@ infra/foundry-hosted/iac/main.json
 infra/foundry-hosted/iac/modules/*.json
 infra/foundry-hosted/agent
 backend/tmp-foundry-sample/
+
+# Local release timing and evidence reports; the delivery ledger retains the reviewed proof.
+deployment-report/

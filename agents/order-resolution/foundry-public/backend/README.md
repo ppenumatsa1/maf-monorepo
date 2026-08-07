@@ -24,7 +24,6 @@ Deploy from the repository root with the authenticated release command:
 ```bash
 AZURE_SUBSCRIPTION_ID="<subscription-id>" \
 RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
-POSTGRES_ADMIN_PASSWORD="<postgres-admin-password>" \
 make foundry-release
 ```
 
@@ -32,10 +31,14 @@ make foundry-release
 refreshed from canonical `backend/` source before every deployment.
 The public hosted project uses Microsoft-managed Foundry agent state; PostgreSQL
 continues to own the workflow, checkpoint, approval, and audit records.
-The release provisions with `azd`, deploys Container Apps with `azd`, builds
-the hosted Docker image in ACR, registers the image with Foundry through the
-SDK, then runs hosted smoke/E2E, Foundry evaluation, and Application Insights
-validation.
+The default release route is gated `app_only`: it reuses the existing database
+and does not automatically provision infrastructure. It validates and deploys
+the approved application legs, then runs hosted smoke/E2E, Foundry evaluation,
+and Application Insights validation. Infrastructure reconciliation is an
+explicit exception that requires a reviewed preview plus
+`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
+`FOUNDRY_INFRA_RECONCILIATION_REFERENCE` before `make foundry-provision` can
+run.
 
 The hosted browser path is external frontend Container App -> same-origin
 `/api` proxy -> internal FastAPI wrapper -> managed-identity Foundry Responses.
@@ -56,7 +59,32 @@ UI polls the selected run until its durable projection is available.
 
 Stable event types are `workflow.stage`, `tool.call`, `checkpoint.created`,
 `hitl.request`, `hitl.response`, and `workflow.output`. The rich stream is
-additive.
+additive. It preserves the existing native-event envelope and is not the
+redacted selected-thread assistant contract.
+
+## Native AG-UI and CopilotKit
+
+`GET /api/chat/stream/{thread_id}/ag-ui` is an additive native AG-UI SSE
+projection of one existing workflow thread. `GET /api/copilotkit/info` (and
+the `GET /api/copilotkit` alias) returns static CopilotKit discovery metadata
+without reading workflow or user data. `POST /api/copilotkit` accepts an
+AG-UI/CopilotKit-shaped request solely to select the existing `threadId` and
+returns the same read-only projection. Both selected-thread surfaces replay and
+tail persisted workflow events, so they work when the wrapper and hosted
+workflow run in separate processes.
+
+The bridge neither starts a workflow nor uses supplied `runId`, `messages`,
+`state`, `tools`, `context`, or `forwardedProps` values. Its projection is
+allowlisted and redacted: it emits lifecycle state, safe step/tool labels,
+validated checkpoint IDs and approval decisions, and generic terminal/error
+text only. Native payloads, policy and order data, MCP/RAG results, tool
+arguments/results, checkpoint state, credentials, and prompts are never
+included.
+
+Use the selected-thread routes, not `/api/chat/stream/{thread_id}/rich`, for
+any assistant integration. The rich route is an existing native-event
+envelope; it is additive to stable SSE but does not supply the selected-thread
+redaction guarantee.
 
 HITL pauses when amount/risk is at least `100`, an item is damaged, or policy
 requires manual review. `ORD-1001` is low risk; `ORD-1009` requires approval.
@@ -78,3 +106,10 @@ requires manual review. `ORD-1001` is low risk; `ORD-1009` requires approval.
 - FastAPI health (`/health`, `/api/health`) and chat SSE request spans are
   excluded from request telemetry in the public lane. Foundry readiness,
   invocation, workflow, model, and HITL telemetry remains enabled.
+
+## Container dependency feed
+
+`Dockerfile` and `Dockerfile.hosted` set
+`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`. This is the
+approved CFS package feed for release-image Python dependencies; do not replace
+or supplement it with an unapproved index.

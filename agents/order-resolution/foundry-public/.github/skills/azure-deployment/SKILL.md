@@ -15,22 +15,34 @@ Use this skill only for deployments that already passed Azure validation. Do not
 
 ## Deployment sequence
 
-Default to app-only deployment for routine code changes:
+The routine deployment path is the checked-in, authenticated app-only release:
 
 ```bash
-azd deploy
+make foundry-release
 ```
 
-Use full infra+app deployment only when infra/runtime surfaces changed:
+It reuses the existing PostgreSQL database and retained public-lane
+dependencies, performs its selected validation and Bicep build, fresh-packages
+the hosted source, deploys backend/frontend/hosted-agent legs, and then gates
+on smoke, hosted E2E, evaluation, and telemetry. Do not substitute a bare
+`azd deploy` for that release sequence.
+
+Provisioning is an exceptional reviewed reconciliation, not the automatic route
+for infra/runtime changes:
 
 ```bash
-azd provision
-azd deploy
+FOUNDRY_INFRA_RECONCILIATION_APPROVED=true \
+FOUNDRY_INFRA_RECONCILIATION_REFERENCE="<non-secret-review-reference>" \
+make foundry-provision
 ```
 
-Use `scripts/skills/deployment-mode-router.sh` to route this decision automatically.
+Use `scripts/skills/deployment-mode-router.sh` to choose quick versus full
+*local validation*. Its deployment output must remain `app_only`.
 
-After `azd provision`, confirm expected resources exist and managed identities/RBAC assignments are present before deploying containers.
+After an approved reconciliation, confirm the retained-resource boundary and
+the lane-specific Container App identity/RBAC assignments before application
+deployment. Do not create, replace, or rebuild the existing PostgreSQL server
+or `maf_workflow` database.
 
 ## Known recovery
 
@@ -61,6 +73,9 @@ PLAYWRIGHT_BASE_URL="<frontend-https-url>" make test-e2e
 - Validate RBAC live: ACR image pull, Key Vault secret reads, PostgreSQL connectivity, and observability ingestion where applicable.
 - Validate `ORD-1001` completes without `hitl.request`.
 - Validate `ORD-1009` emits `hitl.request` and completes the expected approval/resume path.
+- Confirm backend release images retain
+  `PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`, the
+  approved CFS package feed.
 - Report the frontend HTTPS endpoint, its `/health` and proxied `/api/health`
   endpoints, and any hosted-agent smoke target. Identify the backend API FQDN
   as internal-only rather than presenting it as browser-accessible.

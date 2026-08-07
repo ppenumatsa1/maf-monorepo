@@ -48,17 +48,12 @@ set_provision_image() {
 
 set_if_missing FOUNDRY_ACCOUNT_NAME "${FOUNDRY_ACCOUNT_NAME:-maffndaibfscpfhjr7sp4}"
 set_if_missing CONTAINER_REGISTRY_NAME "${CONTAINER_REGISTRY_NAME:-maffndacrbfscpfhjr7sp4}"
-set_if_missing FOUNDRY_TRACE_READER_PRINCIPAL_ID "${FOUNDRY_TRACE_READER_PRINCIPAL_ID:-$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)}"
 set_if_missing FOUNDRY_PROJECT_NAME "${FOUNDRY_PROJECT_NAME:-order-resolution-public-managed-dev2}"
 set_if_missing HOSTED_AGENT_NAME "${HOSTED_AGENT_NAME:-order-resolution-hosted}"
 set_if_missing FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT "${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT:-true}"
 set_if_missing RUNTIME_DATABASE_URL "${RUNTIME_DATABASE_URL:-}"
 azd env set AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING false >/dev/null
 set_if_missing POSTGRES_SERVER_NAME "${POSTGRES_SERVER_NAME:-maffndpgbfscpfhjr7sp4cu}"
-set_if_missing POSTGRES_ADMIN_USERNAME "${POSTGRES_ADMIN_USERNAME:-pgadmin}"
-set_if_missing POSTGRES_ADMIN_PASSWORD "${POSTGRES_ADMIN_PASSWORD:-}"
-set_if_missing POSTGRES_DATABASE_NAME "${POSTGRES_DATABASE_NAME:-maf_workflow}"
-set_if_missing POSTGRES_LOCATION "${POSTGRES_LOCATION:-centralus}"
 set_if_missing BACKEND_CONTAINER_APP_NAME "${BACKEND_CONTAINER_APP_NAME:-ora-public-dev2-backend}"
 set_if_missing FRONTEND_CONTAINER_APP_NAME "${FRONTEND_CONTAINER_APP_NAME:-ora-public-dev2-frontend}"
 
@@ -67,16 +62,6 @@ set_if_missing FRONTEND_CONTAINER_APP_NAME "${FRONTEND_CONTAINER_APP_NAME:-ora-p
 # publishes a replacement.
 set_provision_image SERVICE_BACKEND_IMAGE_NAME "$(get_env_value BACKEND_CONTAINER_APP_NAME)" "mcr.microsoft.com/k8se/quickstart:latest"
 set_provision_image SERVICE_FRONTEND_IMAGE_NAME "$(get_env_value FRONTEND_CONTAINER_APP_NAME)" "mcr.microsoft.com/k8se/quickstart:latest"
-
-postgres_server_name="$(get_env_value POSTGRES_SERVER_NAME)"
-if az postgres flexible-server show \
-  --resource-group "$(get_env_value AZURE_RESOURCE_GROUP)" \
-  --name "$postgres_server_name" >/dev/null 2>&1; then
-  azd env set CREATE_POSTGRES_SERVER false >/dev/null
-  echo "preserved existing PostgreSQL server: $postgres_server_name"
-else
-  set_if_missing CREATE_POSTGRES_SERVER "${CREATE_POSTGRES_SERVER:-true}"
-fi
 
 foundry_project_name="$(get_env_value FOUNDRY_PROJECT_NAME)"
 agent_endpoint="$(get_env_value AGENT_ORDER_RESOLUTION_HOSTED_ENDPOINT)"

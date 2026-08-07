@@ -27,6 +27,7 @@ def test_config_uses_store_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.workflow_mode == "maf_sdk"
     assert cfg.store_provider == "azure_postgres"
 
+
 def test_config_selects_responses_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RUNTIME_TARGET", "responses_wrapper")
 

@@ -24,14 +24,18 @@ If someone starts from this README, this path should let them understand and run
 3. **Delivery model (how work is governed)**
    - Canonical contract: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
    - Repo instructions: [.github/copilot-instructions.md](.github/copilot-instructions.md), [agents.md](agents.md)
-4. **Implementation + repo shape**
+4. **Agent skill guidance**
+   - [AG-UI React integration](.github/skills/ag-ui-react-integration-ts/SKILL.md) and [AG-UI FastAPI streaming](.github/skills/ag-ui-streaming-fastapi-py/SKILL.md)
+   - [TypeScript setup](.github/skills/typescript-setup/SKILL.md) and [TypeScript updates](.github/skills/typescript-update/SKILL.md)
+   - [E2E operator rubric](.github/skills/e2e-rubric/SKILL.md)
+5. **Implementation + repo shape**
    - Backend runtime details: [backend/README.md](backend/README.md)
    - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
    - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
-5. **IaC + public hosted deployment**
+6. **IaC + public hosted deployment**
    - Infra overview: [infra/README.md](infra/README.md)
    - Foundry-hosted lane: [infra/foundry-hosted/README.md](infra/foundry-hosted/README.md)
-6. **Validation + operations/SRE**
+7. **Validation + operations/SRE**
    - Scripts and validation commands: [scripts/README.md](scripts/README.md)
    - Operational run history and RCA log: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 
@@ -41,10 +45,41 @@ If someone starts from this README, this path should let them understand and run
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
 | Local MAF            | Implemented | Shared MAF workflow (`backend/app/maf/workflows/order_resolution.py`)                                       |
 | Foundry hosted agent | Implemented | Shared workflow hosted at `backend/foundry/main.py` with public Responses protocol conversation turns |
-| Hosted UI/API wrapper | Requires fresh redeployment | External frontend ACA proxies the stable API/SSE contract to an internal FastAPI ACA, which invokes Foundry Responses |
+| Hosted UI/API wrapper | Implemented in repo | External frontend ACA proxies the stable API/SSE contract to an internal FastAPI ACA, which invokes Foundry Responses |
 
 MAF internals are split for maintainability into `backend/app/maf/prompts`,
 `agents`, `tools`, `executors`, `runner`, and `workflows`.
+
+## Agent Skill Guidance
+
+The repository includes task-specific guidance for stable native SSE, additive
+AG-UI, durable checkpoint-backed HITL, selected-thread CopilotKit, and strict
+frontend TypeScript boundaries. CopilotKit is the selected application
+integration; it is not the GitHub Copilot SDK.
+
+The redacted selected-thread contract is intentionally narrower than the
+existing workflow streams:
+
+- `GET /api/chat/stream/{thread_id}/ag-ui` projects one existing thread as
+  native AG-UI.
+- `GET /api/copilotkit/info` (and its `GET /api/copilotkit` alias) returns
+  static discovery metadata only; it does not read workflow or user data.
+- `POST /api/copilotkit` selects one existing `threadId` and returns the same
+  read-only durable-event projection. Standard `runId`, `messages`, `state`,
+  `tools`, `context`, and `forwardedProps` fields are accepted only for client
+  compatibility and are discarded.
+
+Those selected-thread projections expose only allowlisted lifecycle labels,
+safe tool labels, validated checkpoint IDs and approval decisions, and generic
+terminal/error text. They never expose order or policy data, MCP/RAG results,
+tool arguments or results, prompts, model output, checkpoint state,
+credentials, or secrets. The stable native SSE and `/rich` event envelopes
+remain separate, existing workflow contracts; do not substitute either for the
+redacted assistant projection or create a second workflow path.
+
+These source and local-validation capabilities are not evidence of a currently
+deployed public endpoint. See the linked skills in the onboarding path for the
+applicable implementation and E2E guidance.
 
 ## Hosted deployment boundary
 
@@ -54,9 +89,10 @@ MAF internals are split for maintainability into `backend/app/maf/prompts`,
   identity to invoke Foundry Responses and PostgreSQL for durable state.
 - **Public Foundry** owns hosted Responses-agent deployment, conversation/HITL
   verification, Foundry evaluation, and Application Insights telemetry.
-- **Public UI URL:** Assigned by fresh provision; the previous target was
-  intentionally deleted on 2026-07-28. The backend URL is internal-only and is
-  intentionally not a browser endpoint.
+- **Configured public UI FQDN:** `ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io`.
+  It is an existing-resource deployment target, not evidence that a current
+  public revision is live. The backend URL is internal-only and is intentionally
+  not a browser endpoint.
 - Evidence is tracked in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
 
 ## Quick Start (Local)
@@ -102,7 +138,8 @@ Run these before considering a change complete:
 make test
 make eval-backend
 make eval-foundry   # report-only Foundry evaluator run for hosted/runtime changes
-make test-e2e
+make test-e2e       # workflow suite plus selected-thread integration
+make test-e2e-selected-thread  # focused frontend selected-thread integration
 ./scripts/skills/design-review-skill.sh
 ```
 
@@ -122,7 +159,10 @@ use or stop a process already listening on the normal developer ports (8000, 543
 or 8011). To reserve known ports for a run, set
 `E2E_BACKEND_HOST_PORT`, `E2E_POSTGRES_HOST_PORT`, and
 `E2E_MOCK_MCP_HOST_PORT`. `make docker-test` also accepts
-`E2E_FRONTEND_HOST_PORT`. Normal `make up` defaults remain unchanged.
+`E2E_FRONTEND_HOST_PORT`. The selected-thread integration runs against the same
+dynamic Vite URL during `make test-e2e`; when invoked by itself,
+`make test-e2e-selected-thread` starts Vite on `127.0.0.1:4175`. Normal
+`make up` defaults remain unchanged.
 
 Baseline behavior checks:
 
@@ -136,15 +176,18 @@ Run the authenticated local release sequence:
 ```bash
 AZURE_SUBSCRIPTION_ID="<subscription-id>" \
 RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
-POSTGRES_ADMIN_PASSWORD="<postgres-admin-password>" \
 make foundry-release
 ```
 
-The script provisions with `azd`, deploys the Container Apps with `azd`, then
-builds the hosted-agent Docker image in ACR and registers it through the
-Foundry SDK with its runtime environment. It then runs combined hosted
-smoke/E2E, Foundry evaluation, and App Insights validation. To invoke manually
-after deployment:
+The default release route is gated `app_only`: it does not automatically
+provision infrastructure and reuses the existing PostgreSQL database and
+retained public-lane dependencies. It runs the selected validation and Bicep
+build, then deploys the approved application legs, followed by smoke, hosted
+E2E, evaluation, and App Insights validation.
+Infrastructure reconciliation requires a reviewed preview plus
+`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
+`FOUNDRY_INFRA_RECONCILIATION_REFERENCE`; use `make foundry-provision` only
+for that explicit path. To invoke manually after deployment:
 
 ```bash
 azd ai agent show order-resolution-hosted --output json
@@ -186,6 +229,11 @@ The hosted agent package is rooted at `backend/` and uses:
 - `backend/.foundry/agent-metadata.yaml` and `backend/eval.yaml` for hosted eval metadata
 - `infra/foundry-hosted/azure.yaml` service project path (`./agent`), generated
   from the canonical `backend/` source before every deployment
+
+Both backend container Dockerfiles install Python dependencies only through the
+approved CFS feed
+`https://packagefeedproxy.microsoft.io/pypi/simple` (`PIP_INDEX_URL`). Do not
+replace it with an unapproved public package index in a release image.
 
 ## Troubleshooting
 

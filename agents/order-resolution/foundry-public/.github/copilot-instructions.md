@@ -7,11 +7,25 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - Keep one MAF-based business workflow path (no deterministic fallback path).
 - Deterministic triage fallback is allowed only when Foundry Models env vars are
   absent; do not add a separate deterministic fallback orchestration path.
+- Preserve the existing sequential `FoundryChatClient` / `SequentialBuilder`
+  MAF workflow; do not create a parallel orchestration path in the API wrapper,
+  frontend, or an assistant integration.
 - Keep Foundry hosting Responses-native through `backend/foundry/main.py` and
   `backend/Dockerfile.hosted`; do not reintroduce legacy invocations adapter paths.
-- Keep HITL behavior deterministic and testable.
+- Keep durable checkpoint-keyed HITL pause/resume behavior deterministic and
+  testable.
 - Keep API response contracts stable for frontend and Playwright tests.
 - Keep the legacy SSE event stream stable; expose richer AG-UI-compatible events only as additive surfaces.
+- Treat `/api/chat/stream/{thread_id}/ag-ui` and `POST /api/copilotkit` as
+  redacted selected-thread projections, not replacements for native SSE or
+  `/rich` envelopes.
+- Preserve MCP/RAG retrieval and privacy boundaries: the browser must not call
+  MCP/RAG services directly. Redact order/policy data, MCP/RAG results, tool
+  arguments/results, prompts, model output, checkpoint state, credentials, and
+  secrets from selected-thread AG-UI and assistant projections.
+- Use CopilotKit (`@copilotkit/react-core`) for the selected-thread assistant
+  UI. It is distinct from the GitHub Copilot SDK, which is not this
+  application's runtime integration.
 
 ## Delivery formalization
 
@@ -22,7 +36,9 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 
 Canonical contract: `docs/design/engineering-operating-model.md`.
 
-The hosted deployment lane is public Foundry in `rg-maf-ora-foundry-public-dev2`.
+The public Foundry deployment configuration targets
+`rg-maf-ora-foundry-public-dev2`; repository configuration is not evidence of a
+currently deployed endpoint.
 GitHub Actions is credential-free CI only; use the local authenticated
 `make foundry-release` flow for Azure provision, deployment, smoke, hosted E2E,
 evaluation, and telemetry verification.
@@ -34,6 +50,14 @@ must use persisted workflow events. The initial wrapper dispatch is non-streamin
 the browser obtains live updates by polling durable state and subscribing to SSE.
 FastAPI health and SSE request spans are intentionally excluded from Application
 Insights request telemetry so workflow/HITL spans remain the operational signal.
+
+`GET /api/copilotkit/info` (with `GET /api/copilotkit` as an alias) returns
+static, redacted runtime discovery only. `POST /api/copilotkit` verifies and
+selects an existing `threadId`; compatible `runId`, `messages`, `state`,
+`tools`, `context`, and `forwardedProps` inputs are discarded. Its output may
+contain only safe lifecycle/tool labels, validated checkpoint IDs and approval
+decisions, and generic terminal/error text. It must never start, resume, or
+alter a workflow.
 
 ## Workflow Guardrails
 
@@ -96,13 +120,16 @@ Insights request telemetry so workflow/HITL spans remain the operational signal.
 - Use `azure-deployment` only after Azure validation passes.
 - Use `azure-telemetry-validation` after hosted deployment to verify App Insights request, dependency, trace, HITL correlation, and exception data.
 - Use `release-readiness` to orchestrate the focused skills for PR/release handoff.
-- Use `scripts/skills/deployment-mode-router.sh` to decide quick/full validation and app-only/full deployment from changed files.
+- Use `scripts/skills/deployment-mode-router.sh` to decide quick/full
+  validation; automatic releases are always app-only. Provision requires
+  explicit approved reconciliation with a non-secret reference.
+- Retain `PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple` in
+  backend release images; it is the approved CFS package feed.
 
 ## Stack Implementation Skills
 
-Load only the relevant implementation skill for the task; these complement rather than replace the
-repository workflow skills above. The baseline has five vendored Microsoft skills and two
-local (repository-owned) skills:
+Load only the relevant implementation skill for the task; these complement
+rather than replace the repository workflow skills above:
 
 - `agent-framework-foundry-py`: this service's `agent-framework-foundry` integration,
   `FoundryChatClient`, `SequentialBuilder`, middleware, resumable workflows, and
@@ -113,6 +140,15 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, and Azure PostgreSQL workflow-audit persistence.
+- `ag-ui-streaming-fastapi-py`: additive, redacted AG-UI and CopilotKit
+  projections of durable workflow events.
+- `ag-ui-react-integration-ts`: React selected-thread UI, additive AG-UI
+  consumption, and safe CopilotKit context.
+- `typescript-setup`: strict TypeScript boundaries for new frontend surfaces.
+- `typescript-update`: strict TypeScript and React updates that preserve
+  workflow contracts.
+- `e2e-rubric`: operator coverage for native SSE, durable HITL, optional AG-UI,
+  CopilotKit safety, and wrapper boundaries.
 
 ## Baseline Test Inputs
 

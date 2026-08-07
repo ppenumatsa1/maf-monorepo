@@ -1,5 +1,144 @@
 # Public Foundry Delivery Ledger
 
+## Evidence rule
+
+This is the canonical, reviewable source for Order Resolution public-lane
+release evidence. Configuration, ignored local timing artifacts, and design
+documents explain the intended route but never prove a deployment. A release
+claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
+and telemetry facts. Keep MCP/RAG execution behind the backend; record only
+safe identifiers and aggregate outcomes here.
+
+## 2026-08-07 - Public lane v15 response-quality remediation and release
+
+**Released lane**
+
+- Hosted agent `order-resolution-hosted` version 15 (v15) is the released
+  public lane.
+- The release retained the same-origin browser -> internal API wrapper ->
+  managed-identity Foundry Responses topology, PostgreSQL durable state, stable
+  native SSE, and checkpoint-keyed HITL semantics. AG-UI and CopilotKit remain
+  optional redacted, read-only selected-thread views; they are not another
+  workflow path.
+- The release route was app-only. It reused existing retained resources and did
+  not treat a deployment as approval to recreate PostgreSQL, Foundry, ACR,
+  monitoring, evaluation storage, or shared connections.
+
+**Initial evaluation finding**
+
+- Trace evaluation `eval_0f6f06094155491aaa3ceb5d76d0ca44` /
+  `evalrun_3f441ccace3e4791ae6cfc8cb1f2c4dd` completed with one passed and one
+  failed conversation. The failed `task_completion` result scored `0` against
+  threshold `1`: it recognized that the delayed order received a partial refund
+  but found no actionable refund-process follow-up or confirmation. Coherence
+  passed for both conversations.
+
+**Remediation and replacement evidence**
+
+- The canonical response was corrected to include the missing refund follow-up
+  and redeployed; the replacement hosted smoke passed.
+- Fresh hosted Responses E2E started at `2026-08-07T00:22:55Z` and generated
+  its evidence at `2026-08-07T00:23:59Z`. It passed for
+  `conv_18b80d5aa4a1216d00EJjgEpx0KoXLXNnHkVNsI8KlXzcl9bNV` and
+  `conv_51f7aa79133a4d2d00j1sCmrukUzTd22H6JgOODo7mEhtn50xx`.
+- Replacement trace evaluation
+  `eval_b839dfa1132c49c0a1112ceee5dc5a09` /
+  `evalrun_dc5a2cb72bca4128bbe4a8758377bc43` completed with 2 passed, 0
+  failed, and 0 errored conversations. It evaluated those same two
+  conversations after an `86.750592` second trace-materialization wait and
+  reported explicit `completed` status.
+- Application Insights verification correlated 97 rows across the two
+  replacement E2E conversations with zero exception rows.
+
+**Learning**
+
+- The evaluation remediation is response-quality work: preserve the configured
+  task-completion threshold and provide the required actionable follow-up
+  rather than lowering the threshold to mask a response gap.
+- Fresh E2E evidence is a dependency, not a fixed delay. The evaluator must
+  retain the HITL trace-age wait and explicit completion check; telemetry must
+  correlate only the current release's E2E conversations.
+
+**Scope note**
+
+- This entry proves the hosted smoke/Responses E2E/evaluation/telemetry gates
+  listed above. It does not invent a browser Playwright identifier that is not
+  recorded here. Browser regression remains a required release gate and is
+  documented in `docs/manual-testing.md`.
+
+## 2026-08-06 - Existing-environment IaC drift remediation (local validation complete)
+
+**Finding**
+
+Prior preview analysis identified that the Bicep template unconditionally owned
+shared retained resources in `rg-maf-ora-foundry-public-dev2`: the Container
+Apps environment, ACR and its policy, Foundry account/project/model
+deployments, monitoring, Foundry connections, evaluation storage, and
+PostgreSQL. Reapplying those declarations could change shared security,
+connection-sharing, model, monitoring, or database state even when the release
+only needed to publish this public lane's applications.
+
+**Fix**
+
+- Replaced the required ACR, Container Apps environment, Foundry account,
+  Foundry project/model deployments, and Application Insights declarations with
+  existing dependencies. Removed management of PostgreSQL, evaluation storage,
+  monitoring configuration, Foundry connections, shared ACR policy, and their
+  shared-resource RBAC.
+- Retained only this lane's frontend/backend Container Apps, registry-pull
+  identity, and their required resource-scoped `AcrPull` and Azure AI User
+  assignments. The existing database is now represented only by the secure
+  runtime connection-string input; no database administrator credential is
+  accepted by Bicep.
+- Changed the release router so all automatic routes are `app_only` while
+  validation remains quick or full as appropriate. Infrastructure provision
+  requires both `FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
+  `FOUNDRY_INFRA_RECONCILIATION_REFERENCE`.
+
+**Validation and status**
+
+- Local Bicep compilation, parameter JSON parsing, shell syntax checks, router
+  execution, and Make dry-runs completed. No Azure provision, deployment,
+  package, or preview was run, and no secret values were displayed.
+- This entry reflects the local remediation checkpoint. The later 2026-08-06
+  authorized non-mutating preview and package validation are recorded in
+  `.azure/deployment-plan.md`; the subsequent v15 hosted evidence is recorded
+  above. Neither result authorizes an unreviewed infrastructure reconciliation.
+
+## 2026-08-06 - Release DAG and package-governance implementation (evidence pending)
+
+**Change**
+
+- Defined the public release DAG as concurrent selected validation plus Bicep
+  build, a change-aware `app_only` router with independent validation, one shared PostgreSQL
+  readiness gate, independent backend/frontend/hosted parallel deployment,
+  smoke followed by evaluation/E2E overlap, and telemetry only after fresh E2E
+  evidence.
+- Added a fresh `azd package --no-prompt` gate after hosted-source sync and
+  excluded nested `__pycache__` directories from the generated hosted context.
+- Standardized ignored local `deployment-report/` timing evidence and added the
+  Azure-validation proof template in `.azure/deployment-plan.md`.
+
+**Learning expectations**
+
+- A completed release entry must record the router decision, package freshness,
+  each parallel deployment leg's duration/result, and whether an explicit infrastructure
+  reconciliation approval was genuinely needed.
+- Record the E2E evidence timestamp, evaluator minimum trace-age delay, and
+  explicit evaluation completion status. This makes HITL resume trace
+  materialization observable rather than relying on a fixed release delay.
+- Record telemetry only after its E2E evidence exists, including correlated
+  workflow identifiers and exception count. Local ignored reports are timing
+  aids only; the ledger is the reviewable source of truth.
+- Any unexpected database, RBAC, public-access, or secret-handling change is a
+  stop condition, not a reason to bypass a gate.
+
+**Release status**
+
+- Documentation and release-governance implementation only. No local
+  validation, package validation, Azure preview, provision, deployment, smoke,
+  hosted E2E, evaluation, or telemetry verification is claimed by this entry.
+
 ## Current architecture
 
 The supported hosted path is:
@@ -20,13 +159,14 @@ and resumes HITL using checkpoint-keyed `function_call_output`. Browser live
 updates come from persisted PostgreSQL projections through polling and stable
 native SSE; the rich stream is additive.
 
-## Redeployment baseline
+## Historical teardown and clean-provision baseline
 
 The public Foundry resources were intentionally deleted on 2026-07-28. The
-target details and release evidence below are historical only and must not be
-used to claim a current deployment. A clean `make foundry-release` run must
-recreate infrastructure, deploy the agent and Container Apps, then produce new
-smoke, E2E, evaluation, and telemetry evidence.
+target details and release evidence below describe that historical recovery
+only. They must not be used to claim a current deployment or to select the
+current deployment route. The v15 public lane uses the retained-resource,
+app-only route defined in `.azure/deployment-plan.md` and has the fresh evidence
+recorded above.
 
 The delivery ledger was stale because the successful 2026-07-27 release
 evidence was retained without a teardown status transition. The README and this

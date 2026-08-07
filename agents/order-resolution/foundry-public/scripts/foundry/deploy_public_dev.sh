@@ -22,22 +22,23 @@ AZURE_LOCATION="${AZURE_LOCATION:-eastus2}"
 FOUNDRY_ACCOUNT_NAME="${FOUNDRY_ACCOUNT_NAME:-maffndaibfscpfhjr7sp4}"
 FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_NAME:-order-resolution-public-managed-dev2}"
 FOUNDRY_HOSTED_AGENT_NAME="${FOUNDRY_HOSTED_AGENT_NAME:-order-resolution-hosted}"
-FOUNDRY_TRACE_READER_PRINCIPAL_ID="${FOUNDRY_TRACE_READER_PRINCIPAL_ID:-$(az ad signed-in-user show --query id -o tsv)}"
 POSTGRES_SERVER_NAME="${POSTGRES_SERVER_NAME:-maffndpgbfscpfhjr7sp4cu}"
-POSTGRES_ADMIN_USERNAME="${POSTGRES_ADMIN_USERNAME:-pgadmin}"
-POSTGRES_LOCATION="${POSTGRES_LOCATION:-centralus}"
 RUNTIME_DATABASE_URL="${RUNTIME_DATABASE_URL:-${DATABASE_URL:-}}"
+FOUNDRY_RELEASE_BASE_REF="${FOUNDRY_RELEASE_BASE_REF:-HEAD}"
+FOUNDRY_VALIDATION_MODE="${FOUNDRY_VALIDATION_MODE:-}"
+FOUNDRY_INFRA_RECONCILIATION_APPROVED="${FOUNDRY_INFRA_RECONCILIATION_APPROVED:-false}"
+FOUNDRY_INFRA_RECONCILIATION_REFERENCE="${FOUNDRY_INFRA_RECONCILIATION_REFERENCE:-}"
 
+if [[ -n "${FOUNDRY_DEPLOY_MODE:-}" ]]; then
+  echo "FOUNDRY_DEPLOY_MODE is no longer supported; automatic releases are app_only." >&2
+  exit 1
+fi
 if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
   echo "AZURE_SUBSCRIPTION_ID is required."
   exit 1
 fi
-if [[ -z "$RUNTIME_DATABASE_URL" || -z "${POSTGRES_ADMIN_PASSWORD:-}" ]]; then
-  echo "RUNTIME_DATABASE_URL (or DATABASE_URL) and POSTGRES_ADMIN_PASSWORD are required."
-  exit 1
-fi
-if [[ "$POSTGRES_ADMIN_PASSWORD" == *$'\n'* || "$POSTGRES_ADMIN_PASSWORD" == *$'\r'* ]]; then
-  echo "POSTGRES_ADMIN_PASSWORD must be a single-line value."
+if [[ -z "$RUNTIME_DATABASE_URL" ]]; then
+  echo "RUNTIME_DATABASE_URL (or DATABASE_URL) is required."
   exit 1
 fi
 if [[ "$RUNTIME_DATABASE_URL" != *"sslmode=require"* ]]; then
@@ -73,9 +74,6 @@ echo "Selecting AZD environment: ${FOUNDRY_AZD_ENV_NAME}"
   azd env set DATABASE_URL "$RUNTIME_DATABASE_URL"
   azd env set RUNTIME_DATABASE_URL "$RUNTIME_DATABASE_URL"
   azd env set POSTGRES_SERVER_NAME "$POSTGRES_SERVER_NAME"
-  azd env set POSTGRES_ADMIN_USERNAME "$POSTGRES_ADMIN_USERNAME"
-  azd env set POSTGRES_ADMIN_PASSWORD "$POSTGRES_ADMIN_PASSWORD"
-  azd env set POSTGRES_LOCATION "$POSTGRES_LOCATION"
   azd env set APP_ENV "${APP_ENV:-foundry-public-dev2}"
   azd env set STORE_PROVIDER "${STORE_PROVIDER:-postgres}"
   azd env set ENABLE_TELEMETRY "${ENABLE_TELEMETRY:-true}"
@@ -87,32 +85,95 @@ echo "Selecting AZD environment: ${FOUNDRY_AZD_ENV_NAME}"
   azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT "${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT:-true}"
 )
 
-FOUNDRY_PROJECT_NAME="$FOUNDRY_PROJECT_NAME" \
-HOSTED_AGENT_NAME="$FOUNDRY_HOSTED_AGENT_NAME" \
-./scripts/foundry/ensure_foundry_azd_defaults.sh
+wait_for_parallel_jobs() {
+  local status=0
+  local pid
+  for pid in "$@"; do
+    if ! wait "$pid"; then
+      status=1
+    fi
+  done
+  return "$status"
+}
 
-echo "Running local release gates"
-LOCAL_DATABASE_URL="${LOCAL_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/maf_workflow?sslmode=disable}"
-DATABASE_URL="$LOCAL_DATABASE_URL" make test
-DATABASE_URL="$LOCAL_DATABASE_URL" make eval-backend
-DATABASE_URL="$LOCAL_DATABASE_URL" make test-e2e
+router_output="$(./scripts/skills/deployment-mode-router.sh "$FOUNDRY_RELEASE_BASE_REF")"
+printf '%s\n' "$router_output"
 
-echo "Provisioning and deploying public Foundry agent"
-make foundry-up
+deploy_mode="$(printf '%s\n' "$router_output" | sed -n 's/^deploy_mode=//p' | tail -n 1)"
+validation_mode="$(printf '%s\n' "$router_output" | sed -n 's/^validation_mode=//p' | tail -n 1)"
+infrastructure_reconciliation="$(printf '%s\n' "$router_output" | sed -n 's/^infrastructure_reconciliation=//p' | tail -n 1)"
+reason="$(printf '%s\n' "$router_output" | sed -n 's/^reason=//p' | tail -n 1)"
 
-echo "Running combined hosted smoke and E2E"
-./scripts/foundry/hosted_e2e.sh
+if [[ -n "$FOUNDRY_VALIDATION_MODE" ]]; then
+  validation_mode="$FOUNDRY_VALIDATION_MODE"
+fi
 
-echo "Publishing enforced Foundry evaluation"
-FOUNDRY_PROJECTS_ENDPOINT="$(cd infra/foundry-hosted && azd env get-value FOUNDRY_PROJECTS_ENDPOINT)" \
-FOUNDRY_MODEL_DEPLOYMENT_NAME="$(cd infra/foundry-hosted && azd env get-value FOUNDRY_MODEL_DEPLOYMENT_NAME)" \
-FOUNDRY_EVAL_MODEL="$(cd infra/foundry-hosted && azd env get-value FOUNDRY_EVAL_MODEL)" \
-FOUNDRY_HOSTED_AGENT_NAME="$FOUNDRY_HOSTED_AGENT_NAME" \
-FOUNDRY_EVAL_ENFORCE_PASS=true \
-FOUNDRY_EVAL_MAX_ERRORED=0 \
-make eval-foundry
+if [[ "$deploy_mode" != "app_only" ]]; then
+  echo "Automatic release routing must remain app_only; received: $deploy_mode" >&2
+  exit 1
+fi
 
-echo "Verifying Application Insights telemetry"
-./scripts/foundry/verify_telemetry.sh
+case "$FOUNDRY_INFRA_RECONCILIATION_APPROVED" in
+  false)
+    reconcile_infrastructure=false
+    ;;
+  true)
+    if [[ -z "$FOUNDRY_INFRA_RECONCILIATION_REFERENCE" ]]; then
+      echo "FOUNDRY_INFRA_RECONCILIATION_REFERENCE is required with approved infrastructure reconciliation." >&2
+      exit 1
+    fi
+    reconcile_infrastructure=true
+    ;;
+  *)
+    echo "FOUNDRY_INFRA_RECONCILIATION_APPROVED must be true or false." >&2
+    exit 1
+    ;;
+esac
 
-echo "Public Foundry release completed for AZD environment: ${FOUNDRY_AZD_ENV_NAME}"
+echo "Release router selected deploy_mode=${deploy_mode} validation_mode=${validation_mode} infrastructure_reconciliation=${infrastructure_reconciliation} reason=${reason} base_ref=${FOUNDRY_RELEASE_BASE_REF}"
+
+case "$validation_mode" in
+  quick)
+    validation_target=validate-quick
+    ;;
+  full)
+    validation_target=validate-full
+    ;;
+  *)
+    echo "Unsupported validation mode: $validation_mode" >&2
+    exit 1
+    ;;
+esac
+
+make "$validation_target" &
+validation_pid=$!
+make foundry-iac-build &
+iac_pid=$!
+wait_for_parallel_jobs "$validation_pid" "$iac_pid"
+
+if [[ "$reconcile_infrastructure" == true ]]; then
+  echo "Running explicitly approved infrastructure reconciliation: ${FOUNDRY_INFRA_RECONCILIATION_REFERENCE}"
+  FOUNDRY_INFRA_RECONCILIATION_APPROVED=true \
+    FOUNDRY_INFRA_RECONCILIATION_REFERENCE="$FOUNDRY_INFRA_RECONCILIATION_REFERENCE" \
+    make foundry-provision
+fi
+
+make foundry-release-deploy
+make foundry-appinsights-connection
+
+make foundry-smoke
+release_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FOUNDRY_E2E_EVIDENCE_NOT_BEFORE="$release_started_at" make foundry-eval &
+evaluation_pid=$!
+if ! make foundry-hosted-e2e; then
+  echo "Hosted E2E failed; cancelling the pending trace evaluation." >&2
+  kill "$evaluation_pid" 2>/dev/null || true
+  wait "$evaluation_pid" || true
+  exit 1
+fi
+
+make foundry-telemetry &
+telemetry_pid=$!
+wait_for_parallel_jobs "$evaluation_pid" "$telemetry_pid"
+
+echo "Order Resolution Foundry public release completed for AZD environment: ${FOUNDRY_AZD_ENV_NAME}"

@@ -101,9 +101,14 @@ async def test_low_risk_flow_completes_without_hitl(tmp_path: Path) -> None:
 
     output_event = next(event for event in history if event["type"] == "workflow.output")
     output_payload = output_event["payload"]
+    assert {"message", "status", "submission_id"} <= set(output_payload)
     assert output_payload.get("status") == "completed"
     assert isinstance(output_payload.get("submission_id"), str)
-    assert "ord-" in str(output_payload.get("message", "")).lower()
+    assert output_payload.get("message") == (
+        "Your partial refund has been submitted for order ord-1001. "
+        "It will be returned to your original payment method within 5-10 business days; "
+        "you will receive a confirmation once processing is complete."
+    )
 
 
 @pytest.mark.asyncio
@@ -172,7 +177,11 @@ async def test_high_risk_flow_requests_hitl_then_resumes(
     output_payload = output_event["payload"]
     assert output_payload.get("status") == "completed"
     assert isinstance(output_payload.get("submission_id"), str)
-    assert checkpoint_state["order_id"] in str(output_payload.get("message", ""))
+    assert output_payload.get("message") == (
+        f"Your partial refund has been submitted for order {checkpoint_state['order_id']}. "
+        "It will be returned to your original payment method within 5-10 business days; "
+        "you will receive a confirmation once processing is complete."
+    )
 
 
 @pytest.mark.asyncio
@@ -237,7 +246,10 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
     output_messages = [
         event["payload"]["message"] for event in history if event["type"] == "workflow.output"
     ]
-    assert any("Previous result: Resolution complete." in message for message in output_messages)
+    assert any(
+        "Previous result: Your partial refund has been submitted for order ord-1001." in message
+        for message in output_messages
+    )
 
 
 @pytest.mark.asyncio

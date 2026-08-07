@@ -5,48 +5,30 @@ deploys the shared MAF workflow as a public Foundry Responses agent, an external
 React frontend Container App, and an internal FastAPI Responses-wrapper
 Container App.
 
-## What Bicep manages
+## IaC ownership boundary
 
-- A clean public Foundry account, Standard ACR, Log Analytics workspace, and
-  workspace-based Application Insights component. The established names remain
-  parameters, so an existing deployment is reconciled by name rather than
-  requiring a rename or a separate template.
-- The template creates the `order-resolution-public-managed-dev2` project with
-  Microsoft-managed agent state and its system-assigned identity.
-- The project identity receives `Container Registry Repository Reader` and
-  `AcrPull`, and ACR enables Azure AD authentication as ARM. The current
-  public Agent Service requires both roles for image pulls despite the newer
-  guidance naming Repository Reader.
-- A project-scoped `ApplicationInsights` connection is created with the
-  configured component as its target. This connection is required by Foundry
-  trace evaluation; runtime environment variables alone are insufficient.
-- Public PostgreSQL Flexible Server, `maf_workflow` database, TLS, and the
-  Azure-services firewall rule.
-- An external frontend Container App and an internal backend Container App. The
-  frontend proxies browser `/api` calls to the backend; the backend's
-  system-assigned managed identity has the project-scoped Foundry role required
-  to invoke Responses.
-- A dedicated Standard LRS Blob Storage account for Foundry evaluation
-  artifacts only. It has no workflow, session, vector, or runtime data.
-  Foundry connects through an Entra ID account connection, which materializes
-  the project connection; only the Foundry account and project managed identities have `Storage Blob Data
-  Owner` on that account, as required by the Foundry evaluator.
-- A 1K TPM chat deployment, 1K TPM embeddings deployment, and dedicated
-  `gpt-4o-mini-evaluation` deployment with 10K TPM capacity. The model-version
-  parameters intentionally default to empty, which asks Azure to resolve the
-  current regional default instead of pinning a model version that may no
-  longer be offered. Set a version parameter only after verifying it with
-  `az cognitiveservices model list --location <location>`.
-- Foundry User assignments for the project identity and optional Log Analytics
-  Reader assignments for the release operator.
+This deployment requires existing, retained public-lane dependencies. Bicep
+references—but does not configure or recreate—the Container Apps environment,
+ACR, Foundry account/project/model deployments, and Application Insights
+component. Existing Foundry connections, evaluation storage, monitoring
+configuration, and their RBAC remain outside this template.
+
+The only deployable resources retained in Bicep are this lane's external
+frontend and internal backend Container Apps, their lane-specific registry-pull
+identity, and the two resource-scoped assignments required by those apps:
+`AcrPull` for the pull identity and Azure AI User for the backend identity at
+the existing project scope. The existing PostgreSQL server and `maf_workflow`
+database are never represented as Bicep resources; the backend receives the
+operator-supplied TLS connection string as a Container Apps secret.
 
 Foundry supplies and operates the agent session, file, and vector-store services.
-This deployment manages no customer-owned service for those capabilities.
+This deployment configures none of the shared resources for those capabilities.
 
 There are no customer-managed networking or runner resources.
 
-The public frontend URL is
+The configured public frontend FQDN is
 `https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io/`.
+It is an existing-resource target, not evidence of a currently live revision.
 The backend FQDN is internal by design and must not be used as a browser API
 base URL.
 
@@ -62,16 +44,28 @@ base URL.
 ```bash
 AZURE_SUBSCRIPTION_ID="<subscription-id>" \
 RUNTIME_DATABASE_URL="postgresql://<user>:<password>@<server>.postgres.database.azure.com:5432/maf_workflow?sslmode=require" \
-POSTGRES_ADMIN_PASSWORD="<postgres-admin-password>" \
 make foundry-release
 ```
 
-The release script validates local gates, provisions with `azd`, deploys the
-Container Apps with `azd`, builds the hosted-agent Docker image in ACR, and
-registers it through the Foundry SDK with the runtime database configuration.
-It then invokes the hosted agent for low-risk and HITL cases, runs the enforced
-Foundry evaluation, and waits for Application Insights telemetry. Follow it
-with hosted browser validation:
+The release script uses the change-aware deployment router, runs its selected
+local validation concurrently with Bicep compilation, and always takes the
+app-only route by default. It fresh-syncs and packages the hosted
+context, checks the existing PostgreSQL target once, and deploys the backend,
+frontend, and hosted agent independently. After smoke, the evaluator waits for
+fresh hosted-E2E evidence and its configured HITL trace age; telemetry begins
+only after that E2E evidence exists. It reports completion only after both
+evaluation and telemetry gates succeed. The workflow reuses the existing
+database and never authorizes a destructive PostgreSQL action.
+
+An actual infrastructure reconciliation is exceptional. It requires both
+`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
+`FOUNDRY_INFRA_RECONCILIATION_REFERENCE`; without both, `make
+foundry-provision` refuses before invoking Azure. The approval must cover a
+reviewed non-mutating preview of the fixed target.
+
+Before an authenticated release, follow the non-mutating validation recipe and
+proof template in `.azure/deployment-plan.md`. After deployment, run hosted
+browser validation:
 
 ```bash
 PLAYWRIGHT_BASE_URL="https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io" \
@@ -100,10 +94,9 @@ FOUNDRY_AZD_ENV_NAME=<environment> make eval-foundry
 `ApplicationInsights` connection targeting the configured component. It fails
 before hosted E2E/evaluation if that prerequisite is absent or drifted.
 
-The authenticated release script assigns its signed-in Entra user `Log Analytics
-Reader` on the configured Application Insights component and linked workspace so
-that Foundry trace views can load. Set `FOUNDRY_TRACE_READER_PRINCIPAL_ID` to
-grant that view permission to a different user.
+Telemetry-reader and Foundry-connection access are existing operational
+prerequisites. The release path does not add RBAC assignments to shared
+monitoring or Foundry resources.
 
 For an infrastructure-only PostgreSQL check:
 
@@ -117,21 +110,17 @@ Compile before a deployment:
 az bicep build --file infra/foundry-hosted/iac/main.bicep
 ```
 
-For a deleted public lane, use the normal selected AZD environment and ensure
-`CREATE_POSTGRES_SERVER=true` (the checked-in parameter default). Bicep derives
-the backend connection string from the newly created server in that mode. Set
-`CREATE_POSTGRES_SERVER=false` only when deliberately reusing a separately
-managed PostgreSQL server and supplying `RUNTIME_DATABASE_URL`.
-
-Before `make foundry-provision`, `make foundry-up`, or `make foundry-release`,
+Before an approved `make foundry-provision`,
 the shared AZD environment bootstrap resets both `SERVICE_*_IMAGE_NAME` values
 to `mcr.microsoft.com/k8se/quickstart:latest`. This prevents a retained
 environment from referring to a deleted ACR/tag during Container App creation.
 The following `azd deploy` builds and replaces both bootstrap images with the
 published application images.
 
-Foundry account names are soft-deleted by Azure. `restoreFoundryAccount`
-defaults to `false`, which is safe for new and active-account provisions. When
-Azure reports that the named account is soft-deleted, set
-`RESTORE_FOUNDRY_ACCOUNT=true` for that one restore provision, then return it
-to `false` after the account is active.
+## Container dependency feed
+
+The backend and hosted-agent Dockerfiles set
+`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`, the approved
+CFS package feed. Keep that feed unchanged for release-image dependency
+installation; a package-feed change is a full-validation surface, not a
+routine app-only edit.

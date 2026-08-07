@@ -1,4 +1,4 @@
-import { WorkflowMetadata } from "../../types/workflow";
+import type { WorkflowMetadata } from "../../types/workflow";
 import StatusBadge from "./StatusBadge";
 
 type Props = {

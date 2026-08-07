@@ -14,7 +14,11 @@ internal backend ACA HTTPS URL.
 
 For isolated local Playwright runs, `make test-e2e` sets Vite's
 `VITE_PROXY_TARGET` to the dedicated dynamically selected backend port. Regular
-development continues to default to `http://localhost:8000`.
+development continues to default to `http://localhost:8000`. The same Make
+gate also runs `tests/e2e/selected-thread-integrations.spec.ts` against that
+dynamic Vite URL. Run `make test-e2e-selected-thread` to execute only that
+mocked integration test; its Playwright configuration starts Vite on
+`127.0.0.1:4175` when no `PLAYWRIGHT_BASE_URL` is supplied.
 
 Workflow Studio runtime info:
 

@@ -44,6 +44,33 @@ AG-UI-compatible clients:
 
 Native workflow events remain the source of truth. The rich stream maps stages to step lifecycle events, tool calls to tool lifecycle/result events, terminal outputs to assistant text and run-finished events, HITL/checkpoints to custom events, failures to run-error events, and unknown native events to raw events. Each SSE frame contains one rich envelope with one or more AG-UI-compatible events; clients that need native AG-UI framing should flatten `events` in order. The stream emits `RUN_STARTED` in the first rich envelope for each subscription.
 
+## Redacted selected-thread projections
+
+The v15 public lane exposes two optional, read-only selected-thread surfaces:
+
+- `GET /api/chat/stream/{thread_id}/ag-ui`
+- `POST /api/copilotkit`
+
+Both project durable workflow events into native AG-UI SSE frames. They
+allowlist only stage names, safe tool categories and completion state, opaque
+valid checkpoint IDs, approval state, and generic terminal status text. The
+CopilotKit request accepts a selected thread identifier; standard messages,
+state, tools, context, and forwarded properties are discarded. Neither route
+starts a run or performs a HITL mutation.
+
+No order/customer data, policy or retrieval evidence, MCP/RAG input or result,
+prompt, raw model output, reviewer comment, checkpoint payload, credential, or
+secret belongs in these projections. They are additive: a failed or unavailable
+optional projection must not disrupt the native SSE timeline or durable
+workflow APIs. CopilotKit here is `@copilotkit/react-core`, not the GitHub
+Copilot SDK.
+
+MCP/RAG remains a backend execution concern for every browser-facing stream.
+The stable native SSE event names may retain safe lifecycle and opaque retrieval
+metadata needed by the timeline, but they are not a channel for MCP/RAG
+requests, results, credentials, or retrieved content. Keep that invariant when
+extending `tool.call` or its rich projections.
+
 ## HITL Response Request
 
 ```json
@@ -85,6 +112,14 @@ observable.
 HITL pause/resume crosses HTTP requests, so the checkpoint state stores a sanitized `telemetry_trace_context`. The approval path restores that context before creating `workflow.hitl_resume`, which keeps the HITL response and final output correlated with the original `workflow.hitl_waiting` operation in Application Insights.
 
 Post-deploy Application Insights verification is captured in `.github/skills/azure-telemetry-validation/SKILL.md`. The routine runs hosted ORD-1001/ORD-1009 flows and validates `AppRequests`, `AppDependencies`, `AppTraces`, and `AppExceptions` with KQL.
+
+The release evaluator consumes only fresh hosted-E2E conversation evidence,
+waits for its configured HITL trace-materialization age, and requires an
+explicit `completed` result. Evaluation message attributes are redacted
+action/status summaries. If an evaluator finds a response-quality gap, correct
+the response rather than lowering its configured threshold; record the
+finding, replacement evaluation, and telemetry correlation in
+`issues-changes-fixes.md`.
 
 For operational investigation, query business dependencies first rather than
 the portal's newest-first Search list:

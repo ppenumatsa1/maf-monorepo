@@ -4,21 +4,35 @@ This file describes expected behavior for coding agents working in this reposito
 
 ## Project Context
 
-- Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
+- Backend: FastAPI + one sequential `FoundryChatClient` /
+  `SequentialBuilder` MAF SDK workflow path (single primary workflow story).
 - Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol,
   packaged by `backend/Dockerfile.hosted`).
-- Public Foundry in `rg-maf-ora-foundry-public-dev2` is the hosted lane. GitHub
+- Public Foundry deployment configuration targets
+  `rg-maf-ora-foundry-public-dev2`. Treat repository configuration as
+  implementation intent, not evidence of a currently deployed endpoint. GitHub
   Actions remains credential-free CI; authenticated Azure execution is local via
   `make foundry-release`.
-- Frontend: React + Vite, consumes SSE workflow events.
+- Frontend: React + Vite, consumes stable SSE workflow events and can show
+  optional additive AG-UI selected-thread updates. Its selected-thread assistant
+  uses CopilotKit (`@copilotkit/react-core`), not the GitHub Copilot SDK.
+  `GET /api/copilotkit/info` (or `GET /api/copilotkit`) is static discovery;
+  `POST /api/copilotkit` selects one existing `threadId`.
 - Public browser delivery uses an external frontend Container App proxying to an
   internal FastAPI wrapper Container App. The browser must not receive Foundry
   credentials; the wrapper uses managed identity and persisted PostgreSQL events
   when it delegates to Foundry Responses. It creates the Foundry `conv_...`
   conversation before the first Responses request; approvals resume it with
   checkpoint-keyed `function_call_output`.
-- Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
-- Event streaming: legacy SSE remains the stable contract; additive rich events are exposed for AG-UI-compatible clients.
+- Durable HITL: Postgres-backed checkpoint storage via repository-pattern
+  adapters preserves checkpoint-keyed pause/resume.
+- Event streaming: legacy SSE remains the stable contract; additive rich events
+  and selected-thread AG-UI projections do not replace it. The `/rich` envelope
+  remains an existing native-event contract, not a CopilotKit assistant surface.
+- The browser must not call MCP/RAG services directly. Selected-thread AG-UI
+  and CopilotKit projections must redact order/policy data, MCP/RAG results,
+  tool arguments/results, prompts, model output, checkpoint state,
+  credentials, and secrets.
 - Telemetry: FastAPI health and SSE requests are excluded from request telemetry
   in the public lane; preserve Foundry invocation, workflow, model, and HITL
   correlation spans.
@@ -50,6 +64,12 @@ This file describes expected behavior for coding agents working in this reposito
 - MAF middleware should centralize cross-cutting runtime behavior such as correlation, redaction/enrichment, usage/event observation, and explicit failure events
 - HITL telemetry must preserve checkpoint trace context so approval/resume spans stay correlated with the original workflow operation
 - additive rich event streams must preserve the native event payload and must not replace or rename stable SSE event types
+- CopilotKit must remain a read-only, selected-thread, allowlisted surface.
+  `POST /api/copilotkit` accepts `threadId` only as a selector; standard
+  `runId`, `messages`, `state`, `tools`, `context`, and `forwardedProps`
+  inputs are discarded. Its `GET /info` discovery response is static and
+  redacted. It is not the GitHub Copilot SDK and must not create a second
+  workflow path.
 
 6. Never remove coverage for:
 
@@ -83,13 +103,17 @@ Use focused skills instead of one broad agent pass:
 - `azure-telemetry-validation`: run hosted workflow stimulus and KQL checks against Application Insights after deployment.
 - `release-readiness`: orchestrate relevant focused skills for PR/release handoff.
 
-Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full validation and app-only-vs-full deployment for release work.
+Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full
+validation. Automatic release deployment is always app-only; provisioning
+requires explicit approved reconciliation with a non-secret reference.
+Release images must retain
+`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`, the approved
+CFS package feed.
 
 ## Stack Implementation Skills
 
-Load only the relevant implementation skill for the task; these complement rather than replace the
-repository workflow skills above. The baseline has five vendored Microsoft skills and two
-local (repository-owned) skills:
+Load only the relevant implementation skill for the task; these complement
+rather than replace the repository workflow skills above:
 
 - `agent-framework-foundry-py`: this service's `agent-framework-foundry` integration,
   `FoundryChatClient`, `SequentialBuilder`, middleware, resumable workflows, and
@@ -100,6 +124,15 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, and Azure PostgreSQL workflow-audit persistence.
+- `ag-ui-streaming-fastapi-py`: additive, redacted AG-UI and CopilotKit
+  projections of durable workflow events.
+- `ag-ui-react-integration-ts`: React selected-thread UI, additive AG-UI
+  consumption, and safe CopilotKit context.
+- `typescript-setup`: strict TypeScript boundaries for new frontend surfaces.
+- `typescript-update`: strict TypeScript and React updates that preserve
+  workflow contracts.
+- `e2e-rubric`: operator coverage for native SSE, durable HITL, optional AG-UI,
+  CopilotKit safety, and wrapper boundaries.
 
 Legacy shim paths have been removed. Do not add code that imports or recreates `app/models.py`, `app/config.py`, `app/db.py`, `app/state.py`, `app/workflow_run_repository.py`, `app/rag_repository.py`, `workflows/*`, `tools/*`, or root `app/api/*` router shims.
 Also do not reintroduce removed Foundry adapter/proxy surfaces such as `/api/foundry*` or `backend/app/foundry/*`.

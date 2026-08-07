@@ -1,53 +1,75 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncGenerator
 
 from app.api.v1.schemas.chat import ChatRunRequest, ChatRunResponse
 from app.core.container import config, event_bus, order_resolution_service, workflow_run_repository
+from app.modules.order_resolution.agui import (
+    agui_run_started_event,
+    encode_agui_sse,
+    is_safe_thread_id,
+    native_agui_events_for_workflow_event,
+)
+from app.modules.order_resolution.durable_events import iter_durable_workflow_events
 from app.modules.order_resolution.rich_events import rich_envelope_for_workflow_event
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 async def _persisted_sse_stream(thread_id: str, *, rich: bool) -> AsyncGenerator[str, None]:
-    cursor: str | None = None
     sequence = 0
     run_started = False
-    while True:
-        events, next_cursor, has_more = workflow_run_repository.list_workflow_events(
-            thread_id,
-            limit=100,
-            cursor=cursor,
-        )
-        for event in events:
-            cursor = f"{event.timestamp}|{event.id}"
-            if rich:
-                sequence += 1
-                envelope = rich_envelope_for_workflow_event(event, sequence)
-                if not run_started:
-                    envelope["events"].insert(
-                        0,
-                        {
-                            "type": "RUN_STARTED",
-                            "threadId": event.thread_id,
-                            "runId": event.payload.get("workflow_run_id") or event.thread_id,
-                            "timestamp": envelope.get("events", [{}])[0].get("timestamp"),
-                            "rawEvent": event.model_dump(),
-                        },
-                    )
-                    run_started = True
-                yield f"event: workflow.rich\ndata: {json.dumps(envelope, default=str)}\n\n"
-            else:
-                yield f"data: {event.model_dump_json()}\n\n"
-        if has_more:
-            cursor = next_cursor or cursor
+    async for event in iter_durable_workflow_events(
+        thread_id,
+        workflow_run_repository.list_workflow_events,
+        emit_heartbeats=True,
+    ):
+        if event is None:
+            yield ": ping\n\n"
             continue
-        await asyncio.sleep(1)
-        yield ": ping\n\n"
+        if rich:
+            sequence += 1
+            envelope = rich_envelope_for_workflow_event(event, sequence)
+            if not run_started:
+                envelope["events"].insert(
+                    0,
+                    {
+                        "type": "RUN_STARTED",
+                        "threadId": event.thread_id,
+                        "runId": event.payload.get("workflow_run_id") or event.thread_id,
+                        "timestamp": envelope.get("events", [{}])[0].get("timestamp"),
+                        "rawEvent": event.model_dump(),
+                    },
+                )
+                run_started = True
+            yield f"event: workflow.rich\ndata: {json.dumps(envelope, default=str)}\n\n"
+        else:
+            yield f"data: {event.model_dump_json()}\n\n"
+
+
+def _require_selected_thread(thread_id: str) -> None:
+    if (
+        not is_safe_thread_id(thread_id)
+        or workflow_run_repository.get_workflow_run(thread_id) is None
+    ):
+        raise HTTPException(status_code=404, detail="Selected workflow thread was not found.")
+
+
+async def _agui_stream(thread_id: str) -> AsyncGenerator[str, None]:
+    yield encode_agui_sse(agui_run_started_event(thread_id))
+    async for workflow_event in iter_durable_workflow_events(
+        thread_id,
+        workflow_run_repository.list_workflow_events,
+        emit_heartbeats=True,
+    ):
+        if workflow_event is None:
+            yield ": ping\n\n"
+            continue
+        for event in native_agui_events_for_workflow_event(workflow_event):
+            yield encode_agui_sse(event)
 
 
 @router.post("/run", response_model=ChatRunResponse)
@@ -71,13 +93,18 @@ async def stream_chat(thread_id: str) -> StreamingResponse:
 
 @router.get("/stream/{thread_id}/rich")
 async def stream_chat_rich(thread_id: str) -> StreamingResponse:
-    stream = (
-        _persisted_sse_stream(thread_id, rich=True)
-        if config.runtime_target == "responses_wrapper"
-        else event_bus.rich_sse_stream(thread_id)
-    )
     return StreamingResponse(
-        stream,
+        _persisted_sse_stream(thread_id, rich=True),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+@router.get("/stream/{thread_id}/ag-ui")
+async def stream_chat_agui(thread_id: str) -> StreamingResponse:
+    _require_selected_thread(thread_id)
+    return StreamingResponse(
+        _agui_stream(thread_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

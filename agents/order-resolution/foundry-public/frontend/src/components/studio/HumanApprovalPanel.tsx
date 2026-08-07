@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { PendingApproval } from "../../types/workflow";
+import type { PendingApproval } from "../../types/workflow";
 
 type Props = {
   approvals: PendingApproval[];
