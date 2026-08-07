@@ -37,7 +37,7 @@ resolve_app_name() {
     az containerapp list \
       --resource-group "$AZURE_RESOURCE_GROUP" \
       --subscription "$AZURE_SUBSCRIPTION_ID" \
-      --query "[?tags.'azd-service-name'=='$service_name'].name" \
+      --query "[?tags.\"azd-service-name\"=='$service_name'].name" \
       --output tsv
   )
   [[ "${#matching_apps[@]}" == 1 ]] || {
