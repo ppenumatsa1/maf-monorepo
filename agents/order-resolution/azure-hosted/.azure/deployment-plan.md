@@ -1,10 +1,9 @@
 # Azure App-Hosted Deployment Plan
 
-> **Status: Validated.** The package is validated for an app-only cloud release;
-> no current deployment evidence is claimed.
-> Repository code, Bicep, and local validation describe intended behavior. They
-> are not evidence of a live endpoint, revision, model invocation, evaluation,
-> or telemetry result.
+> **Status: Validated.** The package is validated and was released through the
+> app-only cloud lane on 2026-08-07. The evidence ledger records the deployed
+> immutable images and completed cloud gates. Infrastructure reconciliation
+> remains blocked by the PostgreSQL mutation shown in the provision preview.
 
 ## Intended target
 
@@ -75,7 +74,7 @@ All validation checks pass only when the following evidence exists:
 | Bicep compilation | Passed locally on 2026-08-07 |
 | Subscription-scope provision preview | Completed on 2026-08-07; it reports PostgreSQL `Modify`, so infrastructure reconciliation is blocked |
 | Static role review | Passed: app identities retain ACR pull and Foundry data-plane roles; the CI identity has scoped app deployment, ACR push, and Foundry evaluation roles |
-| Required cloud Docker E2E and release evidence | Pending the path-scoped CI run |
+| Required cloud Docker E2E and release evidence | Passed in GitHub Actions run `31204487857` on 2026-08-07 |
 
 ## Exceptional infrastructure reconciliation
 
@@ -113,5 +112,11 @@ Add a dated entry only after a release has completed. Include:
 - exceptions or blockers, including an unresolved Docker E2E TLS
   trust/handshake failure if one actually occurred.
 
-There is no new ledger entry in this documentation sync because no deployment,
-hosted smoke, hosted E2E, evaluation, or telemetry query was performed.
+### 2026-08-07 app-only cloud release
+
+- **GitHub Actions:** [run `31204487857`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31204487857), release ID `ci-31204487857-1`.
+- **Endpoints:** backend [https://maf-backend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io](https://maf-backend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io) and frontend [https://maf-frontend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io](https://maf-frontend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io).
+- **Immutable images:** backend `sha256:91c6879de9f8f50431f33669605a5476ff3997174a942b309845c6701c56abcf`; frontend `sha256:a61ff2249f01d2f49d0c9e0fea42e275e4ad7238722a9cc549ff639e3657e081`.
+- **Gates:** Docker E2E, smoke, hosted workflow and selected-thread browser E2E, and report-only Foundry evaluation all passed. Foundry evaluation `eval_565e438b61934c209250de2516a2acdf` / `evalrun_4497efc4ce6f4ba6aba8c74ce2d66d6b` passed both cases.
+- **Telemetry:** exact fresh pairs for low- and high-risk smoke threads recorded 6 and 5 telemetry items respectively, with zero exceptions; their App Insights correlation evidence is validated.
+- **Infrastructure:** no reconciliation ran; PostgreSQL and the `maf_workflow` database were not changed.

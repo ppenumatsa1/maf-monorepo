@@ -125,6 +125,14 @@ shape. The verifier now accepts both documented shapes while preserving exact
 thread/workflow-run pairing, the fresh-release timestamp, and the zero-exception
 requirement.
 
+The final path-scoped run
+[`31204487857`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31204487857)
+passed every release gate: Docker E2E, immutable app-only deployment, smoke,
+workflow and selected-thread hosted E2E, Foundry evaluation, and fresh exact-pair
+App Insights correlation with zero exceptions. The deployment plan records the
+non-secret endpoints, digests, evaluation IDs, and telemetry evidence. No
+infrastructure reconciliation occurred.
+
 ## Historical source-of-truth correction (2026-07-28)
 
 The delivery record continued to describe the deleted resources as active.
