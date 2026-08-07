@@ -10,8 +10,10 @@ DEPLOYMENT_WORKFLOWS = (
     "order-resolution-private-provision.yml",
     "order-resolution-private-deploy.yml",
 )
+PACKAGE_VALIDATION_WORKFLOW = "order-resolution-private-package-validation.yml"
 SERIALIZED_PRIVATE_WORKFLOWS = (
     *DEPLOYMENT_WORKFLOWS,
+    PACKAGE_VALIDATION_WORKFLOW,
     "order-resolution-private-observability.yml",
 )
 PRIVATE_PREFIX = "agents/order-resolution/foundry-private"
@@ -140,6 +142,38 @@ def validate() -> None:
     forbid(deploy, "make foundry-postgres-lockdown", deploy_name)
     forbid(deploy, "make foundry-evidence", deploy_name)
     forbid(deploy, "\n  evidence:\n", deploy_name)
+
+    package_validation = (WORKFLOWS / PACKAGE_VALIDATION_WORKFLOW).read_text()
+    for value in (
+        "workflow_dispatch:",
+        "confirmation:",
+        "options: [cancel, validate]",
+        "environment: foundry-private-env",
+        "self-hosted",
+        "foundry-private-v2",
+        "id-token: write",
+        "uses: azure/login@v2",
+        "client-id: ${{ vars.AZURE_CLIENT_ID }}",
+        "tenant-id: ${{ vars.AZURE_TENANT_ID }}",
+        "subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}",
+        "azd config set auth.useAzCliAuth true",
+        "make foundry-app-only-preflight",
+        "azd package --no-prompt",
+        f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
+    ):
+        require(package_validation, value, PACKAGE_VALIDATION_WORKFLOW)
+    for forbidden_operation in (
+        "secrets.",
+        "azd provision",
+        "azd deploy",
+        "make foundry-app-only-release",
+        "make foundry-hosted-app-deploy",
+        "make foundry-project-connections",
+        "make foundry-postgres-lockdown",
+        "make foundry-evidence",
+    ):
+        forbid(package_validation, forbidden_operation, PACKAGE_VALIDATION_WORKFLOW)
+
     makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
     app_only_preflight_body = makefile.split(
         "foundry-app-only-preflight:\n", maxsplit=1

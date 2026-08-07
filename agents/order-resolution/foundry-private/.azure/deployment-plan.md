@@ -69,6 +69,29 @@ only in the separate proof-gated PostgreSQL lockdown operation.
   protected app-only deployment must not start until that gate can run
   successfully.
 
+## All validation checks pass
+
+- [ ] 1. AZD Installation
+- [ ] 2. Schema Validation
+- [ ] 3. Environment Setup
+- [ ] 4. Authentication Check
+- [ ] 5. Subscription/Location Check
+- [ ] 6. Aspire Pre-Provisioning Checks (not applicable; this is not an Aspire project)
+- [ ] 7. Provision Preview (full-IaC preview remains a separate blocked reconciliation operation)
+- [ ] 8. Build Verification
+- [ ] 9. Docker Build Context Validation
+- [ ] 10. Package Validation
+- [ ] 11. Azure Policy Validation
+- [ ] 12. Aspire Post-Provisioning Checks (not applicable; this is not an Aspire project)
+
+**Packaging execution note.** Local Docker packaging is blocked when `npm ci`
+contacts `registry.npmjs.org`: the managed-device endpoint returns
+`ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE`, after which npm incorrectly exits
+successfully without installing TypeScript. A protected package-only workflow
+will run the same `azd package --no-prompt` check on `vm-maffnd-runner`
+without publishing images or modifying Azure resources. Its result is required
+before the app-only deployment.
+
 ## Execution decision
 
 Use the VNet-connected `foundry-private-v2` runner and serialized release

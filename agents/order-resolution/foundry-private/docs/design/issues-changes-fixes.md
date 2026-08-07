@@ -91,6 +91,17 @@ direct `azd` or Azure command was substituted for that gate. The protected
 release remains pending until the validation workflow can execute and hand off
 to the existing `vm-maffnd-runner` path.
 
+**Packaging validation blocker (2026-08-07).** After validator access was
+restored, local `azd package --no-prompt` built the hosted-agent and backend
+images but failed the frontend image. A clean Docker `npm ci` received
+`ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE` when the managed device intercepted
+traffic to `registry.npmjs.org`; npm then exited with its own error while
+leaving TypeScript absent, and `npm run build` failed with `tsc: not found`.
+The lockfile already declares TypeScript, so this is not a source dependency
+defect. The protected package-only private-runner workflow must prove the
+runner's package egress before any app-only deployment. It builds images only:
+it does not publish, provision, deploy, or modify Azure resources.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All
