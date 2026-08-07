@@ -4,6 +4,18 @@ const threadId = "thread-e2e-selected";
 const now = "2026-08-06T22:12:39.579Z";
 
 test.beforeEach(async ({ page }) => {
+  await page.route("**/env-config.js", async (route) => {
+    await route.fulfill({
+      contentType: "application/javascript",
+      body: [
+        "window.__APP_CONFIG__ = {",
+        '  API_BASE: "",',
+        '  AG_UI_URL: "/api/chat/stream/{threadId}/ag-ui",',
+        '  COPILOTKIT_URL: "/api/copilotkit",',
+        "};",
+      ].join("\n"),
+    });
+  });
   await page.route("**/api/health", async (route) => {
     await route.fulfill({
       contentType: "application/json",
