@@ -1,6 +1,6 @@
 import PaginationControls from "./PaginationControls";
 import StatusBadge from "./StatusBadge";
-import { WorkflowRunListItem, WorkflowStatus } from "../../types/workflow";
+import type { WorkflowRunListItem, WorkflowStatus } from "../../types/workflow";
 
 type Props = {
   runs: WorkflowRunListItem[];

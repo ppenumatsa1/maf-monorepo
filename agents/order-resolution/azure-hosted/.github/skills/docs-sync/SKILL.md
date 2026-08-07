@@ -12,6 +12,15 @@ Use this skill when a change touches code, infrastructure as code, scripts, exam
 - Review only the code, IaC, scripts, examples, and docs affected by the current change.
 - Keep changes surgical and simplicity-first; do not rewrite unaffected documentation.
 - Preserve documented API, event, HITL, validation, and deployment contracts unless the task explicitly changes them.
+- Separate source intent from deployed evidence. Do not copy historical
+  deployment, endpoint, telemetry, or evaluation claims into a new change.
+- For Azure app-hosted release documentation, preserve FastAPI as the sole MAF
+  host, Foundry as inference/report-only evaluation, app-only normal releases,
+  explicit reconciliation, PostgreSQL preservation, and fresh evidence
+  requirements.
+- When selected-thread surfaces change, update the native `/rich` distinction,
+  redaction boundary, existing-thread selector behavior, runtime endpoint
+  configuration, and disabled-inspector guidance together.
 - Update only docs whose instructions, examples, diagrams, or behavior descriptions would become stale.
 - Do not introduce new validation tooling or broad documentation structure changes.
 

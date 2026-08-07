@@ -15,22 +15,36 @@ Use this skill only for deployments that already passed Azure validation. Do not
 
 ## Deployment sequence
 
-Default to app-only deployment for routine code changes:
+Normal releases are always app-only, including application, Docker, and
+frontend runtime-configuration changes. Use the checked-in release sequence;
+do not substitute a bare `azd deploy`:
 
 ```bash
-azd deploy
+make release-app
 ```
 
-Use full infra+app deployment only when infra/runtime surfaces changed:
+It deploys only backend and frontend revisions, then calls
+`make release-validate`. It must retain the approved CFS Python package feed
+(`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`) and the
+Alpine/musl-compatible frontend build/runtime path.
+
+Infrastructure provisioning is exceptional reconciliation, never an implied
+response to changed IaC or runtime files. Require an explicit non-secret
+owner change reference and an owner-reviewed Bicep preview:
 
 ```bash
-azd provision
-azd deploy
+INFRA_RECONCILIATION_APPROVED=true \
+INFRA_RECONCILIATION_REFERENCE="<non-secret-review-reference>" \
+make release-infra-preview
 ```
 
-Use `scripts/skills/deployment-mode-router.sh` to route this decision automatically.
-
-After `azd provision`, confirm expected resources exist and managed identities/RBAC assignments are present before deploying containers.
+Only an explicitly owner-confirmed apply with the exact preview hashes may use
+`make release-infra-reconcile`.
+Reconciliation must preserve the existing PostgreSQL server and
+`maf_workflow` database; it must never recreate, replace, drop, or silently
+migrate that durable boundary. The deployment-mode router always emits
+`app_only`; its reconciliation indicator means review is required, not that
+provisioning is authorized.
 
 ## Known recovery
 
@@ -61,6 +75,14 @@ PLAYWRIGHT_BASE_URL="<frontend-https-url>" make test-e2e
 - Validate RBAC live: ACR image pull, Key Vault secret reads, PostgreSQL connectivity, and observability ingestion where applicable.
 - Validate `ORD-1001` completes without `hitl.request`.
 - Validate `ORD-1009` emits `hitl.request` and completes the expected approval/resume path.
+- Require fresh release correlation evidence: smoke writes the release run,
+  thread, and workflow-run identifiers; hosted E2E, report-only Foundry
+  evaluation, and Application Insights queries must use that same release
+  window before the release is claimed validated.
+- Local Docker E2E is optional where managed-device policy blocks Docker npm
+  egress. Require the **Required cloud Docker E2E** GitHub Actions result for
+  full changes; do not replace a missing cloud result with host npm success or
+  a skipped local Docker run.
 - Report fully qualified HTTPS endpoints for frontend, backend/API, health, and any documented smoke target.
 
 ## Output

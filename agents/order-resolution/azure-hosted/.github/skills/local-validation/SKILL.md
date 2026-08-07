@@ -47,6 +47,8 @@ If a gate cannot run, report the blocker and exact command to rerun after it is 
 - Docker daemon or Compose runtime unavailable for `make docker-test`.
 - Browser binaries or Playwright runtime missing for `make test-e2e`.
 - Missing language/runtime dependencies required by the existing Make targets.
+- Docker E2E TLS trust/handshake failure. Report the exact failure and rerun
+  command; do not claim Docker or hosted E2E passed in its place.
 
 ## Reporting
 

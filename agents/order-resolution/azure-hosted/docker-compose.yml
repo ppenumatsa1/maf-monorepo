@@ -17,6 +17,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   mock-mcp:
+    image: ${BACKEND_IMAGE:-maf-order-resolution-backend:e2e}
     build:
       context: ./backend
     command: uvicorn scripts.mcp.mock_mcp_server:app --host 0.0.0.0 --port 8011
@@ -29,6 +30,7 @@ services:
       - ./:/app
 
   backend:
+    image: ${BACKEND_IMAGE:-maf-order-resolution-backend:e2e}
     build:
       context: ./backend
     restart: unless-stopped
@@ -49,6 +51,7 @@ services:
       MCP_BEARER_TOKEN: demo-bearer-token
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/maf_workflow
   frontend:
+    image: ${FRONTEND_IMAGE:-maf-order-resolution-frontend:e2e}
     build:
       context: ./frontend
     depends_on:
@@ -61,7 +64,7 @@ services:
       VITE_PROXY_TARGET: http://backend:8000
 
   playwright:
-    image: mcr.microsoft.com/playwright:v1.55.0-jammy
+    image: mcr.microsoft.com/playwright:v1.62.1-noble
     profiles: ["test"]
     depends_on:
       - backend
@@ -69,10 +72,10 @@ services:
     working_dir: /workspace/scripts/playwright
     environment:
       PLAYWRIGHT_BASE_URL: http://frontend:5173
-      PLAYWRIGHT_ARTIFACTS_DIR: /tmp/maf-playwright-artifacts
+      PLAYWRIGHT_ARTIFACTS_DIR: ${PLAYWRIGHT_ARTIFACTS_DIR:-/workspace/.artifacts/docker-e2e}
     volumes:
       - ./:/workspace
-    command: bash -lc "npm install && npx playwright install --with-deps && npm run test:e2e"
+    command: bash -lc "/workspace/scripts/playwright/run-e2e-suite.sh \"$${PLAYWRIGHT_BASE_URL}\" all"
 
 volumes:
   postgres-data:

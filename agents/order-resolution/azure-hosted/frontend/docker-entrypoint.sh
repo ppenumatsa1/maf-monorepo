@@ -1,12 +1,16 @@
 #!/usr/bin/env sh
 set -eu
 
-API_BASE="${API_BASE-${VITE_API_BASE-http://localhost:8000}}"
-NGINX_API_UPSTREAM="${NGINX_API_UPSTREAM-$API_BASE}"
+API_BASE="${API_BASE-${VITE_API_BASE_URL-${VITE_API_BASE-}}}"
+AG_UI_URL="${AG_UI_URL-${VITE_AG_UI_URL-}}"
+COPILOTKIT_URL="${COPILOTKIT_URL-${VITE_COPILOTKIT_URL-}}"
+NGINX_API_UPSTREAM="${NGINX_API_UPSTREAM-http://localhost:8000}"
 export API_BASE
+export AG_UI_URL
+export COPILOTKIT_URL
 export NGINX_API_UPSTREAM
 
-envsubst '${API_BASE}' \
+envsubst '${API_BASE} ${AG_UI_URL} ${COPILOTKIT_URL}' \
   < /usr/share/nginx/html/env-config.template.js \
   > /usr/share/nginx/html/env-config.js
 

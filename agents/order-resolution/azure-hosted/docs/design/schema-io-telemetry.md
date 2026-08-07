@@ -25,7 +25,23 @@
 
 The native stream at `/api/chat/stream/{thread_id}` is the stable source of
 truth. `/api/chat/stream/{thread_id}/rich` is additive and retains the native
-event payload.
+event payload. It is an existing native-compatible contract, not an assistant
+UI payload.
+
+## Redacted selected-thread I/O
+
+`GET /api/chat/stream/{thread_id}/ag-ui` accepts only a safe identifier for an
+already durable workflow thread. It returns protocol-framed allowlisted
+lifecycle/tool labels, validated UUID checkpoint IDs, approve/reject decisions,
+and generic terminal/error text. It must not serialize raw native payloads,
+orders, policy/MCP/RAG results, tool arguments/results, prompts, model output,
+checkpoint state, credentials, or secrets.
+
+`GET /api/copilotkit/info` and the root alias return static discovery only:
+thread inspection, mutations, realtime metadata, audio, and A2UI are disabled.
+`POST /api/copilotkit` uses the same redacted stream. Only `threadId` selects
+an existing thread; `runId`, `messages`, `state`, `tools`, `context`, and
+`forwardedProps` are ignored. CopilotKit is not GitHub Copilot.
 
 ## HITL response request
 
@@ -47,3 +63,6 @@ event payload.
 - `OTEL_RECORD_CONTENT=false` is the default content-safety posture.
 - Model-inference dependencies may be exported to Application Insights; Foundry
   report evaluation is non-blocking evidence.
+- Hosted release proof must query a fresh correlation set captured by smoke:
+  release ID/start time plus low/high-risk thread and workflow-run IDs. An
+  unrelated historical span or broad lookback is not release evidence.

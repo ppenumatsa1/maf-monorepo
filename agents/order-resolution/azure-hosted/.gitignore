@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.pyc
 .venv/
 .pytest_cache/
@@ -27,6 +28,7 @@ backend/.foundry/results/*.json
 *.log
 
 # Test artifacts
+.artifacts/
 playwright-report/
 test-results/
 scripts/parity/reports/

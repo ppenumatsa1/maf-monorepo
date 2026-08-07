@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAgentContext } from "@copilotkit/react-core/v2";
 import { flushSync } from "react-dom";
 
 import AppShell from "./components/studio/AppShell";
+import AgUiThreadPanel from "./components/studio/AgUiThreadPanel";
 import HumanApprovalPanel from "./components/studio/HumanApprovalPanel";
 import LatestOutputPanel from "./components/studio/LatestOutputPanel";
 import ManualTestPanel from "./components/studio/ManualTestPanel";
 import RagEvidencePanel from "./components/studio/RagEvidencePanel";
 import RunMetadataPanel from "./components/studio/RunMetadataPanel";
+import SelectedThreadAssistantPanel from "./components/studio/SelectedThreadAssistantPanel";
 import WorkflowHistorySidebar from "./components/studio/WorkflowHistorySidebar";
 import WorkflowRunComposer from "./components/studio/WorkflowRunComposer";
+import { createSafeSelectedThreadContext } from "./copilot";
 import { getInitialApiBase } from "./config";
 import { openRichThreadStream } from "./lib/sseClient";
 import WorkflowTimeline from "./components/studio/WorkflowTimeline";
-import {
+import type {
   PendingApproval,
   WorkflowEvent,
   WorkflowRunDetails,
@@ -108,17 +112,13 @@ export default function App() {
       } catch (error) {
         lastError = error;
       } finally {
-        if (signal?.aborted) {
-          return;
+        if (!signal?.aborted && lastError) {
+          const message =
+            lastError instanceof Error
+              ? lastError.message
+              : "Unable to reach backend health endpoint";
+          setRuntimeHealthError(message);
         }
-        if (!lastError) {
-          return;
-        }
-        const message =
-          lastError instanceof Error
-            ? lastError.message
-            : "Unable to reach backend health endpoint";
-        setRuntimeHealthError(message);
       }
     },
     [],
@@ -458,6 +458,27 @@ export default function App() {
   const visibleActiveHistoryThreadId = isComposingNewRun
     ? null
     : activeHistoryThreadId;
+  const selectedThreadAssistantContext = useMemo(
+    () =>
+      createSafeSelectedThreadContext({
+        threadId: visibleSelectedThreadId,
+        details: selectedWorkflowDetails,
+        events,
+        approvals: pendingApprovals,
+      }),
+    [
+      events,
+      pendingApprovals,
+      selectedWorkflowDetails,
+      visibleSelectedThreadId,
+    ],
+  );
+
+  useAgentContext({
+    description:
+      "Safe metadata for the selected order-resolution workflow thread. It contains only the thread ID, normalized status, event types and timestamps, pending approval count, and whether output is available.",
+    value: selectedThreadAssistantContext,
+  });
   const runtimeBadgeLabel = runtimeHealth
     ? `${runtimeHealth.environment} • ${runtimeHealth.workflow_mode} • ${runtimeHealth.runtime_provider}/${runtimeHealth.runtime_mode}`
     : runtimeHealthError
@@ -519,6 +540,7 @@ export default function App() {
             }
           }}
         />
+        <AgUiThreadPanel apiBase={apiBase} threadId={visibleSelectedThreadId} />
       </section>
 
       <section className="right-column">
@@ -535,6 +557,10 @@ export default function App() {
         <RagEvidencePanel details={selectedWorkflowDetails} events={events} />
         <RunMetadataPanel
           metadata={selectedWorkflowDetails?.metadata ?? null}
+        />
+        <SelectedThreadAssistantPanel
+          apiBase={apiBase}
+          threadId={visibleSelectedThreadId}
         />
       </section>
     </AppShell>

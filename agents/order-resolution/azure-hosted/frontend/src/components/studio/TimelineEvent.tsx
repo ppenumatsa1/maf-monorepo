@@ -1,5 +1,5 @@
 import JsonViewer from "./JsonViewer";
-import { WorkflowEvent } from "../../types/workflow";
+import type { WorkflowEvent } from "../../types/workflow";
 
 type Props = {
   event: WorkflowEvent;

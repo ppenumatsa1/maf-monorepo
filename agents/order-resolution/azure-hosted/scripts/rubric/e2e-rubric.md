@@ -62,3 +62,18 @@
 
 - Minimum 10/12 on automated runs.
 - Any score 0 in criteria 1, 3, or 4 is automatic fail.
+
+## Required gate coverage
+
+The deterministic design-review gate must verify these scenarios in addition to
+the scored criteria:
+
+- baseline low-risk completion without HITL;
+- high-risk HITL approval and durable resume;
+- HITL rejection escalating to a terminal result;
+- idempotent handling of a duplicate approval response;
+- persisted workflow, checkpoint, and memory reload after store reinitialization;
+- additive selected-thread safety: AG-UI reads the selected thread with GET,
+  CopilotKit POST only selects that existing thread, optional projection failure
+  leaves native controls and timeline usable, no inspector is rendered, and
+  neither panel renders raw native rich payloads.

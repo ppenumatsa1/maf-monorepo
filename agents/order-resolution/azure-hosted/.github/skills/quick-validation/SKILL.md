@@ -18,6 +18,10 @@ Use `scripts/skills/deployment-mode-router.sh` first. If it reports:
 - `validation_mode=quick`: use this skill.
 - `validation_mode=full`: run `local-validation` instead.
 
+`deploy_mode=app_only` is not permission to provision. Normal releases use
+`make release-app`; infrastructure reconciliation remains separately reviewed
+and explicitly authorized.
+
 ## Required checks
 
 Run:
@@ -41,5 +45,7 @@ Treat visible Workflow History parsing errors (`Unexpected token`, `not valid JS
 - IaC/runtime surfaces changed (`infra/**`, `.azure/**`, container runtime/proxy files, smoke scripts).
 - HITL logic or workflow event contracts changed.
 - API schemas/routers changed in ways that could affect clients.
+- Selected-thread AG-UI/CopilotKit redaction, runtime endpoint configuration,
+  or inspector behavior changed.
 
 In those cases, run full validation.

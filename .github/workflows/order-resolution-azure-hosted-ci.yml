@@ -13,6 +13,10 @@ on:
       - ".github/workflows/order-resolution-azure-hosted-ci.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   routing:
     name: Operating model routing
@@ -62,6 +66,18 @@ jobs:
       - name: Enforce operating model guardrails
         run: agents/order-resolution/azure-hosted/scripts/skills/operating-model-enforcement.sh "${{ needs.routing.outputs.base_ref }}"
 
+  release-assets:
+    name: Release asset and credential-free reconciliation mock
+    runs-on: ubuntu-latest
+    needs: [routing, operating-model-enforcement]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate release assets and reconciliation guards
+        working-directory: agents/order-resolution/azure-hosted
+        run: make release-source-validation
+
   backend:
     name: Backend lint, tests, and evals
     runs-on: ubuntu-latest
@@ -103,27 +119,150 @@ jobs:
         run: npm run build
         working-directory: agents/order-resolution/azure-hosted/frontend
 
-  e2e:
-    name: Docker E2E
+  browser-e2e:
+    name: Browser E2E workflow and selected thread
     runs-on: ubuntu-latest
     needs: [routing, operating-model-enforcement]
     if: ${{ needs.routing.outputs.validation_mode == 'full' }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: agents/order-resolution/azure-hosted/scripts/playwright/package-lock.json
-      - name: Prepare backend env file
+          cache-dependency-path: |
+            agents/order-resolution/azure-hosted/frontend/package-lock.json
+            agents/order-resolution/azure-hosted/scripts/playwright/package-lock.json
+      - name: Install backend dependencies
+        working-directory: agents/order-resolution/azure-hosted/backend
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r requirements-dev.txt
+      - name: Install frontend dependencies
+        working-directory: agents/order-resolution/azure-hosted/frontend
+        run: npm ci
+      - name: Install Playwright dependencies and browser
+        working-directory: agents/order-resolution/azure-hosted/scripts/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run focused selected-thread browser E2E
+        working-directory: agents/order-resolution/azure-hosted
+        run: make test-e2e-selected
+      - name: Run workflow and selected-thread browser E2E
+        working-directory: agents/order-resolution/azure-hosted
+        run: make test-e2e
+
+  docker-e2e:
+    name: Required cloud Docker E2E
+    runs-on: ubuntu-latest
+    environment: maf-ora-azure
+    concurrency:
+      group: order-resolution-azure-hosted-release-${{ github.ref }}
+      cancel-in-progress: false
+    needs:
+      [
+        routing,
+        operating-model-enforcement,
+        release-assets,
+        backend,
+        frontend,
+        browser-e2e,
+        design-review,
+      ]
+    if: ${{ needs.routing.outputs.validation_mode == 'full' }}
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ vars.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate the app-only release identity
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            agents/order-resolution/azure-hosted/frontend/package-lock.json
+            agents/order-resolution/azure-hosted/scripts/playwright/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: agents/order-resolution/azure-hosted/frontend
+        run: npm ci
+      - name: Install Playwright dependencies and browser
+        working-directory: agents/order-resolution/azure-hosted/scripts/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build the immutable release images
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         working-directory: agents/order-resolution/azure-hosted
         run: |
-          if [[ ! -f backend/.env && -f backend/.env.example ]]; then
-            cp backend/.env.example backend/.env
-          fi
+          set -euo pipefail
+          release_tag="ci-${GITHUB_SHA}"
+          backend_image="${AZURE_CONTAINER_REGISTRY_ENDPOINT}/maf-order-resolution-agent/backend-maf-ora-azure:${release_tag}"
+          frontend_image="${AZURE_CONTAINER_REGISTRY_ENDPOINT}/maf-order-resolution-agent/frontend-maf-ora-azure:${release_tag}"
+          echo "RELEASE_RUN_ID=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "BACKEND_IMAGE=${backend_image}" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=${frontend_image}" >> "$GITHUB_ENV"
+          BACKEND_IMAGE="$backend_image" FRONTEND_IMAGE="$frontend_image" make build-release-images
       - name: Run Docker E2E profile
         working-directory: agents/order-resolution/azure-hosted
-        run: make docker-test
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" make docker-test
+          else
+            make docker-test
+          fi
+      - name: Deploy the tested immutable images
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        working-directory: agents/order-resolution/azure-hosted
+        run: make deploy-ci-images
+      - uses: actions/setup-python@v5
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        with:
+          python-version: "3.12"
+      - uses: Azure/setup-azd@v2
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Install release-validation dependencies
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        working-directory: agents/order-resolution/azure-hosted/backend
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r requirements-dev.txt
+      - name: Reconstruct release validation configuration
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        working-directory: agents/order-resolution/azure-hosted
+        run: ./scripts/release/bootstrap-ci-azd-environment.sh
+      - name: Smoke, hosted E2E, Foundry evaluation, and telemetry validation
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        working-directory: agents/order-resolution/azure-hosted
+        run: make release-validate
+      - name: Publish sanitized release evidence
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-hosted-release-${{ github.run_id }}
+          path: |
+            agents/order-resolution/azure-hosted/.artifacts/release/*/images.json
+            agents/order-resolution/azure-hosted/.artifacts/release/*/hosted-e2e-evidence.json
+            agents/order-resolution/azure-hosted/.artifacts/release/*/app-insights-*-pairs.json
+            agents/order-resolution/azure-hosted/.artifacts/release/*/app-insights-*-pair-*.json
+          if-no-files-found: warn
 
   design-review:
     name: Deterministic design-review gate
@@ -141,6 +280,11 @@ jobs:
       - name: Install frontend dependencies
         working-directory: agents/order-resolution/azure-hosted/frontend
         run: npm ci
+      - name: Install Playwright dependencies and browser
+        working-directory: agents/order-resolution/azure-hosted/scripts/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Run design-review gate
         run: agents/order-resolution/azure-hosted/scripts/skills/design-review-skill.sh
 
@@ -151,9 +295,22 @@ jobs:
     if: ${{ needs.routing.outputs.validation_mode == 'quick' }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            agents/order-resolution/azure-hosted/frontend/package-lock.json
+            agents/order-resolution/azure-hosted/scripts/playwright/package-lock.json
+      - name: Install backend dependencies
+        working-directory: agents/order-resolution/azure-hosted/backend
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r requirements-dev.txt
       - name: Install frontend dependencies
         working-directory: agents/order-resolution/azure-hosted/frontend
         run: npm ci

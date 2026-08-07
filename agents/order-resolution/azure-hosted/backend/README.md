@@ -30,6 +30,9 @@ orchestration does not change.
 - `POST /api/chat/run`
 - `GET /api/chat/stream/{thread_id}`
 - `GET /api/chat/stream/{thread_id}/rich`
+- `GET /api/chat/stream/{thread_id}/ag-ui`
+- `GET /api/copilotkit/info` and `GET /api/copilotkit`
+- `POST /api/copilotkit`
 - `POST /api/hitl/respond`
 - `GET /api/workflows`
 - `GET /api/workflows/{thread_id}`
@@ -41,6 +44,22 @@ orchestration does not change.
 
 `workflow.stage`, `tool.call`, `checkpoint.created`, `hitl.request`,
 `hitl.response`, and `workflow.output`.
+
+## Additive selected-thread projections
+
+The native stream and `/rich` envelope retain their existing contracts. In
+particular, `/rich` retains native event data and is not safe assistant input.
+
+`/ag-ui` is a separate durable-event projection: it accepts only a valid,
+already persisted thread ID and sends allowlisted lifecycle/tool labels,
+validated checkpoint IDs and approval decisions, plus generic terminal/error
+text. It does not stream raw native payloads.
+
+CopilotKit is an optional selected-thread UI integration, not the GitHub
+Copilot SDK. Its GET endpoints are static discovery. Its POST bridge selects
+one existing `threadId`; `runId`, messages, state, tools, context, and
+`forwardedProps` are accepted solely for protocol compatibility and discarded.
+The bridge never starts, resumes, or mutates a workflow.
 
 ## HITL conditions
 

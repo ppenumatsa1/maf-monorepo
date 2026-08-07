@@ -13,6 +13,13 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - Keep HITL behavior deterministic and testable.
 - Keep API response contracts stable for frontend and Playwright tests.
 - Keep the legacy SSE event stream stable; expose richer AG-UI-compatible events only as additive surfaces.
+- Keep `/rich` as its existing native-payload contract. Do not expose raw
+  native/rich payloads through an assistant UI.
+- `/api/chat/stream/{thread_id}/ag-ui` and `POST /api/copilotkit` may select
+  only an existing durable thread and return the redacted allowlisted
+  projection. Static `GET /api/copilotkit/info`/root discovery and disabled
+  inspector are required; no assistant surface may create or mutate workflow
+  state.
 
 ## Delivery formalization
 
@@ -27,6 +34,12 @@ The Azure deployment lane is one app-hosted package: two Container Apps in
 `rg-maf-ora-azure` in North Central US, with Foundry limited to models and
 evaluations. East US is excluded because of the Azure PostgreSQL offer
 restriction. Do not claim deployment until current validation evidence exists.
+Normal releases are `make release-app` app-only releases. PostgreSQL is
+retained: never recreate, replace, or reset it. Infrastructure reconciliation
+requires explicit owner confirmation, a non-secret reference, and a Bicep
+preview; it is never implicit. Require fresh release-thread correlation across smoke, hosted E2E,
+report-only evaluation, and Application Insights before claiming validation.
+Retain the CFS Python package feed and Alpine/musl-compatible frontend build.
 
 ## Workflow Guardrails
 
@@ -66,6 +79,11 @@ restriction. Do not claim deployment until current validation evidence exists.
     explicit failure event emission.
   - Do not replace stable native SSE events with rich/AG-UI events; expose rich
     events through additive routes/adapters.
+  - Keep selected-thread AG-UI/CopilotKit output redacted: no order/policy/MCP
+    data, tool arguments/results, prompts, model output, checkpoint state,
+    credentials, secrets, or raw native event payloads.
+  - Resolve frontend endpoint overrides from runtime configuration before Vite
+    fallback values, and do not enable the CopilotKit inspector.
 
 ## Local Validation Commands
 
@@ -73,7 +91,8 @@ restriction. Do not claim deployment until current validation evidence exists.
 - Eval harness: `make eval-backend`
 - Foundry evaluator report (model/runtime changes): `make eval-foundry`
 - Playwright E2E: `make test-e2e`
-- Docker E2E profile: `make docker-test`
+- Docker E2E profile: `make docker-test` when local Docker npm egress is
+  available; GitHub Actions **Required cloud Docker E2E** is authoritative.
 - Deterministic review/test gate: `./scripts/skills/design-review-skill.sh`
 
 ## Repository Skills
@@ -105,6 +124,10 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, and Azure PostgreSQL persistence.
+- `ag-ui-streaming-fastapi-py`: additive redacted selected-thread streaming.
+- `ag-ui-react-integration-ts`: selected-thread React/CopilotKit behavior.
+- `typescript-setup` and `typescript-update`: strict frontend updates.
+- `e2e-rubric`: native SSE, HITL, selected-thread, and evidence coverage.
 
 ## Baseline Test Inputs
 

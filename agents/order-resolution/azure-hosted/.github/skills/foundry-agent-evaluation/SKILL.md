@@ -34,6 +34,11 @@ make eval-foundry
 make eval-all
 ```
 
+For an authorized deployed app-only release, `make release-validate` runs the
+report-only evaluation after smoke and hosted E2E. Treat it as release evidence
+only when its endpoint and result correlate to that same fresh release window;
+it never turns Foundry into an application host.
+
 ## Guardrails
 
 - Keep one source-controlled golden dataset under `backend/.foundry/datasets/`.

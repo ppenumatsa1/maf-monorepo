@@ -20,7 +20,13 @@ duplicate terminal events.
 
 ## Read and stream endpoints
 
-- `GET /api/chat/stream/{thread_id}/rich` is an additive rich-event stream.
+- `GET /api/chat/stream/{thread_id}/rich` is an additive native-rich stream.
+- `GET /api/chat/stream/{thread_id}/ag-ui` is an additive redacted projection
+  of an existing durable thread.
+- `GET /api/copilotkit/info` (and `GET /api/copilotkit`) returns static
+  discovery with inspector/list/mutation endpoints disabled.
+- `POST /api/copilotkit` selects one existing `threadId`; compatibility fields
+  are discarded and the request cannot mutate a workflow.
 - `GET /api/workflows`
 - `GET /api/workflows/{thread_id}`
 - `GET /api/workflows/{thread_id}/events`
@@ -36,7 +42,16 @@ duplicate terminal events.
 - `workflow.output`
 
 The native stream remains the source of truth. The rich stream must not rename
-or replace it.
+or replace it and remains a native-payload contract. The assistant projections
+are deliberately separate: they expose only safe labels, validated
+checkpoint/decision summaries, and generic terminal/error text. They never
+surface raw native payloads, order/policy/MCP data, tool data, prompts, model
+output, checkpoint state, credentials, or secrets.
+
+The React image may configure the same endpoints at runtime through
+`window.__APP_CONFIG__` (`API_BASE`, `AG_UI_URL`, and `COPILOTKIT_URL`), before
+Vite fallback values. The CopilotKit inspector remains disabled; an optional
+AG-UI/CopilotKit failure must not block native timeline, history, or HITL UI.
 
 ## Baselines
 

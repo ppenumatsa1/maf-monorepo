@@ -1,5 +1,5 @@
 import TimelineEvent from "./TimelineEvent";
-import { WorkflowEvent } from "../../types/workflow";
+import type { WorkflowEvent } from "../../types/workflow";
 
 type Props = {
   events: WorkflowEvent[];

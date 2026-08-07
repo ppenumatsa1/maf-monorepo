@@ -10,8 +10,10 @@ runner, or other application-hosting surfaces.
 
 ## Status and target
 
-**Deployed.** Post-deployment smoke, hosted UI parity, and report-only
-evaluation use the environment outputs described in `.azure/deployment-plan.md`.
+**Source configuration only.** The resource names, outputs, and Bicep files
+describe intended deployment; they do not prove that a current revision or
+endpoint is live. A release record must contain fresh, non-secret smoke,
+hosted E2E, report-only evaluation, and telemetry-correlation evidence.
 
 | Setting | Value |
 | --- | --- |
@@ -51,6 +53,13 @@ Follow `.azure/deployment-plan.md`. At minimum, run the local test, evaluation,
 E2E, Docker, design-review, Bicep/AZD, IaC, and Azure readiness gates before
 deployment. Do not change the deployment-plan status until current code and IaC
 evidence exists.
+
+Normal deployment is app-only (`make release-app`) and preserves PostgreSQL.
+Use `make release-infra-preview` only with explicit reviewed approval to inspect
+an infrastructure reconciliation; do not call provision because an app,
+Dockerfile, frontend runtime setting, or Bicep file changed. The backend
+release image must retain the approved CFS `PIP_INDEX_URL`, and the frontend
+build must remain compatible with its Alpine/musl runtime.
 
 After an authorized deployment, run:
 

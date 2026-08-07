@@ -43,6 +43,10 @@ events, conversation messages, checkpoints, approvals, sessions, and evaluation 
   code or logs.
 - Preserve the existing Azure deployment boundary: Bicep provisions the server and application
   configuration provides `DATABASE_URL`; backend persistence code remains provider-neutral.
+- For normal releases, PostgreSQL is retained state: deploy app revisions only.
+  An explicit reconciliation review must prove the existing server and
+  `maf_workflow` database identity is preserved; never recreate, replace, drop,
+  or silently reset either to recover a release.
 
 ## Dynamic guidance
 
@@ -53,4 +57,3 @@ Use first-party documentation for service configuration that changes over time:
 | Python connection and Entra authentication | `microsoft_docs_search(query="Azure Database for PostgreSQL Flexible Server Python psycopg Microsoft Entra authentication")` |
 | Networking, TLS, and private access | `microsoft_docs_search(query="Azure Database for PostgreSQL Flexible Server networking TLS private access")` |
 | Azure PostgreSQL limits and maintenance | `microsoft_docs_search(query="Azure Database for PostgreSQL Flexible Server limits maintenance")` |
-

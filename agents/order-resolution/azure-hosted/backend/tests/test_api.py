@@ -27,6 +27,52 @@ def test_api_health_endpoint_alias() -> None:
     assert payload["service"] == "maf-orchestration-backend"
 
 
+def test_copilotkit_discovery_is_static_and_redacted() -> None:
+    response = client.get("/api/copilotkit")
+    info_response = client.get("/api/copilotkit/info")
+
+    assert response.status_code == 200
+    assert info_response.status_code == 200
+    expected_discovery = {
+        "version": "1.0",
+        "agents": {
+            "order-resolution-thread-assistant": {
+                "name": "Order Resolution Thread Assistant",
+                "className": "OrderResolutionThreadAssistant",
+                "description": (
+                    "Provides a read-only, redacted durable-event view for a selected workflow "
+                    "thread."
+                ),
+            }
+        },
+        "audioFileTranscriptionEnabled": False,
+        "mode": "sse",
+        "threadEndpoints": {
+            "list": False,
+            "inspect": False,
+            "mutations": False,
+            "realtimeMetadata": False,
+        },
+        "a2uiEnabled": False,
+    }
+    assert response.json() == expected_discovery
+    assert info_response.json() == expected_discovery
+    serialized = response.text.lower()
+    assert "ord-1009" not in serialized
+    assert "credential" not in serialized
+    assert "checkpoint" not in serialized
+    assert "prompt" not in serialized
+
+
+def test_selected_thread_routes_reject_bad_and_unknown_thread_ids() -> None:
+    assert client.get("/api/chat/stream/not%2Fvalid/ag-ui").status_code == 404
+    assert client.get("/api/chat/stream/missing-thread-123/ag-ui").status_code == 404
+    assert client.post("/api/copilotkit", json={"threadId": "not/valid"}).status_code == 422
+    assert (
+        client.post("/api/copilotkit", json={"threadId": "missing-thread-123"}).status_code == 404
+    )
+
+
 def test_chat_run_starts_workflow() -> None:
     response = client.post(
         "/api/chat/run",

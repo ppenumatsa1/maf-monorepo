@@ -2,8 +2,11 @@ SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env.example
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-test-postgres \
-	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-foundry-deployed eval-all test-e2e manual-matrix \
-	parity-all run-mock-mcp up down logs ps docker-test validate-quick validate-full deploy-app deploy-full clean
+	ensure-frontend ensure-playwright run-backend run-frontend format format-check lint test test-backend test-backend-run \
+	eval-backend eval-backend-run eval-foundry eval-foundry-deployed eval-all test-e2e test-e2e-run test-e2e-selected manual-matrix \
+	parity-all run-mock-mcp up down logs ps docker-test validate-quick validate-full bicep-build release-source-validation \
+	release-preflight release-app release-app-dry-run release-validate release-infra-preview release-infra-reconcile \
+	release-infra-mock-test build-release-images deploy-ci-images deploy-app deploy-full clean
 
 help:
 	@echo "Available targets:"
@@ -13,9 +16,15 @@ help:
 	@echo "  eval-backend     - Run deterministic workflow contract evaluation"
 	@echo "  eval-foundry     - Run report-only Foundry low/high-risk evaluation"
 	@echo "  eval-foundry-deployed - Run the Foundry evaluation against the selected AZD backend URL"
-	@echo "  test-e2e         - Run local Playwright tests"
-	@echo "  docker-test      - Run Playwright against Docker Compose"
+	@echo "  test-e2e-selected - Run focused selected-thread Playwright coverage"
+	@echo "  test-e2e         - Run all workflow and selected-thread Playwright tests"
+	@echo "  docker-test      - Optional local Docker Compose E2E; cloud CI is authoritative"
+	@echo "  build-release-images - Build the exact backend/frontend images selected by BACKEND_IMAGE and FRONTEND_IMAGE"
 	@echo "  parity-all       - Run fast local and Azure app-hosted parity checks"
+	@echo "  release-app      - Preflight and deploy app revisions only (the default release path)"
+	@echo "  release-validate - Smoke, hosted E2E/eval, then verify fresh App Insights evidence"
+	@echo "  release-infra-preview - Guarded owner-reviewed infrastructure what-if; never deploys"
+	@echo "  release-infra-reconcile - Guarded owner-confirmed infrastructure reconciliation"
 
 bootstrap: install-backend install-frontend
 
@@ -46,15 +55,24 @@ run-frontend:
 format: ensure-backend-env
 	cd backend && . .venv/bin/activate && ruff format .
 
+format-check: ensure-backend-env
+	cd backend && . .venv/bin/activate && ruff format --check .
+
 lint: ensure-backend-env
 	cd backend && . .venv/bin/activate && ruff check .
 
 test: lint test-backend
 
-test-backend: ensure-backend-env ensure-test-postgres
+test-backend:
+	./scripts/local/run-with-isolated-postgres.sh -- $(MAKE) test-backend-run
+
+test-backend-run: ensure-backend-env ensure-test-postgres
 	cd backend && . .venv/bin/activate && pytest -q
 
-eval-backend: ensure-backend-env ensure-test-postgres
+eval-backend:
+	./scripts/local/run-with-isolated-postgres.sh -- $(MAKE) eval-backend-run
+
+eval-backend-run: ensure-backend-env ensure-test-postgres
 	cd backend && . .venv/bin/activate && python -m evals.eval_runner
 
 eval-foundry: ensure-backend-env
@@ -77,14 +95,37 @@ eval-foundry-deployed:
 
 eval-all: eval-backend eval-foundry
 
+ensure-playwright:
+	@if [[ ! -x scripts/playwright/node_modules/.bin/playwright ]]; then \
+		cd scripts/playwright && npm ci; \
+	fi
+
+ensure-frontend:
+	@if [[ ! -x frontend/node_modules/.bin/vite ]]; then \
+		cd frontend && npm ci; \
+	fi
+
 test-e2e:
 	@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
-		cd scripts/playwright && npm run test:e2e; \
+		$(MAKE) test-e2e-run; \
+	else \
+		PLAYWRIGHT_E2E_SUITE="$${PLAYWRIGHT_E2E_SUITE:-all}" \
+			./scripts/local/run-with-isolated-postgres.sh -- $(MAKE) test-e2e-run; \
+	fi
+
+test-e2e-selected:
+	PLAYWRIGHT_E2E_SUITE=selected-thread $(MAKE) test-e2e
+
+test-e2e-run: ensure-frontend ensure-playwright
+	@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
+		./scripts/playwright/run-e2e-suite.sh "$${PLAYWRIGHT_BASE_URL}" "$${PLAYWRIGHT_E2E_SUITE:-all}"; \
 	else \
 		$(MAKE) ensure-backend-env ensure-test-postgres; \
 		backend_port="$$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"; \
 		backend_url="http://127.0.0.1:$${backend_port}"; \
-		backend_log="/tmp/maf-backend-e2e-$${backend_port}.log"; \
+		artifacts_dir="$$(pwd)/.artifacts/local-e2e-$${backend_port}"; \
+		mkdir -p "$${artifacts_dir}"; \
+		backend_log="$${artifacts_dir}/backend.log"; \
 		( \
 			cd backend && . .venv/bin/activate && \
 			APP_ENV=local \
@@ -97,7 +138,7 @@ test-e2e:
 		backend_pid="$$!"; \
 		frontend_port="$$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"; \
 		frontend_url="http://127.0.0.1:$${frontend_port}"; \
-		frontend_log="/tmp/maf-frontend-e2e-$${frontend_port}.log"; \
+		frontend_log="$${artifacts_dir}/frontend.log"; \
 		cleanup() { \
 			for pid in "$${backend_pid:-}" "$${frontend_pid:-}"; do \
 				[[ -n "$${pid}" ]] && kill "$${pid}" 2>/dev/null || true; \
@@ -137,7 +178,7 @@ test-e2e:
 			echo "Frontend proxy is not targeting the isolated local backend. See $${frontend_log}"; \
 			exit 1; \
 		fi; \
-		cd scripts/playwright && PLAYWRIGHT_BASE_URL="$${frontend_url}" npm run test:e2e; \
+		PLAYWRIGHT_ARTIFACTS_DIR="$${artifacts_dir}" ./scripts/playwright/run-e2e-suite.sh "$${frontend_url}" "$${PLAYWRIGHT_E2E_SUITE:-all}"; \
 		e2e_status="$$?"; \
 		cleanup; \
 		trap - EXIT; \
@@ -167,8 +208,36 @@ logs:
 ps:
 	docker compose --env-file $(COMPOSE_ENV_FILE) ps
 
-docker-test:
-	POSTGRES_PORT="$${POSTGRES_PORT:-5433}" MOCK_MCP_PORT="$${MOCK_MCP_PORT:-8012}" BACKEND_PORT="$${BACKEND_PORT:-8002}" FRONTEND_PORT="$${FRONTEND_PORT:-5174}" docker compose --env-file $(COMPOSE_ENV_FILE) --profile test up --build --abort-on-container-exit playwright
+docker-test: ensure-frontend ensure-playwright
+	@set -euo pipefail; \
+	build_args=(); \
+	if [[ -z "$${BACKEND_IMAGE:-}" || -z "$${FRONTEND_IMAGE:-}" ]]; then \
+		build_args+=(--build); \
+	fi; \
+	readarray -t ports < <(python3 -c 'import socket; sockets=[socket.socket() for _ in range(4)]; [s.bind(("127.0.0.1", 0)) for s in sockets]; print(*[s.getsockname()[1] for s in sockets], sep="\n"); [s.close() for s in sockets]'); \
+	project="maf-docker-e2e-$$(date +%s)-$$RANDOM"; \
+	artifacts_dir=".artifacts/$${project}"; \
+	mkdir -p "$${artifacts_dir}"; \
+	cleanup() { \
+		docker compose --project-name "$${project}" --env-file $(COMPOSE_ENV_FILE) --profile test down --volumes --remove-orphans >/dev/null 2>&1 || true; \
+	}; \
+	trap cleanup EXIT; \
+	POSTGRES_PORT="$${ports[0]}" \
+	MOCK_MCP_PORT="$${ports[1]}" \
+	BACKEND_PORT="$${ports[2]}" \
+	FRONTEND_PORT="$${ports[3]}" \
+	PLAYWRIGHT_ARTIFACTS_DIR="/workspace/$${artifacts_dir}" \
+	docker compose --project-name "$${project}" --env-file $(COMPOSE_ENV_FILE) --profile test up "$${build_args[@]}" --abort-on-container-exit --exit-code-from playwright playwright
+
+build-release-images:
+	@set -euo pipefail; \
+	[[ -n "$${BACKEND_IMAGE:-}" ]] || { echo "BACKEND_IMAGE is required."; exit 1; }; \
+	[[ -n "$${FRONTEND_IMAGE:-}" ]] || { echo "FRONTEND_IMAGE is required."; exit 1; }; \
+	docker build --tag "$${BACKEND_IMAGE}" backend; \
+	docker build --tag "$${FRONTEND_IMAGE}" frontend
+
+deploy-ci-images:
+	./scripts/release/deploy-ci-images.sh
 
 validate-quick:
 	@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then $(MAKE) test-e2e; \
@@ -179,17 +248,45 @@ validate-quick:
 validate-full:
 	$(MAKE) test
 	$(MAKE) eval-backend
+	$(MAKE) test-e2e-selected
 	$(MAKE) test-e2e
 	./scripts/skills/design-review-skill.sh
 
-deploy-app:
-	azd deploy
+bicep-build:
+	bicep build infra/azure-apphosted/iac/main.bicep --stdout >/dev/null
+
+release-source-validation:
+	./scripts/release/validate-release-assets.sh
+	./scripts/release/test-reconcile-infrastructure-approval.sh
+
+release-preflight:
+	@$(MAKE) --no-print-directory -j2 release-source-validation bicep-build
+
+release-app: release-preflight
+	./scripts/release/deploy-app-only.sh
+
+release-app-dry-run: release-preflight
+	RELEASE_DRY_RUN=true ./scripts/release/deploy-app-only.sh
+
+release-validate:
+	./scripts/release/validate-hosted-release.sh
+
+release-infra-preview:
+	./scripts/release/run-reconcile-infrastructure.sh --preview
+
+release-infra-reconcile:
+	./scripts/release/run-reconcile-infrastructure.sh --apply
+
+release-infra-mock-test:
+	./scripts/release/test-reconcile-infrastructure-approval.sh
+
+deploy-app: release-app
 
 deploy-full:
-	azd provision
-	azd deploy
+	@echo "Full deployment is disabled. Normal releases are app-only; use the explicitly owner-confirmed release-infra-reconcile target only when required." >&2
+	@exit 1
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -rf backend/.pytest_cache scripts/playwright/test-results scripts/playwright/playwright-report
+	rm -rf backend/.pytest_cache scripts/playwright/test-results scripts/playwright/playwright-report .artifacts

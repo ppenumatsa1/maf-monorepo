@@ -6,7 +6,8 @@ This guide provides end-to-end manual test examples for:
 2. high-risk flow with HITL pause and resume
 3. failure and recovery behavior
 
-Scenarios are aligned with the rubric in [scripts/rubric/e2e-rubric.md](scripts/rubric/e2e-rubric.md).
+Scenarios are aligned with the rubric in
+[scripts/rubric/e2e-rubric.md](../scripts/rubric/e2e-rubric.md).
 
 ## Preconditions
 
@@ -18,10 +19,11 @@ make up
 
 2. Confirm backend and frontend are reachable.
 
-- Backend health: [backend/app/main.py](backend/app/main.py)
-- UI: [frontend/src/App.tsx](frontend/src/App.tsx)
+- Backend health: [backend/app/main.py](../backend/app/main.py)
+- UI: [frontend/src/App.tsx](../frontend/src/App.tsx)
 
-3. Ensure Postgres is running and schema is initialized via [backend/app/core/database.py](backend/app/core/database.py).
+3. Ensure Postgres is running and schema is initialized via
+   [backend/app/core/database.py](../backend/app/core/database.py).
 
 4. Open the UI and keep browser devtools network tab visible for SSE validation.
 
@@ -52,6 +54,33 @@ For each run, verify these signals from timeline/API:
 - `conversation_messages`
 - `checkpoints` (when applicable)
 - `approvals` (when applicable)
+
+## Additive selected-thread safety
+
+Run this only against a thread that already exists from one of the workflow
+scenarios. It is a display/contract check, not a second way to execute work.
+
+1. Select an existing thread in Workflow Studio and open the AG-UI panel.
+   Confirm `GET /api/chat/stream/{thread_id}/ag-ui` returns only generic
+   lifecycle/tool labels, validated checkpoint/decision summaries, and generic
+   terminal text.
+2. Request `GET /api/copilotkit/info` (or `GET /api/copilotkit`) and confirm
+   static discovery reports no thread inspection or mutation endpoints.
+3. Load the optional CopilotKit selected-thread panel. Its POST request may
+   include standard protocol compatibility fields, but only the existing
+   `threadId` is meaningful. Verify it cannot start, approve, reject, resume,
+   or otherwise alter the workflow.
+4. Inspect rendered frames and browser network data. Do **not** expose raw
+   `/rich` envelopes, native payloads, orders, policy/MCP data, tool
+   arguments/results, prompts, model output, checkpoint state, credentials, or
+   secrets in either assistant panel.
+5. Confirm no `cpk-web-inspector` element is rendered. Temporarily making an
+   optional endpoint unavailable must leave native SSE, history, and HITL
+   controls usable.
+
+The `/rich` route remains a stable native-compatible event envelope for its
+existing consumers. It is deliberately separate from the redacted assistant
+projection.
 
 ## ORD-1001 to ORD-1010 Cross-Use-Case Matrix
 
@@ -129,6 +158,21 @@ This validates:
 
 Then use the ORD-1001 to ORD-1010 matrix above for manual parity between the
 local and Azure app-hosted environments.
+
+### Fresh release evidence
+
+This section is a procedure, not evidence that any Azure endpoint is currently
+deployed. For an authorized app-only release, use `make release-app`; it
+preserves the existing PostgreSQL server/database and produces smoke evidence
+with release, thread, and workflow-run identifiers. Run hosted Playwright,
+report-only Foundry evaluation, and Application Insights correlation against
+that same identifier/time window before recording success in
+`.azure/deployment-plan.md`.
+
+Do not infer a deployment result from local tests, source configuration, an old
+smoke artifact, or a broad telemetry query. If Docker E2E fails because TLS
+trust/handshake setup cannot be established, record that exact blocker and do
+not report Docker or hosted validation as passed.
 
 ## Two-target parity gate (local + Azure)
 
@@ -355,7 +399,7 @@ ORDER BY requested_at DESC;
 
 ## Pass Guidance
 
-Use the rubric in [scripts/rubric/e2e-rubric.md](scripts/rubric/e2e-rubric.md):
+Use the rubric in [scripts/rubric/e2e-rubric.md](../scripts/rubric/e2e-rubric.md):
 
 1. Target minimum `10/12`.
 2. Any score `0` in sequential orchestration, HITL gate/resume, or checkpoint durability is a fail.

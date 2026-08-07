@@ -1,6 +1,6 @@
 import JsonViewer from "./JsonViewer";
 import StatusBadge from "./StatusBadge";
-import { WorkflowStatus } from "../../types/workflow";
+import type { WorkflowStatus } from "../../types/workflow";
 
 type Props = {
   output: Record<string, unknown> | null;

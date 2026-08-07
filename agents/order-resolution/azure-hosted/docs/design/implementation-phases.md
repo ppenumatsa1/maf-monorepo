@@ -21,6 +21,14 @@ excluded because of the Azure PostgreSQL offer restriction.
 ## Ongoing constraints
 
 - Preserve native SSE events and deterministic HITL behavior.
-- Keep the rich event stream additive.
+- Keep `/rich` as its stable native additive contract; do not route raw rich
+  payloads into the assistant UI.
+- Keep `/ag-ui` and the CopilotKit bridge read-only, selected-existing-thread,
+  durable-event redacted projections. The frontend endpoint configuration is
+  runtime-injected and the inspector stays disabled.
 - Do not create a second workflow path when model configuration is absent.
 - Do not add Foundry application-hosting surfaces.
+- Default release work to `make release-app`; preserve PostgreSQL. Escalate
+  IaC drift to explicit reviewed Bicep reconciliation, then record fresh
+  smoke/E2E/report-only-eval/telemetry correlation rather than historical
+  evidence.

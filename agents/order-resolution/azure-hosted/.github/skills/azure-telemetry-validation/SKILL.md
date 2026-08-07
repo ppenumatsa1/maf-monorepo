@@ -37,6 +37,11 @@ PLAYWRIGHT_BASE_URL="$WEB_URL" make test-e2e
 
 This is part of telemetry stimulus and hosted parity. Do not pass telemetry validation if the UI shows Workflow History JSON errors such as `Unexpected token`, `not valid JSON`, or `<!doctype`, because that indicates the frontend is receiving HTML instead of API JSON and the hosted user path was not validated.
 
+Use the evidence file written by the smoke/release validation scripts. Its
+`release_run_id`, `release_started_at`, `thread_ids`, and `workflow_run_ids`
+define the query scope. Do not substitute a successful row from an older
+release or a broad lookback for correlation evidence.
+
 ## KQL checks
 
 Use `az monitor log-analytics query --workspace "$AZURE_LOG_ANALYTICS_WORKSPACE_ID" --analytics-query '<KQL>'`.
@@ -133,6 +138,11 @@ AppExceptions
 
 ## Pass/fail behavior
 
-- Pass when hosted Playwright UI parity succeeds, request rows exist for hosted API calls, dependencies include workflow/MAF/Foundry/HITL business spans, HITL wait/resume/response spans share `workflow.thread_id` and the same trace operation after persisted trace-context restore, no new `NoneType` attribute warnings are present, and no new workflow exceptions appear.
+- Pass when hosted Playwright UI parity succeeds, request rows exist for the
+  fresh release/thread identifiers, dependencies include workflow/MAF/Foundry/HITL
+  business spans, HITL wait/resume/response spans share
+  `workflow.thread_id` and the same trace operation after persisted
+  trace-context restore, no new `NoneType` attribute warnings are present, and
+  no new workflow exceptions appear.
 - If `AppRequests` is empty, verify FastAPI instrumentation is installed and `instrument_fastapi_app(app)` ran after FastAPI app creation.
 - If HITL spans are split across operations, inspect checkpoint state persistence for `telemetry_trace_context` and confirm the approval path uses it as parent trace context.

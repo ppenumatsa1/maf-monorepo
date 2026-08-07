@@ -12,7 +12,9 @@ This file describes expected behavior for coding agents working in this reposito
   claim deployment until current validation evidence exists.
 - Frontend: React + Vite, consumes SSE workflow events.
 - Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
-- Event streaming: legacy SSE remains the stable contract; additive rich events are exposed for AG-UI-compatible clients.
+- Event streaming: legacy SSE remains the stable contract; `/rich` remains an
+  additive native-rich contract, while `/ag-ui` and CopilotKit are separate
+  redacted selected-thread projections.
 - Backend package boundaries:
   - `backend/app/api/v1/routers/*` owns HTTP/SSE routes.
   - `backend/app/api/v1/schemas/*` owns API contracts.
@@ -41,6 +43,11 @@ This file describes expected behavior for coding agents working in this reposito
 - MAF middleware should centralize cross-cutting runtime behavior such as correlation, redaction/enrichment, usage/event observation, and explicit failure events
 - HITL telemetry must preserve checkpoint trace context so approval/resume spans stay correlated with the original workflow operation
 - additive rich event streams must preserve the native event payload and must not replace or rename stable SSE event types
+- never pass a raw native/rich payload into the assistant UI. AG-UI/CopilotKit
+  may select only a durable existing thread and may expose only the allowlisted
+  redacted projection.
+- frontend endpoint configuration must honor injected runtime values before
+  Vite fallbacks, and the CopilotKit inspector must stay disabled.
 
 6. Never remove coverage for:
 
@@ -57,7 +64,11 @@ Run and report:
 - `make test-e2e`
 - `./scripts/skills/design-review-skill.sh` (consolidated deterministic review/test gate)
 
-If a suite cannot run because of missing runtime dependencies (for example browser binaries), report the blocker and the exact command needed to unblock.
+`make docker-test` is optional locally where managed-device policy blocks
+Docker npm access. The GitHub Actions **Required cloud Docker E2E** job is the
+authoritative Docker gate for full-validation changes. If a suite cannot run
+because of missing runtime dependencies (for example browser binaries), report
+the blocker and the exact command needed to unblock.
 
 ## Repository Skills
 
@@ -76,6 +87,15 @@ Use focused skills instead of one broad agent pass:
 
 Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full validation and app-only-vs-full deployment for release work.
 
+Normal Azure releases are always `make release-app` app-only releases. Preserve
+the existing PostgreSQL server and `maf_workflow` database. Infrastructure
+reconciliation requires explicit owner confirmation, a non-secret
+approval/reference, and an owner-reviewed `make release-infra-preview`; it is
+never implied by changed files. Release
+claims require fresh smoke, hosted E2E, report-only evaluation, and Application
+Insights correlation evidence from the same release window. Retain the CFS
+package feed and Alpine/musl-compatible frontend build.
+
 ## Stack Implementation Skills
 
 Load only the relevant implementation skill for the task; these complement rather than replace the
@@ -91,6 +111,13 @@ local (repository-owned) skills:
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, and Azure PostgreSQL persistence.
+- `ag-ui-streaming-fastapi-py`: redacted durable selected-thread AG-UI and
+  CopilotKit projections.
+- `ag-ui-react-integration-ts`: React selected-thread UI and safe CopilotKit
+  context.
+- `typescript-setup` / `typescript-update`: strict frontend boundaries.
+- `e2e-rubric`: native SSE, HITL, selected-thread privacy, and release-evidence
+  coverage.
 
 Legacy shim paths have been removed. Do not add code that imports or recreates `app/models.py`, `app/config.py`, `app/db.py`, `app/state.py`, `app/workflow_run_repository.py`, `app/rag_repository.py`, `workflows/*`, `tools/*`, or root `app/api/*` router shims.
 Do not add a Foundry application runtime, proxy surface, or alternate

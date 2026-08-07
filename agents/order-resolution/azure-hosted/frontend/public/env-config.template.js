@@ -1,3 +1,5 @@
 window.__APP_CONFIG__ = {
   API_BASE: "${API_BASE}",
+  AG_UI_URL: "${AG_UI_URL}",
+  COPILOTKIT_URL: "${COPILOTKIT_URL}",
 };

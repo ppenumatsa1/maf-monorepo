@@ -13,6 +13,9 @@ This document defines the exact conditions that trigger human approval (`hitl.re
 
 - MAF SDK workflow: `backend/app/maf/workflows/order_resolution.py`
 - API-facing run/HITL requests now enter through `backend/app/modules/order_resolution/service.py`; this service delegates to the same MAF SDK workflow and does not change trigger behavior.
+- AG-UI/CopilotKit selected-thread endpoints are read-only redacted projections
+  of durable events. They do not participate in approval, reject, checkpoint,
+  or resume requests.
 
 ## Rule Summary
 
@@ -106,3 +109,6 @@ For non-HITL scenarios:
 - The deterministic evaluation dataset includes mixed HITL outcomes plus explicit
   approve/reject, explanation follow-up, and duplicate HITL idempotency
   assertions for app-hosted evaluation.
+- Selected-thread tests must confirm a generic approval summary can be shown
+  without exposing checkpoint payload/state or allowing the assistant bridge to
+  submit a decision.

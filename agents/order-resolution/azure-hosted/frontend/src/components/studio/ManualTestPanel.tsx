@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-import { MANUAL_CASES, ManualCase } from "../../data/manualCases";
-import { WorkflowEvent, WorkflowRunDetails } from "../../types/workflow";
+import { MANUAL_CASES } from "../../data/manualCases";
+import type { ManualCase } from "../../data/manualCases";
+import type { WorkflowEvent, WorkflowRunDetails } from "../../types/workflow";
 import StatusBadge from "./StatusBadge";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "escalated"]);
@@ -72,9 +73,8 @@ async function waitForProgress(
   threadId: string,
 ): Promise<WorkflowRunDetails> {
   const deadline = Date.now() + 30_000;
-  let latest: WorkflowRunDetails | null = null;
   while (Date.now() < deadline) {
-    latest = await fetchJson<WorkflowRunDetails>(
+    const latest = await fetchJson<WorkflowRunDetails>(
       `${apiBase}/api/workflows/${threadId}`,
     );
     if (
@@ -93,9 +93,8 @@ async function waitForTerminal(
   threadId: string,
 ): Promise<WorkflowRunDetails> {
   const deadline = Date.now() + 30_000;
-  let latest: WorkflowRunDetails | null = null;
   while (Date.now() < deadline) {
-    latest = await fetchJson<WorkflowRunDetails>(
+    const latest = await fetchJson<WorkflowRunDetails>(
       `${apiBase}/api/workflows/${threadId}`,
     );
     if (TERMINAL_STATUSES.has(latest.status)) {

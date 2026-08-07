@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from app.api.v1.routers import copilotkit as copilotkit_router
 from app.api.v1.schemas.chat import ChatRunRequest
+from app.api.v1.schemas.copilotkit import CopilotKitBridgeRequest
 from app.api.v1.schemas.hitl import HitlResponseRequest
 from app.infrastructure.events import EventBus
 from app.maf.middleware import (
@@ -13,6 +17,8 @@ from app.maf.middleware import (
     execute_with_failure_event,
 )
 from app.modules.order_resolution import events as event_types
+from app.modules.order_resolution.agui import native_agui_events_for_workflow_event
+from app.modules.order_resolution.durable_events import iter_durable_workflow_events
 from app.modules.order_resolution.models import WorkflowContext, WorkflowEvent
 from app.modules.order_resolution.projections import WorkflowRunEventProjector
 from app.modules.order_resolution.rich_events import rich_events_for_workflow_event
@@ -340,3 +346,213 @@ async def test_event_bus_rich_stream_emits_additive_agui_envelope() -> None:
     assert envelope["native_event"]["type"] == "workflow.output"
     assert envelope["events"][0]["type"] == "RUN_STARTED"
     assert envelope["events"][-1]["type"] == "RUN_FINISHED"
+
+
+def test_native_agui_projection_allowlists_and_redacts_workflow_payloads() -> None:
+    checkpoint_id = str(uuid4())
+    secret_values = {
+        "ORD-9000",
+        "customer@example.com",
+        "******",
+        "confidential policy text",
+        "reviewer-private",
+        "untrusted-checkpoint",
+        "raw workflow prompt",
+        "failure credential private-token",
+    }
+    events = [
+        WorkflowEvent(
+            type=event_types.WORKFLOW_STAGE,
+            thread_id="thread-123",
+            payload={
+                "agent": "triage",
+                "status": "completed",
+                "result": {"prompt": "raw workflow prompt"},
+            },
+        ),
+        WorkflowEvent(
+            type=event_types.TOOL_CALL,
+            thread_id="thread-123",
+            payload={
+                "local_tool": "fetch_order_status/fetch_policy",
+                "order": {"id": "ORD-9000", "email": "customer@example.com"},
+                "policy": "confidential policy text",
+                "mcp_result": {"authorization": "******"},
+            },
+        ),
+        WorkflowEvent(
+            type=event_types.HITL_REQUEST,
+            thread_id="thread-123",
+            payload={
+                "checkpoint_id": checkpoint_id,
+                "order_id": "ORD-9000",
+                "question": "raw workflow prompt",
+            },
+        ),
+        WorkflowEvent(
+            type=event_types.HITL_RESPONSE,
+            thread_id="thread-123",
+            payload={
+                "checkpoint_id": "untrusted-checkpoint",
+                "decision": "approve",
+                "reviewer": "reviewer-private",
+            },
+        ),
+        WorkflowEvent(
+            type=event_types.WORKFLOW_FAILED,
+            thread_id="thread-123",
+            payload={"message": "failure credential private-token"},
+        ),
+        WorkflowEvent(
+            type=event_types.WORKFLOW_OUTPUT,
+            thread_id="thread-123",
+            payload={
+                "message": "ORD-9000 and customer@example.com",
+                "status": "completed",
+                "submission_id": "******",
+            },
+        ),
+    ]
+
+    projected = [
+        agui_event
+        for event in events
+        for agui_event in native_agui_events_for_workflow_event(event)
+    ]
+    serialized = json.dumps(projected)
+
+    assert [event["type"] for event in projected] == [
+        "STEP_FINISHED",
+        "TOOL_CALL_START",
+        "TOOL_CALL_RESULT",
+        "TOOL_CALL_END",
+        "CUSTOM",
+        "CUSTOM",
+        "RUN_ERROR",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+        "RUN_FINISHED",
+    ]
+    assert projected[1]["toolCallName"] == "policy-lookup"
+    assert projected[2]["content"] == {"status": "completed"}
+    assert projected[4]["value"] == {"status": "pending", "checkpointId": checkpoint_id}
+    assert projected[5]["value"] == {"decision": "approve"}
+    assert next(event for event in projected if event["type"] == "RUN_ERROR") == {
+        "type": "RUN_ERROR",
+        "message": "The resolution workflow could not be completed.",
+        "code": "workflow_failed",
+    }
+    assert next(event for event in projected if event["type"] == "TEXT_MESSAGE_CONTENT")[
+        "delta"
+    ] == ("The resolution workflow completed.")
+    assert "rawEvent" not in serialized
+    assert "native_event" not in serialized
+    assert all(value not in serialized for value in secret_values)
+
+
+@pytest.mark.asyncio
+async def test_durable_event_iterator_replays_persisted_pages_before_tailing() -> None:
+    persisted_event = WorkflowEvent(
+        type=event_types.WORKFLOW_STAGE,
+        thread_id="thread-123",
+        payload={"agent": "triage", "status": "started"},
+    )
+    calls: list[tuple[str, int, str | None]] = []
+
+    def read_page(thread_id: str, limit: int, cursor: str | None):
+        calls.append((thread_id, limit, cursor))
+        return [persisted_event], None, False
+
+    stream = iter_durable_workflow_events("thread-123", read_page)
+    try:
+        assert await stream.__anext__() == persisted_event
+    finally:
+        await stream.aclose()
+
+    assert calls == [("thread-123", 100, None)]
+
+    idle_stream = iter_durable_workflow_events(
+        "thread-123",
+        lambda _thread_id, _limit, _cursor: ([], None, False),
+        poll_interval_seconds=0,
+        emit_heartbeats=True,
+    )
+    try:
+        assert await idle_stream.__anext__() is None
+    finally:
+        await idle_stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_copilotkit_bridge_streams_selected_thread_projection_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persisted_event = WorkflowEvent(
+        type=event_types.WORKFLOW_OUTPUT,
+        thread_id="thread-123",
+        payload={
+            "message": "Order ORD-9000 uses customer@example.com",
+            "status": "completed",
+            "credential": "******",
+        },
+    )
+
+    class SelectedThreadRepository:
+        def get_workflow_run(self, thread_id: str) -> SimpleNamespace | None:
+            return SimpleNamespace(thread_id=thread_id) if thread_id == "thread-123" else None
+
+        def list_workflow_events(
+            self,
+            thread_id: str,
+            limit: int,
+            cursor: str | None,
+        ) -> tuple[list[WorkflowEvent], str | None, bool]:
+            assert thread_id == "thread-123"
+            assert limit == 100
+            assert cursor is None
+            return [persisted_event], None, False
+
+    monkeypatch.setattr(copilotkit_router, "workflow_run_repository", SelectedThreadRepository())
+    response = await copilotkit_router.stream_selected_thread(
+        CopilotKitBridgeRequest(
+            threadId="thread-123",
+            messages=[{"role": "user", "content": "raw workflow prompt"}],
+        )
+    )
+    stream = response.body_iterator
+    try:
+        started = await stream.__anext__()
+        output_start = await stream.__anext__()
+        output_content = await stream.__anext__()
+    finally:
+        await stream.aclose()
+
+    serialized = b"".join(
+        item if isinstance(item, bytes) else item.encode()
+        for item in [started, output_start, output_content]
+    ).decode()
+    assert '"type":"RUN_STARTED"' in serialized
+    assert '"type":"TEXT_MESSAGE_CONTENT"' in serialized
+    assert "The resolution workflow completed." in serialized
+    assert "ORD-9000" not in serialized
+    assert "customer@example.com" not in serialized
+    assert "private-token" not in serialized
+    assert "raw workflow prompt" not in serialized
+
+
+def test_copilotkit_bridge_request_accepts_standard_input_without_exposing_it() -> None:
+    request = CopilotKitBridgeRequest(
+        threadId="thread-123",
+        runId="run-123",
+        messages=[{"role": "user", "content": "raw workflow prompt"}],
+        state={"credential": "******"},
+        tools=[{"name": "unsafe_tool"}],
+        context=[{"order": "ORD-9000"}],
+        forwardedProps={"prompt": "raw workflow prompt"},
+    )
+
+    assert request.thread_id == "thread-123"
+    assert request.model_dump() == {"thread_id": "thread-123"}
+    with pytest.raises(ValueError):
+        CopilotKitBridgeRequest(threadId="thread-123", apiKey="private-token")
