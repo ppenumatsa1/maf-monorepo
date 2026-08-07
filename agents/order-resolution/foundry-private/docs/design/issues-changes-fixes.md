@@ -82,10 +82,14 @@ release path completes.
 
 **Release execution blocker (2026-08-07).** Deployment was explicitly
 authorized, but the mandatory Azure validation workflow could not run because
-the environment denied access to the installed validation workflow script
-before any preflight action. No direct `azd` or Azure command was substituted
-for that gate. The protected release remains pending until the validation
-workflow can execute and hand off to the existing `vm-maffnd-runner` path.
+this session received `Permission denied and could not request permission from
+user` when it attempted to execute the installed validation workflow script,
+before any preflight action. This is a session/tool-access failure, not an
+Azure Policy, subscription RBAC, Bicep, or resource validation failure; the
+root cause cannot be established while the validator is inaccessible. No
+direct `azd` or Azure command was substituted for that gate. The protected
+release remains pending until the validation workflow can execute and hand off
+to the existing `vm-maffnd-runner` path.
 
 ## Redeployment baseline
 

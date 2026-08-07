@@ -60,10 +60,14 @@ only in the separate proof-gated PostgreSQL lockdown operation.
   `31199738312` for commit `b7febf2`.
 - The app-only preflight is ready to read existing topology, project
   connections, ACR roles, and revision images without modifying Azure.
-- The mandatory Azure Validate skill workflow could not be executed because
-  its workflow resources were denied by the content-exclusion policy. This
-  plan is therefore **not Validated**, and the protected app-only deployment
-  must not start until that gate can run successfully.
+- The mandatory Azure Validate skill workflow did not start: this session
+  received `Permission denied and could not request permission from user` when
+  it attempted to execute the installed validator script. This is a
+  session/tool-access failure, not an Azure Policy, RBAC, Bicep, or resource
+  validation result. The root cause remains unverified because the script
+  itself could not run. This plan is therefore **not Validated**, and the
+  protected app-only deployment must not start until that gate can run
+  successfully.
 
 ## Execution decision
 
