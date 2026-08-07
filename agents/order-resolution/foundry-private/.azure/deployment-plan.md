@@ -109,7 +109,8 @@ limitation is not a release gate.
 | App-only artifact deployment | `.github/workflows/order-resolution-private-deploy.yml` | Eligible after Azure Validate completes | Release approver |
 | Full reconciliation | `.github/workflows/order-resolution-private-provision.yml` and `make foundry-provision-preview` | Blocked by shared-resource drift | Shared-network, Foundry, data, registry, and observability owners |
 | PostgreSQL lockdown | `make foundry-connectivity-proof` then `make foundry-postgres-lockdown` | Not eligible until after a separate fresh proof | Database owner with explicit confirmation |
-| Hosted E2E/evaluation/telemetry evidence | `.github/workflows/order-resolution-private-observability.yml` | Runs only after a successful deployment | Release owner |
+| Hosted telemetry diagnosis | `.github/workflows/order-resolution-private-observability.yml` | Runs after deployment | Release owner |
+| Hosted smoke/E2E/evaluation/telemetry evidence | `.github/workflows/order-resolution-private-evidence.yml` | Runs only after a successful deployment | Release owner |
 
 ### Required policy decision
 

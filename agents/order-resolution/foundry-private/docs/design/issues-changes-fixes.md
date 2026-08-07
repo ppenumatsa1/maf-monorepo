@@ -138,6 +138,14 @@ change, while shared infrastructure remains untouched and no new policy finding
 is permitted. Full-IaC reconciliation and PostgreSQL lockdown remain separate
 approved operations.
 
+**Separate release-evidence execution (2026-08-07).** The app-only deploy
+workflow intentionally releases only Container App revisions and the hosted
+agent. A separately confirmed protected workflow now runs the existing fresh
+hosted smoke/HITL E2E, enforced Foundry evaluation, and Application Insights
+telemetry verification target after deployment. It cannot provision
+infrastructure, reconcile connections/RBAC, deploy another artifact, or
+perform PostgreSQL lockdown.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All

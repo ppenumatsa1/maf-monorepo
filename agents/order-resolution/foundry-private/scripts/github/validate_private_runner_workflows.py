@@ -11,9 +11,11 @@ DEPLOYMENT_WORKFLOWS = (
     "order-resolution-private-deploy.yml",
 )
 PACKAGE_VALIDATION_WORKFLOW = "order-resolution-private-package-validation.yml"
+EVIDENCE_WORKFLOW = "order-resolution-private-evidence.yml"
 SERIALIZED_PRIVATE_WORKFLOWS = (
     *DEPLOYMENT_WORKFLOWS,
     PACKAGE_VALIDATION_WORKFLOW,
+    EVIDENCE_WORKFLOW,
     "order-resolution-private-observability.yml",
 )
 PRIVATE_PREFIX = "agents/order-resolution/foundry-private"
@@ -174,6 +176,43 @@ def validate() -> None:
         "make foundry-evidence",
     ):
         forbid(package_validation, forbidden_operation, PACKAGE_VALIDATION_WORKFLOW)
+
+    evidence = (WORKFLOWS / EVIDENCE_WORKFLOW).read_text()
+    for value in (
+        "workflow_dispatch:",
+        "confirmation:",
+        "options: [cancel, collect]",
+        "environment: foundry-private-env",
+        "self-hosted",
+        "foundry-private-v2",
+        "id-token: write",
+        "uses: azure/login@v2",
+        "uses: actions/setup-python@v5",
+        'python-version: "3.12"',
+        "client-id: ${{ vars.AZURE_CLIENT_ID }}",
+        "tenant-id: ${{ vars.AZURE_TENANT_ID }}",
+        "subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}",
+        "azd config set auth.useAzCliAuth true",
+        "bootstrap_private_azd_environment.sh",
+        "validate_private_runner_environment.sh",
+        "make foundry-evidence",
+        f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
+    ):
+        require(evidence, value, EVIDENCE_WORKFLOW)
+    require(evidence, "secrets.POSTGRES_ADMIN_PASSWORD", EVIDENCE_WORKFLOW)
+    if evidence.count("secrets.") != 1:
+        raise AssertionError(
+            f"{EVIDENCE_WORKFLOW} may reference only the PostgreSQL admin password secret."
+        )
+    for forbidden_operation in (
+        "azd provision",
+        "azd deploy",
+        "make foundry-app-only-release",
+        "make foundry-hosted-app-deploy",
+        "make foundry-project-connections",
+        "make foundry-postgres-lockdown",
+    ):
+        forbid(evidence, forbidden_operation, EVIDENCE_WORKFLOW)
 
     makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
     app_only_preflight_body = makefile.split(
