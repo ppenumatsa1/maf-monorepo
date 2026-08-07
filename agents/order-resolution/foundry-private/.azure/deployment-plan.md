@@ -51,6 +51,20 @@ subnet, separate from the Foundry agent-host subnet. Keep
 FQDN. Public-access removal and Azure-services firewall removal are allowed
 only in the separate proof-gated PostgreSQL lockdown operation.
 
+## Validation evidence and current gate
+
+- Local `make validate-full` passed: 128 backend tests, 10 deterministic
+  evaluations, 7 workflow E2E tests, 4 selected-thread E2E tests, and the
+  design-review gate.
+- Private static workflow validation passed in GitHub Actions run
+  `31199738312` for commit `b7febf2`.
+- The app-only preflight is ready to read existing topology, project
+  connections, ACR roles, and revision images without modifying Azure.
+- The mandatory Azure Validate skill workflow could not be executed because
+  its workflow resources were denied by the content-exclusion policy. This
+  plan is therefore **not Validated**, and the protected app-only deployment
+  must not start until that gate can run successfully.
+
 ## Execution decision
 
 Use the VNet-connected `foundry-private-v2` runner and serialized release
