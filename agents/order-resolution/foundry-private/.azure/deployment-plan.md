@@ -60,29 +60,34 @@ only in the separate proof-gated PostgreSQL lockdown operation.
   `31199738312` for commit `b7febf2`.
 - The app-only preflight is ready to read existing topology, project
   connections, ACR roles, and revision images without modifying Azure.
-- The mandatory Azure Validate skill workflow did not start: this session
-  received `Permission denied and could not request permission from user` when
-  it attempted to execute the installed validator script. This is a
-  session/tool-access failure, not an Azure Policy, RBAC, Bicep, or resource
-  validation result. The root cause remains unverified because the script
-  itself could not run. This plan is therefore **not Validated**, and the
-  protected app-only deployment must not start until that gate can run
-  successfully.
+- Azure Validate access is restored. AZD installation, schema/environment,
+  Azure authentication, subscription/location, Docker build-context, build,
+  and preview checks completed. The complete read-only app-only dependency
+  preflight passed on the selected private environment.
+- Protected package-only run `31206155614` passed on `vm-maffnd-runner`; it
+  validated dependencies, generated the hosted-agent context, and built all
+  release images without publishing or deploying them.
+- Azure Policy validation is **not passing**: `az policy state list` reports
+  18 noncompliant states in `rg-maf-ora-foundry-v2`. They include shared runner
+  VM, VNet, ACR, PostgreSQL, Search, and Foundry-project diagnostics resources.
+  The app-only lane must not modify those shared resources, so this plan is
+  **not Validated** and the protected app-only deployment must not start until
+  the policy owners provide an approved remediation or exception decision.
 
 ## All validation checks pass
 
-- [ ] 1. AZD Installation
-- [ ] 2. Schema Validation
-- [ ] 3. Environment Setup
-- [ ] 4. Authentication Check
-- [ ] 5. Subscription/Location Check
-- [ ] 6. Aspire Pre-Provisioning Checks (not applicable; this is not an Aspire project)
-- [ ] 7. Provision Preview (full-IaC preview remains a separate blocked reconciliation operation)
-- [ ] 8. Build Verification
-- [ ] 9. Docker Build Context Validation
-- [ ] 10. Package Validation
-- [ ] 11. Azure Policy Validation
-- [ ] 12. Aspire Post-Provisioning Checks (not applicable; this is not an Aspire project)
+- [x] 1. AZD Installation
+- [x] 2. Schema Validation
+- [x] 3. Environment Setup
+- [x] 4. Authentication Check
+- [x] 5. Subscription/Location Check
+- [x] 6. Aspire Pre-Provisioning Checks (not applicable; this is not an Aspire project)
+- [x] 7. Provision Preview (completed; full-IaC reconciliation remains blocked)
+- [x] 8. Build Verification
+- [x] 9. Docker Build Context Validation
+- [x] 10. Package Validation
+- [ ] 11. Azure Policy Validation (18 existing noncompliant shared-resource states)
+- [x] 12. Aspire Post-Provisioning Checks (not applicable; this is not an Aspire project)
 
 **Packaging execution note.** Local Docker packaging is blocked when `npm ci`
 contacts `registry.npmjs.org`: the managed-device endpoint returns

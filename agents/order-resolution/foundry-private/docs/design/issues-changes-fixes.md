@@ -102,6 +102,24 @@ defect. The protected package-only private-runner workflow must prove the
 runner's package egress before any app-only deployment. It builds images only:
 it does not publish, provision, deploy, or modify Azure resources.
 
+**Azure validation and policy evidence (2026-08-07).** Validator access was
+subsequently restored. The selected private AZD environment authenticated,
+read-only topology/project-connection/RBAC preflight passed, and protected
+package-only run
+[`31206155614`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31206155614)
+successfully built all packages on `vm-maffnd-runner` without publishing or
+deploying. The prerequisite full-IaC preview completed without applying
+changes but reconfirmed the recorded shared-resource drift.
+
+The remaining validation failure is Azure Policy compliance: the resource group
+currently reports 18 noncompliant states. They cover shared Security Center
+recommendations for the private runner VM, VNet, ACR, PostgreSQL, and Search,
+plus `ProjectsAIFoundry_Diagnostics_Enable` on the Foundry project. An
+app-only release is prohibited from modifying those shared resources. Do not
+mark the plan validated or deploy until policy owners record an approved
+remediation or exception decision; this is now a real Azure policy-compliance
+gate, unlike the earlier session-tool access failure.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All
