@@ -26,8 +26,14 @@ export type AgUiThreadStream = {
   stop: () => void;
 };
 
-function createClientId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID()}`;
+let clientIdSequence = 0;
+
+export function createClientId(prefix: string): string {
+  clientIdSequence += 1;
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid
+    ? `${prefix}-${uuid}`
+    : `${prefix}-${Date.now().toString(36)}-${clientIdSequence.toString(36)}`;
 }
 
 function frameForEvent(event: unknown): AgUiFrame | null {

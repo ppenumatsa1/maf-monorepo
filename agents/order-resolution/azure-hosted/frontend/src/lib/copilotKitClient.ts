@@ -1,5 +1,5 @@
 import { getCopilotKitEndpoint } from "../config";
-import { consumeAgUiSseResponse } from "./agUiClient";
+import { consumeAgUiSseResponse, createClientId } from "./agUiClient";
 import type { AgUiFrame } from "./agUiClient";
 
 export class OptionalCopilotKitEndpointError extends Error {
@@ -22,7 +22,7 @@ export type CopilotKitThreadStream = {
 };
 
 function createRunId(): string {
-  return `order-resolution-copilot-${crypto.randomUUID()}`;
+  return createClientId("order-resolution-copilot");
 }
 
 async function consumeCopilotKitThreadStream({

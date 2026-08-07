@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AgUiFrame } from "../../lib/agUiClient";
 import {
@@ -25,7 +25,7 @@ export default function SelectedThreadAssistantPanel({ apiBase, threadId }: Prop
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     streamRef.current?.stop();
     streamRef.current = null;
     setFrames([]);
