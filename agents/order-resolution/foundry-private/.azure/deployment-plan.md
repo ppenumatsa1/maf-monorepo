@@ -97,6 +97,33 @@ will run the same `azd package --no-prompt` check on `vm-maffnd-runner`
 without publishing images or modifying Azure resources. Its result is required
 before the app-only deployment.
 
+## Gate ownership and approval map
+
+| Gate | Where it runs | Current state | Decision owner |
+| --- | --- | --- | --- |
+| Static workflow and Bicep validation | `.github/workflows/order-resolution-private-validation.yml` | Passed: `31206115459` | Repository maintainers |
+| Private dependency/RBAC preflight | `scripts/foundry/validate_private_app_release.sh` via `make foundry-app-only-preflight` | Passed read-only | Private resource-group operator |
+| Private package build | `.github/workflows/order-resolution-private-package-validation.yml` | Passed: `31206155614` | Private runner operator |
+| Azure Policy compliance | Azure Policy states for `rg-maf-ora-foundry-v2` | **Blocked: 18 existing findings** | Subscription security/governance owners; management-group governance owner for Foundry diagnostics |
+| App-only artifact deployment | `.github/workflows/order-resolution-private-deploy.yml` | Blocked by Azure Policy gate | Release approver after policy decision |
+| Full reconciliation | `.github/workflows/order-resolution-private-provision.yml` and `make foundry-provision-preview` | Blocked by shared-resource drift | Shared-network, Foundry, data, registry, and observability owners |
+| PostgreSQL lockdown | `make foundry-connectivity-proof` then `make foundry-postgres-lockdown` | Not eligible until after a separate fresh proof | Database owner with explicit confirmation |
+| Hosted E2E/evaluation/telemetry evidence | `.github/workflows/order-resolution-private-observability.yml` | Runs only after a successful deployment | Release owner |
+
+### Required policy decision
+
+Seventeen findings come from `SecurityCenterBuiltIn`, the subscription's
+default **audit-only** Defender policy assignment. The remaining
+`ProjectsAIFoundry_Diagnostics_Enable` finding is inherited through
+`MCAPSGovDeployPolicies` at management-group scope. The current deployment
+identity can remediate resource-group resources but cannot read or approve the
+management-group assignment. The governance owner must approve one of:
+
+1. a documented, time-bounded exception that permits this app-only release
+   while the pre-existing findings remain; or
+2. a remediation plan for the shared resources, including the Foundry
+   diagnostics requirement, followed by a new compliance check.
+
 ## Execution decision
 
 Use the VNet-connected `foundry-private-v2` runner and serialized release

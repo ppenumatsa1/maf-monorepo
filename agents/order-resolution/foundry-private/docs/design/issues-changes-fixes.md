@@ -120,6 +120,16 @@ mark the plan validated or deploy until policy owners record an approved
 remediation or exception decision; this is now a real Azure policy-compliance
 gate, unlike the earlier session-tool access failure.
 
+**Policy ownership boundary.** Seventeen findings are inherited from the
+subscription-level `SecurityCenterBuiltIn` default audit assignment. The
+remaining Foundry diagnostics finding is inherited from
+`MCAPSGovDeployPolicies` at management-group scope. The current deployment
+identity has subscription-level Owner access but Azure denied its attempt to
+read the management-group policy assignment. It therefore cannot identify or
+approve that governance exception. The policy/governance owner must authorize a
+time-bounded app-only-release exception or a shared-resource remediation plan;
+the private app-only lane must not change those resources unilaterally.
+
 ## Redeployment baseline
 
 The private Foundry resources were intentionally deleted on 2026-07-28. All
