@@ -3,7 +3,7 @@ FROM node:20.19.0-alpine3.20 AS build
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev --no-audit
 
 COPY . .
 RUN npm run build

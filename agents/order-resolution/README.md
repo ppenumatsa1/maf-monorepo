@@ -42,6 +42,11 @@ details:
 - **Azure app-hosted:** [project overview](azure-hosted/README.md) and
   [Azure app-hosted package](azure-hosted/infra/azure-apphosted/README.md).
 
+All three lanes use the shared, non-secret
+[deployment-profile contract](deployment/README.md) to select the Azure
+subscription, resource group, location, and AZD environment for an existing
+target.
+
 Run validation and deployment commands from the selected project root. The
 project README is authoritative for its environment, credentials, release
 sequence, and hosted validation requirements.

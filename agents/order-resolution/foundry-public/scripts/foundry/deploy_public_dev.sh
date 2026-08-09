@@ -145,7 +145,12 @@ case "$validation_mode" in
     ;;
 esac
 
-make "$validation_target" &
+(
+  # Local validation uses its isolated test database, never the production
+  # runtime connection required by the later deployment steps.
+  unset RUNTIME_DATABASE_URL DATABASE_URL
+  make "$validation_target"
+) &
 validation_pid=$!
 make foundry-iac-build &
 iac_pid=$!

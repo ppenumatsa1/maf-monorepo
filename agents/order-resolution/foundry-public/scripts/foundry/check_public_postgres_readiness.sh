@@ -54,7 +54,7 @@ firewall_json="$(
   az postgres flexible-server firewall-rule list \
     --subscription "$SUBSCRIPTION_ID" \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$SERVER_NAME" \
+    --server-name "$SERVER_NAME" \
     -o json
 )"
 
