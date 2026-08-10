@@ -54,6 +54,7 @@ class EvalCase:
     hitl_decision: str | None = None
     assert_duplicate_hitl_response: bool = False
     requires_explanation: bool = False
+    expected_explanation_factors: tuple[str, ...] = ()
     prohibited_claims: tuple[str, ...] = ()
 
 
@@ -91,6 +92,13 @@ def _load_cases(cases_path: Path) -> list[EvalCase]:
             raise ValueError(
                 f"{cases_path}:{index} prohibited_claims must be a list of non-empty strings"
             )
+        explanation_factors = row.get("expected_explanation_factors", [])
+        if not isinstance(explanation_factors, list) or not all(
+            isinstance(factor, str) and factor for factor in explanation_factors
+        ):
+            raise ValueError(
+                f"{cases_path}:{index} expected_explanation_factors must be a list of non-empty strings"
+            )
 
         cases.append(
             EvalCase(
@@ -112,6 +120,7 @@ def _load_cases(cases_path: Path) -> list[EvalCase]:
                     row.get("assert_duplicate_hitl_response", False)
                 ),
                 requires_explanation=bool(row.get("requires_explanation", False)),
+                expected_explanation_factors=tuple(explanation_factors),
                 prohibited_claims=tuple(prohibited_claims),
             )
         )
@@ -344,8 +353,9 @@ async def _run_case(*, case: EvalCase, workflow, event_bus: EventBus) -> dict[st
         )
         if explanation_stage is None:
             raise AssertionError("explanation follow-up stage missing")
-        if "The resolution was selected from order status and policy checks." not in output_message:
-            raise AssertionError("explanation output missing expected rationale prefix")
+        for factor in case.expected_explanation_factors:
+            if factor.lower() not in output_message.lower():
+                raise AssertionError(f"explanation output missing factor: '{factor}'")
 
     return {
         "id": case.id,

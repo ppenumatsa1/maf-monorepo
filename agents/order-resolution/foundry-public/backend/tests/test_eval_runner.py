@@ -63,6 +63,28 @@ async def test_run_case_enforces_duplicate_hitl_idempotency(tmp_path: Path) -> N
     assert capture["last_output"]["status"] == "completed"
 
 
+@pytest.mark.asyncio
+async def test_public_session_history_case_requires_concrete_explanation(tmp_path: Path) -> None:
+    cases_path = (
+        Path(__file__).parents[1]
+        / ".foundry"
+        / "datasets"
+        / "order-resolution-hosted-cases.jsonl"
+    )
+    case = next(case for case in _load_cases(cases_path) if case.id == "ord-1007-session-history")
+    workflow = OrderResolutionWorkflow(
+        event_bus=EventBus(),
+        memory_store=SessionMemoryStore(tmp_path / "memory"),
+        checkpoint_store=CheckpointStore(tmp_path / "checkpoints"),
+        mcp_tool=MCPKnowledgeTool(endpoint=None),
+    )
+
+    capture = await _run_case(case=case, workflow=workflow, event_bus=workflow.event_bus)
+
+    assert capture["last_output"]["status"] == "completed"
+    assert "HITL approval was not required." in capture["last_output"]["message"]
+
+
 def test_load_cases_rejects_invalid_hitl_decision(tmp_path: Path) -> None:
     dataset = tmp_path / "cases.jsonl"
     dataset.write_text(
@@ -81,4 +103,21 @@ def test_load_cases_rejects_invalid_hitl_decision(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError):
+        _load_cases(dataset)
+
+
+def test_load_cases_rejects_invalid_explanation_factors(tmp_path: Path) -> None:
+    dataset = tmp_path / "cases.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "id": "bad-explanation-case",
+                "input": "Order ORD-1001 is delayed.",
+                "expect_hitl": False,
+                "expected_explanation_factors": ["order ord-1001", 79],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="expected_explanation_factors"):
         _load_cases(dataset)

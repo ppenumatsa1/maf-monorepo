@@ -71,8 +71,15 @@ for thread_id in thread_ids:
     workflow_run_ids: set[str] = set()
     for _ in range(20):
         thread_url = urllib.parse.quote(thread_id, safe="")
-        with urllib.request.urlopen(f"{api_url}/api/workflows/{thread_url}/events?limit=100") as response:
-            events = json.loads(response.read().decode("utf-8")).get("items", [])
+        try:
+            with urllib.request.urlopen(
+                f"{api_url}/api/workflows/{thread_url}/events?limit=100"
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            time.sleep(1)
+            continue
+        events = payload.get("items", []) if isinstance(payload, dict) else []
         workflow_run_ids = {
             str(event.get("payload", {}).get("workflow_run_id"))
             for event in events

@@ -414,15 +414,48 @@ class OrderResolutionWorkflow:
 
     def _build_explanation(self, thread_id: str) -> str:
         messages = self.memory_store.get_messages(thread_id)
-        for item in reversed(messages[:-1]):
-            role = str(item.get("role", "")).strip().lower()
-            content = str(item.get("content", "")).strip()
-            if role == "assistant" and content:
-                return (
-                    "The resolution was selected from order status and policy checks. "
-                    f"Previous result: {content}"
-                )
-        return (
-            "The resolution is selected from order status, policy evidence, "
-            "and HITL thresholds for high-risk or damaged-item cases."
+        prior_messages = messages[:-1]
+        prior_user_message = self._find_prior_user_message(prior_messages)
+        if not prior_user_message:
+            return "I could not find a prior user request to explain."
+
+        issue_type, order, policy = self._policy_executor.deterministic_inputs(prior_user_message)
+        decision = self._resolution_executor.decide(
+            issue_type=issue_type,
+            amount=order.total_amount,
+            policy=policy,
         )
+        hitl_factor = (
+            "HITL approval was required."
+            if decision.requires_approval
+            else "HITL approval was not required."
+        )
+        explanation = (
+            f"The prior request was for order {order.order_id}: issue {issue_type}, "
+            f"status {order.state}, policy {policy}, action {decision.action}, "
+            f"and amount ${decision.amount:.2f}. {hitl_factor}"
+        )
+        prior_outcome = self._find_prior_assistant_message(prior_messages)
+        if prior_outcome:
+            return f"{explanation} Previous result: {prior_outcome}"
+        return explanation
+
+    @staticmethod
+    def _find_prior_user_message(messages: list[dict[str, Any]]) -> str | None:
+        for item in reversed(messages):
+            if str(item.get("role", "")).strip().lower() != "user":
+                continue
+            content = str(item.get("content", "")).strip()
+            if content:
+                return content
+        return None
+
+    @staticmethod
+    def _find_prior_assistant_message(messages: list[dict[str, Any]]) -> str | None:
+        for item in reversed(messages):
+            if str(item.get("role", "")).strip().lower() != "assistant":
+                continue
+            content = str(item.get("content", "")).strip()
+            if content:
+                return content
+        return None

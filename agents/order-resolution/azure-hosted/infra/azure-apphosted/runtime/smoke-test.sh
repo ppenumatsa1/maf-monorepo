@@ -14,13 +14,29 @@ if [[ -n "$FRONTEND_URL" ]]; then
   curl --fail --silent "$FRONTEND_URL/api/health" >/dev/null
 fi
 
-RUN_RESPONSE="$(curl --silent --show-error -X POST "$BASE_URL/api/chat/run" \
-  -H 'Content-Type: application/json' \
-  -d "{\"thread_id\":\"${LOW_RISK_THREAD_ID}\",\"message\":\"ORD-1001 late delivery\"}")"
+run_chat() {
+  local thread_id="$1"
+  local message="$2"
+  local response=""
+  local attempt
 
-HITL_RESPONSE="$(curl --silent --show-error -X POST "$BASE_URL/api/chat/run" \
-  -H 'Content-Type: application/json' \
-  -d "{\"thread_id\":\"${HIGH_RISK_THREAD_ID}\",\"message\":\"ORD-1009 is delayed by 5 days. I need compensation.\"}")"
+  for attempt in {1..10}; do
+    if response="$(curl --fail --silent --show-error -X POST "$BASE_URL/api/chat/run" \
+      -H 'Content-Type: application/json' \
+      -d "{\"thread_id\":\"${thread_id}\",\"message\":\"${message}\"}")" &&
+      [[ -n "$response" ]]; then
+      printf '%s' "$response"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Timed out waiting for a non-empty /api/chat/run response for ${thread_id}." >&2
+  return 1
+}
+
+RUN_RESPONSE="$(run_chat "$LOW_RISK_THREAD_ID" "ORD-1001 late delivery")"
+HITL_RESPONSE="$(run_chat "$HIGH_RISK_THREAD_ID" "ORD-1009 is delayed by 5 days. I need compensation.")"
 
 python3 - <<'PY' \
   "$RUN_RESPONSE" \

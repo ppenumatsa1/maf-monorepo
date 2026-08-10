@@ -9,6 +9,32 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-09 - Public lane v17 app-only release
+
+**Released lane**
+
+- Hosted agent `order-resolution-hosted` version 17 was deployed together with
+  the existing public frontend and internal backend Container Apps. The route
+  remained app-only and did not reconcile retained Foundry, PostgreSQL, ACR,
+  monitoring, or shared network resources.
+- PostgreSQL readiness now uses the current Azure CLI `--server-name` argument.
+  The release script keeps the runtime database URL out of isolated local
+  validation, while retaining it for the later runtime deployment steps.
+- Browser E2E assertions now verify the structured `completed` status rather
+  than obsolete response wording.
+
+**Release evidence**
+
+- Hosted smoke passed for the delayed-order scenario.
+- Fresh hosted Responses E2E passed for two conversations.
+- Application Insights correlated 30 rows across those E2E conversations.
+- Trace evaluation
+  `eval_a1a3de3296b84b69ae80ada8a9d0c993` /
+  `evalrun_a8cc9b11ed064c198edb592cbaebbf96` completed with one passed and
+  one failed result. The release command completed because the evaluator
+  returned a completed run, but the failed quality result requires follow-up
+  before treating the evaluation as a passing quality gate.
+
 ## 2026-08-07 - Public lane v15 response-quality remediation and release
 
 **Released lane**

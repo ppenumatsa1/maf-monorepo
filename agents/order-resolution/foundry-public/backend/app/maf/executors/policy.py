@@ -25,6 +25,14 @@ class PolicyExecutor:
         self._rag_provider = rag_provider
         self._mcp_tool = mcp_tool
 
+    @staticmethod
+    def deterministic_inputs(user_message: str) -> tuple[str, OrderStatus, str]:
+        message = user_message.lower()
+        order_id = "ord-1009" if "1009" in message else "ord-1001"
+        issue_type = classify_issue(message)
+        order = fetch_order_status(order_id)
+        return issue_type, order, fetch_policy(issue_type)
+
     async def resolve_inputs(
         self,
         *,
@@ -33,11 +41,7 @@ class PolicyExecutor:
         retry_read_operation,
         emit: Callable[[str, dict[str, Any]], Awaitable[None]],
     ) -> PolicyResolutionInput:
-        message = user_message.lower()
-        order_id = "ord-1009" if "1009" in message else "ord-1001"
-        issue_type = classify_issue(message)
-        order = fetch_order_status(order_id)
-        policy = fetch_policy(issue_type)
+        issue_type, order, policy = self.deterministic_inputs(user_message)
         await emit(
             "workflow.stage",
             {"agent": "policy_retrieval", "status": "started"},

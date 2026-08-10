@@ -223,7 +223,7 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
         thread_id=thread_id,
         session_id=thread_id,
         customer_id="cust-test",
-        user_message="Resolve delayed order ORD-1001",
+        user_message="Order ORD-1002 has the wrong item in the box.",
     )
     await workflow.start(first_context)
 
@@ -247,7 +247,10 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
         event["payload"]["message"] for event in history if event["type"] == "workflow.output"
     ]
     assert any(
-        "Previous result: Your partial refund has been submitted for order ord-1001." in message
+        "order ord-1001: issue wrong_item, status in_transit, "
+        "policy free_replacement_and_return_label, action issue_partial_refund, "
+        "and amount $79.00. HITL approval was not required." in message
+        and "Previous result: Your partial refund has been submitted for order ord-1001." in message
         for message in output_messages
     )
 
