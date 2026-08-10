@@ -260,6 +260,7 @@ bicep-build:
 release-source-validation:
 	./scripts/release/validate-release-assets.sh
 	./scripts/release/test-reconcile-infrastructure-approval.sh
+	./infra/azure-apphosted/runtime/test-smoke-test-retries.sh
 
 release-preflight:
 	@$(MAKE) --no-print-directory -j2 release-source-validation bicep-build

@@ -22,7 +22,9 @@ reconcile infrastructure, alter PostgreSQL configuration, network access, or
 RBAC. Runtime smoke now retries a bounded number of non-empty `/api/chat/run`
 responses, and the hosted validation reader retries transient transport or
 JSON-decode failures while awaiting workflow events. Both paths still fail
-explicitly when their retry limit is exhausted.
+explicitly when their retry limit is exhausted. The release asset validation
+now runs a contract test that proves recovery after empty or failed chat
+responses and explicit failure after the retry limit.
 
 **Pre-release evidence.** Azure Validate completed for the selected target;
 the app-only release preflight, Bicep compilation, and credential-free
