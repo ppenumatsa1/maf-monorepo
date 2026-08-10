@@ -7,6 +7,32 @@ claimed.** Historical entries below explain prior work but do not prove a
 currently live endpoint or revision. Current deployed evidence belongs in the
 dated ledger in `.azure/deployment-plan.md` only after its commands complete.
 
+## 2026-08-10 — PostgreSQL recovery and release-readiness hardening
+
+**Observed issue.** Backend revision
+`maf-backend-puzsry--ci-ci-31328131254-1` could not start because the existing
+Flexible Server `maf-ora-azure-pg-puzsry` was stopped. Application startup
+waited for the managed-identity PostgreSQL pool and then failed with
+`psycopg_pool.PoolTimeout`. The server was started by the operator and later
+reported `Ready`; the active backend revision became healthy and the frontend
+same-origin `/api/health` proxy returned HTTP 200.
+
+**Guardrail.** The app-only release path remains unchanged: it does not
+reconcile infrastructure, alter PostgreSQL configuration, network access, or
+RBAC. Runtime smoke now retries a bounded number of non-empty `/api/chat/run`
+responses, and the hosted validation reader retries transient transport or
+JSON-decode failures while awaiting workflow events. Both paths still fail
+explicitly when their retry limit is exhausted.
+
+**Pre-release evidence.** Azure Validate completed for the selected target;
+the app-only release preflight, Bicep compilation, and credential-free
+reconciliation guard passed. GitHub Actions run
+[`31399361069`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31399361069)
+stopped at operating-model enforcement because this ledger had not yet been
+included in the pushed change. It did not build, deploy, smoke-test, run E2E,
+evaluate, or query telemetry. A subsequent run is required before any new
+release evidence is claimed.
+
 ## 2026-08-07 — Azure-hosted parity: selected-thread safety and release evidence
 
 ### Learning issues
