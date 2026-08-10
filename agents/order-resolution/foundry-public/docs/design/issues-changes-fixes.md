@@ -9,6 +9,29 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-10 - Public lane v19 app-only release
+
+**Released lane.** The existing public backend and frontend Container Apps
+were updated app-only, and hosted agent `order-resolution-hosted` version 19
+was activated from immutable image
+`order-resolution-hosted:4e196ed3fd86-20260810154147`. No infrastructure,
+PostgreSQL, ACR, monitoring, Foundry connection, or shared-network
+reconciliation ran.
+
+**Fresh release evidence.**
+
+- Hosted smoke passed the low-risk scenario without HITL.
+- Foundry Responses hosted E2E passed for
+  `conv_15a030dc714860dd00x6pdwHctlRuDLm4HXX8jIcFQxhTD32Ye` and
+  `conv_10f76bd89c52a54900q87bYRgFknDGHlI28SO7bdIuxPlPfF93`.
+- Trace evaluation
+  `eval_0aec4ac2d4604ef19024845f6e9cecc8` /
+  `evalrun_463eae4e54c648e7806563bd7a760aab` completed with 2 passed,
+  0 failed, and 0 errored conversations for `task_completion` and
+  `coherence`.
+- Application Insights correlated 34 rows for those two fresh hosted E2E
+  conversations.
+
 ## 2026-08-10 - Public v18 rationale-evidence correction
 
 **Observed release state.** The app-only release deployed the public backend
