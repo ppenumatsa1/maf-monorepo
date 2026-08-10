@@ -159,7 +159,20 @@ if [[ "$SECOND_THREAD" != "$C1" ]]; then
   exit 1
 fi
 assert_json_field "$second_turn" '.status == "completed"'
-assert_json_field "$second_turn" '.message | test("resolution was selected|Resolution complete"; "i")'
+assert_json_field "$second_turn" '
+  (.message | type == "string") and
+  ((.message | ascii_downcase) as $message |
+    [
+      "order ord-1001",
+      "issue late_delivery",
+      "status in_transit",
+      "policy refund_allowed_if_delay_exceeds_3_days",
+      "action issue_partial_refund",
+      "amount $79.00",
+      "hitl approval was not required."
+    ] |
+    all(. as $factor | $message | contains($factor)))
+'
 
 high_risk_start="$(invoke_responses "" "Resolve delayed order ORD-1009" "new")"
 assert_json_field "$high_risk_start" '.status == "waiting_approval"'

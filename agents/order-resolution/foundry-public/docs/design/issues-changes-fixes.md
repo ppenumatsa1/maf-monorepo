@@ -9,6 +9,23 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-10 - Public v18 rationale-evidence correction
+
+**Observed release state.** The app-only release deployed the public backend
+and hosted agent `order-resolution-hosted` version 18. Hosted smoke passed,
+including the low-risk scenario, and the explanation response returned the
+concrete order, issue, status, policy, action, amount, and approval factors
+introduced for the v17 evaluation remediation.
+
+**Evidence blocker.** The hosted E2E assertion still expected the retired
+generic rationale wording. It therefore stopped the release before the fresh
+trace evaluation and telemetry gates, despite the response satisfying the new
+rationale contract. The assertion now requires the concrete factors instead
+of accepting a generic completed response. Its shell contract checks,
+deterministic evaluation, and focused evaluator tests passed. A new evidence
+run is required; version 18 does not have a completed fresh E2E/evaluation/
+telemetry record.
+
 ## 2026-08-10 - Public app-only quick-validation path correction
 
 **Observed issue.** The app-only release stopped before deployment because
