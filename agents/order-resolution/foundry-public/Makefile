@@ -111,7 +111,7 @@ test-e2e:
 	@set -euo pipefail; \
 	if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
 		cd scripts/playwright && npm run test:e2e; \
-		PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" $(MAKE) test-e2e-selected-thread; \
+		PLAYWRIGHT_BASE_URL="$${PLAYWRIGHT_BASE_URL}" $(MAKE) -C "$(CURDIR)" test-e2e-selected-thread; \
 	else \
 		set -euo pipefail; \
 		free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'; }; \
@@ -141,7 +141,7 @@ test-e2e:
 			sleep 1; \
 		done; \
 		PLAYWRIGHT_BASE_URL="$${frontend_url}" bash -c 'cd scripts/playwright && npm run test:e2e'; \
-		PLAYWRIGHT_BASE_URL="$${frontend_url}" $(MAKE) test-e2e-selected-thread; \
+		PLAYWRIGHT_BASE_URL="$${frontend_url}" $(MAKE) -C "$(CURDIR)" test-e2e-selected-thread; \
 	fi
 
 manual-matrix:

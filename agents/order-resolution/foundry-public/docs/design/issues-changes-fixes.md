@@ -9,6 +9,20 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-10 - Public app-only quick-validation path correction
+
+**Observed issue.** The app-only release stopped before deployment because
+`validate-quick` invoked the selected-thread E2E target from
+`scripts/playwright`, while that target is owned by the public project
+Makefile. No application, Foundry agent, or infrastructure resource changed.
+
+**Fix and validation.** The E2E recursion now re-enters the project Makefile
+before it changes to the Playwright directory. The focused `validate-quick`
+contract passed with a stubbed npm runner, confirming the workflow and
+selected-thread targets execute from their owning directories. A fresh
+app-only release is still required; do not infer smoke, hosted E2E,
+evaluation, or telemetry evidence from this local correction.
+
 ## 2026-08-09 - Public lane v17 app-only release
 
 **Released lane**
