@@ -35,6 +35,14 @@ included in the pushed change. It did not build, deploy, smoke-test, run E2E,
 evaluate, or query telemetry. A subsequent run is required before any new
 release evidence is claimed.
 
+**Fresh release evidence.** Full app-only release run
+[`31400240425`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31400240425)
+completed after the retry-contract test changed the runtime release surface.
+It passed backend lint/tests/deterministic evaluation, browser E2E, Docker E2E,
+immutable backend/frontend image deployment, fresh smoke, hosted E2E,
+report-only Foundry evaluation, and exact-pair Application Insights telemetry.
+No infrastructure reconciliation occurred.
+
 ## 2026-08-07 — Azure-hosted parity: selected-thread safety and release evidence
 
 ### Learning issues
