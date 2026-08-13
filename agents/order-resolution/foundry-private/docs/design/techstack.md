@@ -46,6 +46,8 @@ repository-owned workflow, privacy, and frontend-boundary skills.
 | `azure-ai-projects-py` | Azure AI Foundry project, deployment, and evaluation work | Microsoft `skills` |
 | `azure-identity-py` | `DefaultAzureCredential`, managed identity, and Entra authentication | Microsoft `skills` |
 | `azure-monitor-opentelemetry-py` | Application Insights and Azure Monitor OpenTelemetry work | Microsoft `skills` |
+| `azure-monitor-query-py` | Read-only Azure Monitor Logs queries; supports `LogsQueryClient` telemetry correlation in `backend/evals/verify_telemetry.py` | Microsoft `skills` |
+| `microsoft-foundry` | Hosted-agent lifecycle, evaluation, and Foundry observability guidance | Microsoft `skills` |
 | `fastapi-router-py` | FastAPI HTTP route work | Microsoft `skills` |
 | `pydantic-models-py` | Pydantic v2 API contract work | Microsoft `skills` |
 | `postgres-psycopg-py` | PostgreSQL, Psycopg, pgvector, and Azure PostgreSQL persistence | Repository-owned |
@@ -55,11 +57,16 @@ repository-owned workflow, privacy, and frontend-boundary skills.
 | `typescript-update` | Strict React/TypeScript updates that preserve workflow contracts | Repository-owned |
 | `e2e-rubric` | Native SSE, HITL, selected-thread privacy, and wrapper-boundary operator coverage | Repository-owned |
 
-The five Microsoft skills are vendored from
+The five pre-existing Microsoft skills are vendored from
 [`microsoft/skills`](https://github.com/microsoft/skills) commit
 `c33193b1b2dd14d5946e3c6213fd095ffa5b31df`. Refresh them deliberately from that
 source, preserving each complete skill directory and reviewing upstream changes before updating
-the pinned revision.
+the pinned revision. The two additions were selectively copied as complete directories
+from [`microsoft/skills`](https://github.com/microsoft/skills) revision
+`e58528db9a006528a5fb0a2c029790fa6a9a7c0e`:
+`.github/plugins/azure-skills/skills/microsoft-foundry` and
+`.github/plugins/azure-sdk-python/skills/azure-monitor-query-py`. Do not install the
+full catalog when refreshing either pin.
 
 `agent-framework-foundry-py` and `postgres-psycopg-py` are repository-owned because
 they encode this application's workflow and persistence boundaries. The MAF skill is

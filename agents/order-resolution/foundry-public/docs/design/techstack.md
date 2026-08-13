@@ -37,7 +37,7 @@
 ## Skills Baseline
 
 Use only the task-specific skills below; do not load the full Microsoft skills catalog.
-The curated baseline contains five vendored Microsoft skills and two local
+The curated baseline contains six vendored Microsoft skills and two local
 (repository-owned) skills.
 
 | Skill | Use for | Source |
@@ -47,14 +47,18 @@ The curated baseline contains five vendored Microsoft skills and two local
 | `azure-identity-py` | `DefaultAzureCredential`, managed identity, and Entra authentication | Microsoft `skills` |
 | `azure-monitor-opentelemetry-py` | Application Insights and Azure Monitor OpenTelemetry work | Microsoft `skills` |
 | `fastapi-router-py` | FastAPI HTTP route work | Microsoft `skills` |
+| `microsoft-foundry` | Foundry hosted-agent lifecycle, safe invocation, evaluation, trace analysis, and troubleshooting | Microsoft `skills` |
 | `pydantic-models-py` | Pydantic v2 API contract work | Microsoft `skills` |
 | `postgres-psycopg-py` | PostgreSQL, Psycopg, and Azure PostgreSQL workflow-audit persistence | Repository-owned |
 
-The five Microsoft skills are vendored from
+The original five Microsoft skills are vendored from
 [`microsoft/skills`](https://github.com/microsoft/skills) commit
 `c33193b1b2dd14d5946e3c6213fd095ffa5b31df`. Refresh them deliberately from that
 source, preserving each complete skill directory and reviewing upstream changes before updating
-the pinned revision.
+the pinned revision. `microsoft-foundry` is selectively vendored as its complete
+`.github/plugins/azure-skills/skills/microsoft-foundry` directory from the same
+catalog at revision `e58528db9a006528a5fb0a2c029790fa6a9a7c0e`; no other catalog
+skills are installed by that addition.
 
 `agent-framework-foundry-py` and `postgres-psycopg-py` are repository-owned because
 they encode this application's workflow and persistence boundaries. The MAF skill is

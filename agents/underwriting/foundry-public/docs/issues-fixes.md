@@ -967,3 +967,110 @@ infrastructure, deployment, evaluation, telemetry, or recovery work. Every
 entry must capture the observed failure or decision, RCA or research evidence,
 the applied fix, validation performed, and any remaining blocker or next
 action.
+
+## 2026-08-10 - Existing-target deployment profile standardization
+
+**Change**
+
+- Added the shared version-1 non-secret deployment-profile contract to the
+  Underwriting Foundry-public lane. The profile selects only the AZD
+  environment, subscription, resource group, location, name prefix, and lane.
+- Removed current-environment subscription, resource-group, location, and
+  retained-resource-name defaults from the AZD bootstrap helper. It now
+  requires those values from the selected AZD environment and obtains the
+  PostgreSQL location only after the selected server identity is available.
+- Made routine release routing app-only even when runtime or IaC-adjacent
+  files change. Full provisioning remains an explicit separately approved
+  operation and cannot be triggered by the release router.
+
+**Why**
+
+- A target switch must be a configuration change, not a source edit or an
+  implicit reconciliation of PostgreSQL, networking, RBAC, Foundry
+  connections, or secrets.
+
+**Local validation**
+
+- `bash deployment/tests/test-profile.sh` passed. It verifies profile
+  application uses the Underwriting AZD project, profiles exclude secret and
+  retained-resource fields, the release router remains app-only, and bootstrap
+  rejects an incomplete selected environment before Azure commands run.
+- `bash -n` passed for the changed shell scripts and `make -n
+  foundry-profile-apply` parsed successfully.
+
+**Release status**
+
+- No Azure resource was provisioned, changed, or deployed. A future
+  authorized target still requires its selected AZD environment's retained
+  resource identities and lane-local secrets, followed by smoke, E2E,
+  evaluation, and telemetry evidence.
+
+## 2026-08-10 - Existing-target public release completed
+
+**Change**
+
+- Applied the approved resource-reuse provisioning step and released the
+  Underwriting Foundry-public app-only lane from the selected
+  `underwriting-foundry-public` AZD environment.
+- Corrected the PostgreSQL readiness gate for the installed Azure CLI:
+  flexible-server firewall-rule and database `show` commands require
+  `--server-name` and `--name`; the removed `--rule-name` and
+  `--database-name` arguments had stopped the initial release before app
+  deployment.
+
+**Validation**
+
+- `make validate-full` passed before the release: lint, 43 backend tests,
+  script tests, frontend checks, and local Playwright E2E.
+- `az bicep build` passed with only the pre-existing
+  `no-deployments-resources` warning. `azd provision --no-prompt` completed
+  successfully with no resource changes.
+- Live readiness passed for the Ready PostgreSQL server, TLS runtime URL,
+  runtime credential, dual authentication, narrowed firewall rules, and
+  existing `underwriting` database. The ACR succeeded and the backend managed
+  identity retained `AcrPull`.
+
+**Deployment and hosted evidence**
+
+- Hosted agent version `42` deployed. Backend revision
+  `azcawhcedyxchnbtmpubbe--0000021` and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000012` are Running.
+- `https://azcawhcedyxchnbtmpubbe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io/health`
+  returned HTTP 200; the frontend returned HTTP 200.
+- Hosted smoke passed with
+  `run-smoke-20260810195340-158524`.
+- Deployed browser E2E passed with
+  `run-hosted-happy-20260810195505-160963` and
+  `run-hosted-recover-20260810195505-160963`.
+- Foundry evaluation `eval_d0e6c3dfb31d44f0bb6b1e3d44cb194f` passed 1 of 1
+  with zero failures or errors.
+- Application Insights recorded 64 correlated rows for the two hosted E2E
+  runs, including 3 requests and 61 dependencies, with zero exceptions.
+
+**Issue and resolution**
+
+- The first release attempt failed safely during PostgreSQL readiness, before
+  any application deployment, because the script used obsolete CLI argument
+  names. Replacing them with the current CLI contract made readiness pass; the
+  subsequent complete release passed every gate. No compatibility runtime,
+  secret fallback, infrastructure recreation, or database rebuild was added.
+
+## 2026-08-10 - Final app-only release rerun
+
+**Change**
+
+- Re-ran the selected existing-target app-only release without provisioning or
+  changing retained infrastructure.
+
+**Evidence**
+
+- Bicep compilation and live PostgreSQL readiness passed. Hosted agent version
+  `43`, backend revision `azcawhcedyxchnbtmpubbe--0000022`, and frontend
+  revision `azcawhcedyxchnbtmpubfe--0000013` are Running.
+- Smoke passed with `run-smoke-20260810203807-206537`.
+- Deployed E2E passed with `run-hosted-happy-20260810203934-208937` and
+  `run-hosted-recover-20260810203934-208937`.
+- Foundry evaluation `eval_4082061319e44f38b7e1520ae9122c7f` passed 1/1 with
+  zero failures or errors.
+- Application Insights recorded 64 correlated rows, including 3 requests and
+  61 dependencies, for the two E2E runs; zero exceptions were present.

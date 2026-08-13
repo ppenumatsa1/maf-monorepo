@@ -9,6 +9,48 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-12 - Validation-only catalog-skill update
+
+**Skill inventory.** Selectively added the complete
+`.github/skills/microsoft-foundry` directory from
+[`microsoft/skills`](https://github.com/microsoft/skills), source directory
+`.github/plugins/azure-skills/skills/microsoft-foundry`, at exact revision
+`e58528db9a006528a5fb0a2c029790fa6a9a7c0e`. No other catalog skill was
+installed. The tech-stack inventory and Copilot/agent skill baselines now
+describe the selective pin.
+
+**Target safety review and commands run.** `make -n
+foundry-iac-build foundry-appinsights-connection foundry-smoke
+foundry-hosted-e2e foundry-eval foundry-telemetry` and the referenced scripts
+were inspected before execution. The following non-deployment commands ran:
+
+- `make foundry-iac-build` passed; the public Foundry Bicep template compiled.
+- `AZURE_DEV_USER_AGENT=microsoft_foundry_skill make
+  foundry-appinsights-connection` passed; the existing project
+  Application Insights connection was verified.
+- `AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent show
+  order-resolution-hosted --output json` reported the existing hosted agent as
+  active at version `20`.
+- `make foundry-eval` completed report-only trace evaluation
+  `eval_73e52117218c4c14a4e088f3cec302a6` /
+  `evalrun_235a34c20fe64cdf892a1e2f066de06f`: 2 passed, 0 failed, and 0
+  errored.
+- `make foundry-telemetry` correlated 4 telemetry rows for the two evidence
+  conversations with zero exceptions.
+
+**Freshness and blockers.** The evaluation and telemetry commands deliberately
+used the pre-existing hosted-E2E evidence generated `2026-08-10T20:35:29Z`.
+Their successful historical lookup is not fresh smoke, E2E, evaluation, or
+telemetry evidence for this validation-only change. `make foundry-smoke` was
+not run because it creates a new Responses conversation for `ORD-1009`, which
+can create durable workflow/HITL PostgreSQL state. `make foundry-hosted-e2e`
+was not run because it invokes and approves live workflow conversations,
+writes hosted-E2E evidence, and uses `mktemp`; all conflict with this
+validation-only run's no-PostgreSQL-change/no-temporary-file constraints.
+Deployment, release, provisioning, `foundry-up`, infrastructure
+reconciliation, PostgreSQL changes, and app-only deployment were not
+performed.
+
 ## 2026-08-10 - Public lane v19 app-only release
 
 **Released lane.** The existing public backend and frontend Container Apps
@@ -30,6 +72,30 @@ reconciliation ran.
   0 failed, and 0 errored conversations for `task_completion` and
   `coherence`.
 - Application Insights correlated 34 rows for those two fresh hosted E2E
+  conversations.
+
+## 2026-08-10 - Public lane v20 final app-only release
+
+**IaC and deployment.**
+
+- Bicep compiled; the router retained the `app_only` boundary and no retained
+  infrastructure, PostgreSQL, ACR, monitoring, or Foundry connection was
+  reconciled.
+- The existing public backend/frontend Container Apps are Running at revisions
+  `ora-public-dev2-backend--azd-1786394011` and
+  `ora-public-dev2-frontend--azd-1786393934`. Hosted agent
+  `order-resolution-hosted` version `20` is active.
+
+**Fresh gates.**
+
+- Low-risk smoke passed without HITL.
+- Hosted E2E passed for
+  `conv_1296b9d9535a291100L8LVn2XE5HkHTUhHdPcJ3JyqdqVPTCi5` and
+  `conv_d1d0338e32b31991008Mh3YMbcWKn0gD9uc3qKSNIjnQAPgC0U`.
+- Foundry evaluation
+  `eval_f6c1997873234eae99323a49a1d00527` completed with 2 passed, 0 failed,
+  and 0 errored results.
+- Application Insights correlated 118 rows for the two fresh hosted E2E
   conversations.
 
 ## 2026-08-10 - Public v18 rationale-evidence correction
@@ -529,3 +595,63 @@ deterministic model path supports local operation without Foundry settings; and
 the MCP/RAG fallbacks preserve hosted workflow behavior while no public remote
 MCP/RAG dependency is configured. Removing any of those paths would change a
 supported runtime contract rather than eliminate an unnecessary fallback.
+
+## Public release pre-deployment stop (2026-08-13)
+
+- Confirmed subscription `4f18d577-3506-4a11-85e5-a83b14727a84`, selected
+  existing AZD environment `foundry-public-dev2`, and resource group
+  `rg-maf-ora-foundry-public-dev2`.
+- `make foundry-iac-build` passed. `azd provision --preview --no-prompt`
+  completed in 26 seconds without mutation. The only proposed actions were
+  updates to the lane-owned backend and frontend Container Apps (registry,
+  secrets where applicable, and container template fields). The Container Apps
+  environment, Azure AI Services, Foundry project, ACR, PostgreSQL server,
+  Application Insights, Log Analytics, and evaluation Storage were skipped.
+  No unexpected shared, database, network, or RBAC action was proposed.
+- The frozen release manifest was unchanged at the pre-deployment check.
+  Deployment was stopped before `make foundry-release`: the required hosted
+  E2E script creates its resume payload with `mktemp`, while the frozen
+  worktree could not be changed to use a project-local safe payload file.
+  Therefore no fresh deployment, smoke, Responses E2E, Foundry evaluation, or
+  Application Insights telemetry evidence was produced.
+
+## Public app-only release evidence and final manifest stop (2026-08-13)
+
+- The repeated non-mutating provision preview remained limited to the
+  lane-owned backend and frontend Container Apps; all shared resources,
+  PostgreSQL, networking, and RBAC were absent from the proposed actions.
+- The first guarded `make foundry-release` invocation published healthy active
+  revisions `ora-public-dev2-backend--azd-1786635129` and
+  `ora-public-dev2-frontend--azd-1786635055`, and activated hosted agent
+  version `21`. Its enclosing command returned exit code 2 before it produced
+  fresh E2E evidence, so the post-deployment gates were repeated explicitly.
+- Fresh Responses smoke reached
+  `conv_d0919ee496f8285f00zY17eguHe7llRBCqGvAe56ipHSqOAwMJ` with trace
+  `66a1ada9eceb602ccc219d4dfef9dbfd` and correctly paused for approval.
+  The Application Insights project connection check passed.
+- Fresh hosted Responses E2E passed for low-risk conversation
+  `conv_13cbc54dc23a054a00WD7mdqthpOj9ZgHhHTISjWRRkn9r8Izw` and approved
+  high-risk conversation
+  `conv_d608bb2feec690a100x1otKSfPY11Er8wrOQdaSnDTxN6RssqM`.
+  Report-only evaluation `eval_351ebf27b0604aa58ac18a3df35b9094` /
+  `evalrun_667a4670b5fd48c7b2ca1c105d4bfa92` completed with 2 passed.
+  Application Insights found 31 correlated rows for both conversations and no
+  exceptions.
+- The expected release evidence and ledger activity changed the external
+  manifest after the first verified pre-deployment check. Application source
+  integrity remained unchanged when excluding the permitted deployment-report,
+  Foundry results evidence, and this ledger entry.
+- The guarded wrapper's exit code 2 was a non-blocking orchestration issue:
+  its deployment completed, and the repeated fresh connection, smoke, hosted
+  E2E, evaluation, and telemetry gates all passed. Final disposition:
+  completed.
+
+## 2026-08-13 — Approved npm feed policy
+
+The frontend and Playwright E2E package roots use the approved Microsoft npm
+feed `https://packagefeedproxy.microsoft.io/npm/` for locked installs. Their
+checked-in `.npmrc` files require TLS validation and set
+`replace-registry-host=npmjs` so registry.npmjs.org lockfile tarballs cannot
+bypass the approved feed. The frontend Docker build copies the policy before
+`npm ci`. This is a package-acquisition policy change only; no deployment or
+release evidence was rerun.

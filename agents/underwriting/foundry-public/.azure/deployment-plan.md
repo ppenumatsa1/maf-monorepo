@@ -193,3 +193,21 @@ remaining deployment workflow.
 - Foundry evaluation `eval_286f9bdf2cab4166accb2422a9292e55` passed 1 of 1.
 - Application Insights telemetry verification passed with 64 correlated
   request/dependency records and zero correlated exceptions.
+
+## 2026-08-10 Existing-Target Deployment Completion Evidence
+
+- The selected `underwriting-foundry-public` environment passed fresh
+  non-secret target, Bicep, live resource, PostgreSQL readiness, and ACR role
+  checks. `azd provision --no-prompt` reported no changes.
+- The readiness gate was updated for the current Azure CLI
+  flexible-server firewall-rule/database show argument contract; it then
+  passed before application deployment.
+- Hosted agent version `42`, backend revision
+  `azcawhcedyxchnbtmpubbe--0000021`, and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000012` deployed successfully.
+- Hosted smoke passed with `run-smoke-20260810195340-158524`. Deployed E2E
+  passed with `run-hosted-happy-20260810195505-160963` and
+  `run-hosted-recover-20260810195505-160963`.
+- Foundry evaluation `eval_d0e6c3dfb31d44f0bb6b1e3d44cb194f` passed 1 of 1.
+  Application Insights telemetry verification returned 64 correlated rows for
+  the two E2E runs and zero exceptions.

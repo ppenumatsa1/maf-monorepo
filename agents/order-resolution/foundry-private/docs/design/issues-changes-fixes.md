@@ -193,6 +193,39 @@ the static role expectation and is recorded as pre-existing shared-RBAC drift;
 the app-only release did not mutate it. Any reconciliation requires the
 separate full-IaC owner approval already documented above.
 
+## 2026-08-10 - Protected final app-only release and evidence
+
+**IaC boundary.**
+
+- The protected runner retained the app-only boundary: no Bicep provisioning,
+  shared-resource reconciliation, connection/RBAC mutation, PostgreSQL
+  lockdown, or firewall exception was performed.
+- The local operator attempt correctly stopped at the private ACR firewall;
+  its public IP is not authorized. Release execution therefore moved to the
+  VNet-connected `foundry-private-v2` runner rather than weakening the ACR
+  boundary.
+
+**Deployment.**
+
+- Protected workflow
+  [`31430565356`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31430565356)
+  passed. Backend revision `mafprv0722v3-private-backend--azd-1786394787`,
+  frontend revision `mafprv0722v3-private-frontend--azd-1786394807`, and
+  hosted agent `order-resolution-hosted` version `26` are Running/active.
+
+**Fresh hosted evidence.**
+
+- Protected evidence workflow
+  [`31430905656`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31430905656)
+  passed. It completed low-risk continuity plus the hosted HITL E2E cases for
+  three fresh conversations.
+- Application Insights returned 105 correlated rows and four eligible
+  evaluation spans for those conversations.
+- Foundry trace evaluation
+  `eval_f660c973e03441909a974602729242d6` /
+  `evalrun_7536698c46584c539d7d92c8b4a8df3f` completed 3/3 with zero failures
+  and zero errors for `task_completion` and `coherence`.
+
 ## Documentation and diagram parity (2026-08-07)
 
 **Gap identified.** The selected-thread implementation, focused skills, and
@@ -1163,3 +1196,148 @@ private DNS record resolves `maffndpgv20722` to `10.90.2.13`, and PostgreSQL
 public access remains disabled. The next stage is the separate project
 connection provision followed by application/hosted-agent deployment and
 connectivity proof.
+
+## Validation-only skill refresh and gate run (2026-08-12)
+
+**Skill inventory.** Selectively added complete `microsoft-foundry` and
+`azure-monitor-query-py` directories under `.github/skills/` from
+[`microsoft/skills`](https://github.com/microsoft/skills) revision
+`e58528db9a006528a5fb0a2c029790fa6a9a7c0e`; no full catalog was installed.
+`azure-monitor-query-py` is applicable because
+`backend/evals/verify_telemetry.py` uses `LogsQueryClient`. The stack inventory
+and both skill-enumerating agent instruction baselines now document the seven
+vendored Microsoft skills and the selective source pin.
+
+**Validation-only scope.** Inspected the candidate Make targets and helper
+scripts before execution. `foundry-iac-validate` compiles Bicep to stdout;
+`foundry-app-only-preflight` performs control-plane reads (its `azd env select`
+is local context selection); `foundry-smoke` and
+`scripts/github/foundry_hosted_e2e.sh` invoke the existing hosted endpoint;
+`eval-foundry` is report-only; and `verify_telemetry.sh` queries telemetry.
+No Azure deployment, release, provisioning, `foundry-up`, infrastructure
+reconciliation, PostgreSQL lockdown/change, connection/RBAC change, or
+app-only deployment was performed.
+
+**Commands and outcomes.**
+
+- `AZURE_DEV_USER_AGENT=microsoft_foundry_skill make foundry-iac-validate`
+  passed. Compilation emitted only existing Bicep linter warnings
+  (`no-hardcoded-env-urls` and three `no-unnecessary-dependson` findings).
+- `make foundry-app-only-preflight` was run with the selected
+  `foundry-private-env` non-secret target identifiers. It did not pass because
+  Azure returned `ServerUnableToRetriveData` while reading existing resources;
+  no resource was changed.
+- `AZURE_DEV_USER_AGENT=microsoft_foundry_skill SMOKE_MAX_ATTEMPTS=1 make
+  foundry-smoke` and
+  `AZURE_DEV_USER_AGENT=microsoft_foundry_skill
+  ./scripts/github/foundry_hosted_e2e.sh` were blocked by the existing private
+  endpoint: the public runner received `403 Public access is disabled`.
+  Consequently, no fresh hosted conversation identifiers were produced.
+- `AZURE_DEV_USER_AGENT=microsoft_foundry_skill make eval-foundry` was blocked
+  before submission because fresh
+  `backend/.foundry/results/hosted-e2e-evidence.json` was absent.
+  `./scripts/foundry/verify_telemetry.sh` was blocked because
+  `APPLICATION_INSIGHTS_RESOURCE_ID` was not supplied; fresh hosted E2E
+  evidence is also required before telemetry correlation can be meaningful.
+
+These are fresh validation-only results, not historical release evidence.
+No secrets, resource IDs, credentials, or connection strings are recorded in
+this entry.
+
+## Guarded private-release attempt (2026-08-13)
+
+**Frozen-input gate.** Before any deployment route was contacted, the frozen
+worktree recheck found the recorded commit unchanged but identified this
+documentation file as the sole mismatch among the 192 `foundry-private`
+manifest entries. Its content before this required append could not be
+reconstructed to the recorded hash, so the frozen input could not be
+established. The final recheck has the same sole mismatch. No deployment was
+attempted.
+
+**Read-only IaC validation.** `az bicep build --file
+infra/foundry-hosted/iac/main.bicep --stdout` completed successfully. It
+reported only the existing `no-hardcoded-env-urls` warning and three existing
+`no-unnecessary-dependson` warnings. The direct non-mutating
+`azd provision --preview --no-prompt --no-state` targeted the approved
+subscription and private resource group, but Azure rejected the what-if with
+`ServerStoppedError` because the existing canonical PostgreSQL server is
+stopped. No template change was applied and the preview did not reach a drift
+summary.
+
+**Drift and release decision.** The documented shared authoritative drift
+(VNet/subnets, Container Apps environment, Foundry account/project/models,
+ACR, Cosmos, Application Insights, and Search) remains outside routine
+app-only scope and was not reconciled. Because the preview was blocked, the
+serialized `foundry-private-v2` app-only runner route was not contacted.
+There is no new deployment, smoke, HITL/resume E2E, report-only evaluation,
+or correlated telemetry evidence. No networking, public-access/firewall,
+Foundry connection/RBAC, or PostgreSQL setting was changed.
+
+## Authorized lifecycle retry (2026-08-13)
+
+**Fresh release input.** A refreshed frozen-worktree manifest captured 595
+dirty/untracked workspace files, including 192 under `foundry-private`, with
+all recorded hashes matching at creation. The only prior private delta was
+the required evidence-documentation append; no unexpected private source
+change was found.
+
+**Existing-service lifecycle result.** The authorized lifecycle operation
+targeted only the existing canonical PostgreSQL server. Its state progressed
+from `Stopped` to `Starting`, but Azure returned `CapacityNotAvailable` before
+the server became `Ready`. No database data, server configuration, firewall,
+public-access, networking, RBAC, Foundry connection, or PostgreSQL lockdown
+operation was performed.
+
+**Release decision.** Because the existing service did not reach `Ready`, the
+required rerun of the non-mutating IaC preview, the serialized
+`foundry-private-v2` app-only deployment, and all fresh smoke, HITL/resume
+E2E, report-only evaluation, and telemetry collection were not started.
+The final full-worktree manifest recheck also observed changes outside this
+private lane plus this expected evidence append, so the refreshed full
+worktree input is no longer frozen. No private source file other than this
+evidence document changed after the refreshed manifest was created.
+
+## PostgreSQL lifecycle retry (2026-08-13)
+
+**Lifecycle retry result.** The existing canonical PostgreSQL server was
+confirmed `Stopped` and then started using only the supported Flexible Server
+lifecycle operation. The accepted request left it in `Starting` for the full
+ten-minute readiness wait. Two bounded follow-up lifecycle retries, after
+30-second and 60-second backoffs, were rejected with
+`SeverBusyWithOtherOperation`; the final read still reported `Starting`.
+
+**Release decision.** The server did not reach `Ready`, so no further
+lifecycle request was made. The IaC preview was not rerun, and the
+`foundry-private-v2` app-only deployment, smoke, HITL/resume E2E,
+report-only evaluation, and telemetry gates were not started. No database
+data, configuration, network, firewall/public-access, RBAC, Foundry
+connection, or lockdown change was made.
+
+## 2026-08-13 — Private release deferred; approved npm feed policy
+
+**Deferral.** At the environment owner's direction, the private Foundry lane
+is on hold while its existing PostgreSQL server cannot be started. Do not
+retry the lifecycle operation, IaC preview, deployment, or downstream gates
+until the owner resumes this lane.
+
+**Package policy.** The frontend and Playwright E2E package roots now use the
+approved Microsoft npm feed `https://packagefeedproxy.microsoft.io/npm/`.
+Their checked-in `.npmrc` files require TLS validation and set
+`replace-registry-host=npmjs` so registry.npmjs.org lockfile tarballs cannot
+bypass the approved feed. The frontend Docker build copies the policy before
+`npm ci`. This did not contact the private runner or mutate Azure resources.
+
+## 2026-08-13 — Approved-feed frontend lockfile validation
+
+The existing frontend lockfile pinned
+`update-browserslist-db@1.3.0`, which is unavailable from the approved feed.
+A clean lockfile was regenerated using only
+`https://packagefeedproxy.microsoft.io/npm/`; it resolves the compatible
+`1.2.3` release and the feed's available transitive versions. The refreshed
+`node:20.19.0-alpine3.20` Docker build completed successfully through the
+approved feed.
+
+This package-only correction does not resume the deferred private release:
+the private PostgreSQL lifecycle, IaC preview, app-only deployment, smoke,
+HITL/resume E2E, evaluation, and telemetry remain on hold until the owner
+resumes the lane.

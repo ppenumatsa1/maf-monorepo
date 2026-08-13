@@ -20,6 +20,14 @@ case "$DEPLOYMENT_LANE" in
   foundry-private) project_dir="$repository_root/agents/order-resolution/foundry-private/infra/foundry-hosted" ;;
 esac
 
+if [[ -n "${AZD_PROJECT_DIR:-}" ]]; then
+  project_dir="$(cd "$AZD_PROJECT_DIR" && pwd -P)"
+  [[ "$project_dir" == "$repository_root/"* ]] || {
+    printf 'deployment profile error: AZD_PROJECT_DIR must be inside the repository\n' >&2
+    exit 1
+  }
+fi
+
 [[ -f "$project_dir/azure.yaml" ]] || {
   printf 'deployment profile error: no azure.yaml for %s\n' "$DEPLOYMENT_LANE" >&2
   exit 1

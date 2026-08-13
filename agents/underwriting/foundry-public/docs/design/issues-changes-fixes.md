@@ -352,3 +352,207 @@ This file may also capture documentation-only operating-model updates. Those ent
 - Keep a direct executor in the master workflow while its check is one step.
   Introduce a sub-workflow only for a reusable or multi-step pipeline with
   meaningful internal branching, tools, or lifecycle.
+
+## 2026-08-10 - Existing-target deployment profile standardization
+
+**Change**
+
+- Added a versioned non-secret profile wrapper for selecting an existing
+  Underwriting Foundry-public AZD target and generalized the shared profile
+  applicator to accept the caller's AZD project directory.
+- Removed hardcoded target defaults from bootstrap, required selected AZD
+  target values, and kept PostgreSQL location discovery dependent on the
+  selected PostgreSQL server.
+- Changed routine release routing to app-only; provisioning remains explicit
+  and separately approved.
+
+**Validation**
+
+- Profile application, secret-exclusion, missing-target rejection, app-only
+  release routing, shell syntax, and Makefile dry-run checks passed locally.
+
+**Release status**
+
+- Implementation-only record. No Azure deployment, smoke, E2E, evaluation, or
+  telemetry result is claimed.
+
+## 2026-08-10 - Existing-target public release evidence
+
+**Change**
+
+- Released the app-only Foundry-public lane after a resource-reuse
+  `azd provision` reported no changes.
+- Updated the PostgreSQL readiness script to use the current Azure CLI
+  flexible-server show arguments: `--server-name` and `--name`.
+
+**Validation and release evidence**
+
+- Full local validation passed: lint, 43 backend tests, scripts, frontend
+  checks, and local Playwright E2E. Bicep compiled with only its existing
+  non-blocking linter warning.
+- PostgreSQL readiness, ACR availability, Container App readiness, and
+  backend managed-identity `AcrPull` all passed before deployment.
+- Hosted agent version `42`, backend revision
+  `azcawhcedyxchnbtmpubbe--0000021`, and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000012` are active and Running.
+- Smoke passed for `run-smoke-20260810195340-158524`; deployed E2E passed for
+  `run-hosted-happy-20260810195505-160963` and
+  `run-hosted-recover-20260810195505-160963`.
+- Foundry evaluation `eval_d0e6c3dfb31d44f0bb6b1e3d44cb194f` passed 1 of 1.
+  Application Insights returned 64 correlated rows for the two E2E runs and
+  zero exceptions.
+
+**Issue and resolution**
+
+- The initial release stopped before app deployment because the readiness
+  gate passed obsolete firewall-rule and database argument names to Azure CLI.
+  The corrected gate passed against the existing target, and the retry
+  completed every release gate without provisioning a new resource or adding
+  a fallback.
+
+## 2026-08-10 - Final existing-target app-only release evidence
+
+**Validation and release evidence**
+
+- Bicep compiled and the existing PostgreSQL readiness gate passed; no
+  provisioning or retained-infrastructure mutation occurred.
+- Hosted agent version `43`, backend revision
+  `azcawhcedyxchnbtmpubbe--0000022`, and frontend revision
+  `azcawhcedyxchnbtmpubfe--0000013` are active and Running.
+- Smoke passed for `run-smoke-20260810203807-206537`; deployed E2E passed for
+  `run-hosted-happy-20260810203934-208937` and
+  `run-hosted-recover-20260810203934-208937`.
+- Foundry evaluation `eval_4082061319e44f38b7e1520ae9122c7f` completed 1/1
+  with zero failures/errors. Application Insights returned 64 correlated rows
+  and zero exceptions for the two E2E runs.
+
+## 2026-08-12 - Validation-only catalog skill refresh and sanity run
+
+**Change**
+
+- Selectively vendored the complete `microsoft-foundry` (185 files) and
+  `agent-framework-azure-ai-py` (5 files) directories under `.github/skills/`.
+- Recorded the `microsoft/skills` source pin
+  `e58528db9a006528a5fb0a2c029790fa6a9a7c0e` in
+  `.github/skills/README.md`, and added both skills to the instruction,
+  agent-guide, and technology-stack inventories.
+
+**Candidate review**
+
+- Reviewed the recipes and called scripts for `foundry-iac-build`,
+  `foundry-postgres-readiness`, `foundry-smoke`, `foundry-hosted-e2e`,
+  `foundry-eval`, and `foundry-telemetry` before execution.
+- The selected validation routes compile or read/query existing resources;
+  smoke and E2E submit disposable validation workflows and write local
+  evidence. Their existing evidence files were restored after each attempt so
+  pre-existing worktree changes remain intact.
+
+**Commands and outcomes**
+
+- `make foundry-iac-build` passed. The existing Bicep
+  `no-deployments-resources` warning remains.
+- `make foundry-postgres-readiness` failed: `PostgreSQL server is not Ready.`
+  This was a read-only preflight; no PostgreSQL change was attempted.
+- `make foundry-smoke` reached the existing endpoint but failed its completed
+  response assertion (`.status == "COMPLETED"`; no result payload was
+  extracted). No fresh workflow or conversation identifier was produced.
+- `make foundry-hosted-e2e` failed with HTTP 504. It produced no fresh
+  workflow-run identifiers or E2E evidence.
+- `./scripts/foundry/run_foundry_trace_eval.sh --check` passed, confirming
+  selected-AZD evaluation configuration. `make foundry-eval` was not run
+  because it would consume the pre-existing smoke evidence; no historical
+  conversation was treated as fresh evidence.
+- `make foundry-telemetry` was not run because it requires fresh hosted-E2E
+  evidence, which the failed E2E gate did not create. Pre-existing telemetry
+  evidence was not reused.
+
+**Release status and blockers**
+
+- No deployment, release, provisioning, `foundry-up`, infrastructure
+  reconciliation, PostgreSQL change, or app-only deployment was performed.
+- The safe source identifier for this change is the catalog revision above;
+  no credentials, connection strings, or other secrets are recorded here.
+- Re-run `make foundry-postgres-readiness`, then `make foundry-smoke`,
+  `make foundry-hosted-e2e`, `make foundry-eval`, and
+  `make foundry-telemetry` only after the existing PostgreSQL service and
+  hosted endpoint are healthy. This entry does not claim historical evidence
+  as current.
+
+## 2026-08-13 Release Gate Blocked: Frozen Manifest Unavailable
+
+- The requested existing-environment release was stopped before Bicep
+  compilation, Azure preview, provisioning, or application deployment.
+- The exact release-input freeze at the supplied session-state path could not
+  be read by this execution environment (`Permission denied`). Consequently,
+  the current dirty worktree manifest cannot be verified against the required
+  frozen manifest, and no deployment-safe approval can be established.
+- Current safe manifest digests were recorded locally for `Makefile`,
+  `pyproject.toml`, `requirements.txt`, `infra/foundry-hosted/azure.yaml`, and
+  `frontend/package.json`; `Makefile` is modified in the dirty worktree. No
+  secret, resource, deployment, database, network, or RBAC identifier was
+  produced or changed.
+- Remediation: restore read access to the exact freeze file, compare the
+  frozen and current manifests, then restart the Azure Validate workflow and
+  run fresh validation evidence. Do not reuse prior smoke, E2E, evaluation,
+  or telemetry artifacts.
+
+## 2026-08-13 Existing-Environment Release Gate Blocked: PostgreSQL Stopped
+
+- A fresh lane-local non-secret manifest was created from
+  `git status --short -uall` and SHA-256 file digests before validation. The
+  release remains an existing-environment operation in subscription
+  `4f18d577-3506-4a11-85e5-a83b14727a84`; no bootstrap was attempted.
+- Azure YAML schema validation passed and `make foundry-iac-build` passed.
+  Bicep emitted only the existing `no-deployments-resources` warning for
+  `resourceReuseValidation`.
+- `make foundry-postgres-readiness` failed with `PostgreSQL server is not
+  Ready.` The independent non-mutating
+  `azd provision --preview --no-prompt` also failed with
+  `ServerStoppedError` for existing server `azpgwhcedyxchnbtmpub` in resource
+  group `rg-underwriting-readiness-0731`; it applied no changes.
+- No guarded release, provisioning, deployment, PostgreSQL rebuild/reset,
+  database/network/RBAC mutation, smoke, hosted E2E, Foundry evaluation, or
+  telemetry gate ran after this failed prerequisite. No fresh run,
+  conversation, revision, or evaluation identifier was produced.
+- Root cause: the existing PostgreSQL server was stopped. Remediation is to
+  have the environment owner restore its Ready state, then repeat the full
+  fresh validation, preview review, guarded release, and evidence gates
+  without reusing prior artifacts.
+
+## 2026-08-13 Existing-Environment Release Completion Evidence
+
+- With explicit approval, only the lifecycle state of existing PostgreSQL
+  server `azpgwhcedyxchnbtmpub` was changed from `Stopped` to `Ready`. No
+  database data/configuration, public access, firewall, RBAC, network, reset,
+  or rebuild operation was performed.
+- A refreshed lane-local non-secret manifest was created before validation and
+  remained byte-identical through the guarded pipeline. Fresh Bicep
+  compilation and PostgreSQL readiness passed; Bicep retained only the known
+  `no-deployments-resources` warning.
+- `azd provision --preview --no-prompt` completed without applying changes.
+  Its only retained-resource differences were the declared Foundry
+  Application Insights connection and PostgreSQL resource-reuse properties;
+  no unexpected database, network, firewall, or RBAC mutation was shown.
+- The existing guarded `make foundry-release` path completed successfully.
+  Active backend revision `azcawhcedyxchnbtmpubbe--0000023` and frontend
+  revision `azcawhcedyxchnbtmpubfe--0000014` reported `Running` and
+  `Healthy`.
+- Fresh hosted smoke passed with
+  `run-smoke-20260813154647-80855`. Hosted E2E passed with
+  `run-hosted-happy-20260813154812-83546` and
+  `run-hosted-recover-20260813154812-83546`.
+- Report-only Foundry evaluation
+  `eval_99ff1f7625084ef7a9f9c5015bc04708` completed with 1 passed of 1 and
+  zero errors or failures. Application Insights verification correlated both
+  E2E runs with two request, hosted-invocation, and workflow-span records,
+  with zero correlated exceptions.
+
+## 2026-08-13 — Approved npm feed policy
+
+The frontend uses the approved Microsoft npm feed
+`https://packagefeedproxy.microsoft.io/npm/` for all locked installs. Its
+checked-in `.npmrc` requires TLS validation and sets
+`replace-registry-host=npmjs` so registry.npmjs.org lockfile tarballs cannot
+bypass the approved feed. The Docker build copies this policy before
+`npm ci`. This is a package-acquisition policy change only; no deployment or
+release evidence was rerun.

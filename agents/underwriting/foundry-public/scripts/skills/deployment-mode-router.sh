@@ -17,9 +17,9 @@ if [[ -z "$changed_files" ]]; then
 fi
 
 if grep -Eq '^(Makefile|infra/|scripts/|docker-compose\.yml|backend/Dockerfile(\.hosted)?|frontend/Dockerfile|pyproject\.toml|requirements\.txt|\.env\.example)' <<<"$changed_files"; then
-  echo "deploy_mode=full"
+  echo "deploy_mode=app_only"
   echo "validation_mode=full"
-  echo "reason=infra_or_runtime_surface_changed"
+  echo "reason=infra_or_runtime_surface_changed_app_only"
   exit 0
 fi
 

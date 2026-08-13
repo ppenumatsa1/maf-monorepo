@@ -123,6 +123,32 @@ Actions **Required cloud Docker E2E** job is the authoritative full-change
 Docker image/browser gate. This preserves Docker coverage without treating a
 managed-device egress restriction as an application failure.
 
+## 2026-08-10 — Final app-only rerun blocked by managed-device npm egress
+
+**Preflight.** Release safeguards, the credential-free reconciliation guard,
+smoke retry contract, and Bicep compilation passed. Infrastructure
+reconciliation was not invoked.
+
+**Observed issue.** The local app-only release deployed backend revision
+`maf-backend-puzsry--azd-1786393782`, then stopped while building the frontend.
+`npm ci --include=dev --no-audit` emitted npm's internal `Exit handler never
+called` error and returned without installing `tsc`; three verified retries
+reproduced the failure. The frontend remains on the prior running revision
+`maf-frontend-puzsry--ci-ci-31400240425-1`.
+
+**Decision.** The Dockerfile now verifies `node_modules/.bin/tsc` and retries
+the install before allowing a build, so an incomplete install cannot proceed
+to a misleading later failure. This did not overcome the managed-device Docker
+npm egress policy. The approved Microsoft npm proxy remains incomplete for the
+locked Vite/musl dependencies, and the Azure-hosted CI only authorizes Azure
+deployment on a `main` push. No registry, firewall, dependency, or CI
+authorization workaround was applied.
+
+**Release status.** This is not a completed release: smoke, deployed E2E,
+Foundry evaluation, and telemetry were not run after the frontend build
+failure. Use the required cloud Docker-E2E app-only release on a `main` push
+for the next complete Azure-hosted evidence chain.
+
 ### Cloud app-only release lane (2026-08-07)
 
 The Azure-hosted CI workflow now triggers only for
@@ -243,3 +269,226 @@ The design-review and quick-validation CI jobs now install the frontend with
 before running `make validate-quick`. This makes the clean GitHub runner
 contract match the documented local E2E target without relying on ignored
 `node_modules` directories.
+
+## 2026-08-12 — Validation-only hosted sanity run
+
+**Skills decision.** No skill was added or changed. The existing curated
+skills match this Container Apps-hosted MAF application: MAF/Foundry client,
+Azure identity, Azure Monitor telemetry, Azure deployment-validation, IaC,
+local-validation, and E2E skills cover the service boundaries already in use.
+`agent-framework-foundry-py` and `azure-ai-projects-py` support the existing
+MAF model-inference and report-only evaluation integrations; they do not make
+Foundry an application host. In particular, `microsoft-foundry` and every
+other additional Microsoft skill remain deliberately unadded.
+
+**Candidate target safety review.** `bicep-build` compiles Bicep to stdout;
+`release-preflight` runs source assertions, the credential-free local
+reconciliation mock, smoke-retry contract tests, and Bicep compilation; and
+`release-validate` reads the selected AZD non-secret outputs, drives the
+existing endpoints with the required validation workflows, creates validation
+artifacts, runs the report-only evaluation, and queries telemetry. None calls
+`release-app`, image deployment, `azd provision`, infrastructure
+reconciliation, or PostgreSQL administration. The endpoint workflows create
+their normal durable validation records; the mock preflight's fake apply is
+local-only and cleaned up.
+
+**Commands and fresh outcomes.** The first root-level `make bicep-build`
+invocation correctly failed because that target belongs to this lane; the
+corrected lane commands below passed:
+
+- `make -C agents/order-resolution/azure-hosted bicep-build`
+- `make -C agents/order-resolution/azure-hosted release-preflight`
+- `make -C agents/order-resolution/azure-hosted release-validate`
+
+IaC compilation and the deploy-not-run preflight passed. The latter also
+passed release asset checks, the local credential-free reconciliation guard,
+and the smoke retry contract. Fresh validation began at
+`2026-08-12T14:46:36.747596Z` with release-run identifier
+`20260812T144636Z-25678`: existing-endpoint smoke passed; hosted Playwright
+passed all 7 workflow and 3 selected-thread tests; the report-only Foundry
+evaluation `eval_5fa101257e5445b284d9a3a5eb5cf243` /
+`evalrun_8597954a4b2149d39c01f4de9682ca74` completed with 2/2 cases passed;
+and exact-pair Application Insights correlation passed with zero exceptions
+for the two fresh smoke thread/workflow-run pairs (39 and 5 telemetry items).
+
+**Boundary and blockers.** No deployment, `release-app`, app-only deployment,
+image push, provision, infrastructure reconciliation, or PostgreSQL
+administration/schema change was performed. Required endpoint workflows created
+only their normal durable validation records. There were no gate blockers.
+Azure CLI emitted its non-fatal `--subscription`/`--ids` warning during the
+read-only telemetry query; the telemetry gate still passed. This entry records
+fresh validation-only evidence, not a release or deployment claim, and
+contains no secrets.
+
+## 2026-08-13 — Release gate blocked before IaC execution
+
+**Pre-deployment checks.** The selected Azure account resolved to subscription
+`4f18d577-3506-4a11-85e5-a83b14727a84`, and AZD resolved the existing
+`maf-ora-azure` environment. The frozen-release manifest SHA-256 was
+`04e56fc79a11e09d60865dde0f190cf9aa7755318decb8ed942e212d856b1c98`
+both before release work and at stop time.
+
+**Blocker.** The required Azure Validate workflow command was denied before it
+could report or perform a validation step. Per the release stop-on-failure
+rule, Bicep compilation, the non-mutating subscription provision preview,
+proposed-change review, `make release-app`, smoke, hosted Playwright E2E,
+report-only Foundry evaluation, and exact-pair Application Insights telemetry
+were not run. No PostgreSQL mutation, reconciliation, reset, or other
+deployment action was attempted. This is a blocked release, not deployment
+evidence.
+
+## 2026-08-13 — Azure Validate access diagnosis and lane-local gate
+
+**Central workflow diagnosis.** The command
+`bash /home/praveen/.agents/skills/azure-validate/references/scripts/workflow.sh --workspace-path /home/praveen/projects/poc/maf/maf-monorepo/agents/order-resolution/azure-hosted`
+was retried once. The task execution layer denied it before a shell could
+start, reporting exactly: `Permission denied and could not request permission
+from user`. This is an execution-context restriction on the centrally
+installed skill script, not an Azure command or project-script failure.
+
+**Equivalent lane checks.** Azure authentication resolved subscription
+`4f18d577-3506-4a11-85e5-a83b14727a84`; the selected existing AZD environment
+was `maf-ora-azure` with resource group `rg-maf-ora-azure`. Bicep compilation
+and `make release-preflight` passed, including release asset/policy checks,
+the credential-free reconciliation guard, and the smoke-retry contract. The
+resource-group role review returned `Contributor`.
+
+**Preview blocker.** The guarded non-mutating preview command
+`RELEASE_RUN_ID=validation-20260813T152900Z INFRA_RECONCILIATION_PARAMETERS_FILE=infra/azure-apphosted/iac/main.parameters.json make release-infra-preview`
+stopped before contacting Azure because its security guard rejected the local
+AZD executable: `Infrastructure reconciliation refuses azd: it must be
+root-owned and not group/world writable.` No Azure what-if was produced, so
+there were no proposed changes to inspect and no PostgreSQL mutation result.
+Per stop-on-failure, `make release-app`, smoke, hosted E2E, Foundry evaluation,
+and telemetry were not run. No infrastructure or PostgreSQL mutation was
+attempted.
+
+**Frozen-input check.** The final required manifest recheck detected a change:
+the initial SHA-256 was
+`04e56fc79a11e09d60865dde0f190cf9aa7755318decb8ed942e212d856b1c98`,
+while the final SHA-256 was
+`1a55d84a892275eb8857777d7a2594053c1e7b6aae053ed7eaeefbafdc016e82`.
+The manifest was not modified by this release task. This independently blocks
+any later deployment from this run.
+
+## 2026-08-13 — Retry blocked by task-context access controls
+
+The requested retry of the central Azure Validate command was again denied
+before shell execution with `Permission denied and could not request permission
+from user`. The required diagnostic for an alternate trusted AZD binary/path
+was also denied by the task execution layer before it could inspect candidates.
+Consequently, no system-owned executable was changed, no alternate trusted
+environment was identified, and the guarded preview could not be retried.
+There was no new Azure validation, preview, deployment, smoke, hosted E2E,
+evaluation, or telemetry result.
+
+## 2026-08-13 — IaC preview exposed retained-resource drift
+
+**Local guard adjustment.** With explicit owner authorization for this
+single-user workstation, the reconciliation command check now accepts an
+executable that is not group- or world-writable without requiring that it be
+root-owned. The credential-free mock guards, release-asset checks, smoke-retry
+contract, and Bicep compilation passed after this narrow local-tooling change.
+The guard still rejects group- or world-writable command targets.
+
+**Preview result.** `azd provision --preview --environment maf-ora-azure
+--no-prompt` completed without applying changes. It proposed `Modify` actions
+for the two Container Apps, their Container Apps environment, Azure AI
+Services and model deployments, Foundry project, ACR, Application Insights,
+and the existing PostgreSQL Flexible Server
+`maf-ora-azure-pg-puzsry`.
+
+**Issue and disposition.** The project’s app-only release boundary retains the
+existing PostgreSQL server/database and does not reconcile shared Foundry,
+ACR, monitoring, or Container Apps environment resources. The proposed
+PostgreSQL and shared-resource changes are therefore unsafe for this run.
+`make release-app`, smoke, hosted E2E, Foundry evaluation, and telemetry were
+not run. This is no deployment evidence. Reconciliation remains a separate
+owner-reviewed operation with a reviewed what-if and explicit approval.
+
+## 2026-08-13 — App-only release stopped at frontend packaging
+
+**Preflight and release boundary.** Release asset validation, Bicep
+compilation, the credential-free reconciliation mock guards, and the
+smoke-retry contract passed. The subscription preview was read-only. Its
+retained-resource drift remains a reconciliation concern and did not invoke a
+provision or apply operation for this app-only release.
+
+**Observed issue.** `make release-app` deployed the backend successfully, but
+the frontend Docker build failed before image publication. In the
+`node:20.19.0-alpine3.20` build stage, each of the three bounded
+`npm ci --include=dev --no-audit` attempts ended with npm's internal `Exit
+handler never called` failure. The Dockerfile verified that `tsc` was not
+installed and failed explicitly rather than producing an invalid frontend
+image.
+
+**Disposition.** The managed-device Docker/npm egress issue remains external
+to the application source. The approved Microsoft npm proxy does not contain
+the locked Vite/Linux-musl dependencies, so no registry swap, dependency
+downgrade, firewall change, or CI authorization workaround was applied. The
+frontend was not deployed, and fresh smoke, hosted E2E, Foundry evaluation,
+and telemetry were not run. Use the required cloud Docker-E2E app-only
+release from a `main` push to build/test/publish the exact frontend image
+before attempting another complete hosted-evidence chain.
+
+## 2026-08-13 — Approved npm feed configured for local and Docker installs
+
+**Issue correction.** Direct npm downloads are not permitted on this managed
+workstation. The approved Microsoft npm feed
+`https://packagefeedproxy.microsoft.io/npm/` is reachable and serves Vite.
+The prior assertion that the approved feed could not supply the relevant
+frontend dependencies is superseded pending a clean locked-install test.
+
+**Fix.** The frontend now carries a checked-in `.npmrc` that uses only the
+approved feed, requires TLS validation, and sets
+`replace-registry-host=npmjs` so npm rewrites registry.npmjs.org lockfile
+tarball URLs rather than bypassing the feed. Its Dockerfile copies that file
+before `npm ci`, making local and container installs follow the same policy.
+The Playwright package uses the same policy for local E2E dependencies.
+
+**Release status.** No deployment was started by this configuration change.
+The previously deployed backend-only revision remains incomplete release
+evidence until the frontend can build and the full smoke, hosted E2E,
+evaluation, and telemetry gates are rerun.
+
+## 2026-08-13 — Approved-feed lockfile validation
+
+**Root cause and fix.** The original lockfile pinned artifacts newer than the
+approved feed snapshot, including `update-browserslist-db@1.3.0` and
+`caniuse-lite@1.0.30001809`. A clean lockfile was regenerated from the
+approved feed with no public npm download. It changes nine transitive packages
+within their declared ranges: the CopilotKit packages resolve from `1.66.4`
+to `1.66.2`, `caniuse-lite` from `1.0.30001809` to `1.0.30001807`, and
+`update-browserslist-db` from `1.3.0` to `1.2.3`.
+
+**Feed behavior.** The frontend `.npmrc` uses
+`replace-registry-host=npmjs`, not `always`: registry.npmjs.org lockfile URLs
+are rewritten to the approved proxy, while the proxy's returned Microsoft
+Artifact URLs are preserved rather than incorrectly rewritten a second time.
+TLS validation remains required.
+
+**Validation.** A clean `npm ci` and `npm run build` completed in the
+`node:20.19.0-alpine3.20` Docker build using only the approved feed. The
+validated local image is
+`sha256:fb094faf1c6030959c52de6544fc2f4f08eda40ff39874b7ac81715df9afc88d`.
+This validation did not deploy resources; fresh release evidence remains
+required.
+
+## 2026-08-13 — App-only release completed through approved npm feeds
+
+**Deployment.** The validated app-only release deployed backend revision
+`maf-backend-puzsry--azd-1786652208` and frontend revision
+`maf-frontend-puzsry--azd-1786652208` to the existing Container Apps. No
+infrastructure reconciliation or PostgreSQL operation was performed.
+
+**Fresh gates.** Release `20260813T201627Z-196242` passed smoke, all 7 hosted
+workflow Playwright tests, and all 3 frontend integration tests. Report-only
+Foundry evaluation `eval_0f534cf971bf4e82b1b16e25ba8f1e6e` /
+`evalrun_a7551dccd66e433d934299d84c6029bc` passed 2 of 2 cases with zero
+errors or failures.
+
+**Telemetry.** Exact-pair Application Insights validation found 43 telemetry
+items for `ORD-1001` workflow `fc24d69b-702a-4919-8d2b-4bb305e5ec98` and 44
+for `ORD-1009` workflow `7c428464-d784-45ff-8aa9-4997a48469a2`, with zero
+exceptions in each pair. Both frontend and backend endpoints were returned by
+AZD as deployed and healthy.

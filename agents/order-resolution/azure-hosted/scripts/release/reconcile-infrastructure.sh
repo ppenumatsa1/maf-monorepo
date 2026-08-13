@@ -86,10 +86,9 @@ verify_trusted_command() {
     echo "Infrastructure reconciliation could not resolve an executable for $name." >&2
     exit 1
   }
-  owner="$(/usr/bin/stat -c '%u' "$resolved")"
   mode_bits="$(/usr/bin/stat -c '%a' "$resolved")"
-  if [[ "$owner" != "0" || $((8#$mode_bits & 8#022)) -ne 0 ]]; then
-    echo "Infrastructure reconciliation refuses $name: it must be root-owned and not group/world writable." >&2
+  if [[ $((8#$mode_bits & 8#022)) -ne 0 ]]; then
+    echo "Infrastructure reconciliation refuses $name: it must not be group/world writable." >&2
     exit 1
   fi
   printf '%s\n' "$resolved"

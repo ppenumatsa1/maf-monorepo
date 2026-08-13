@@ -125,8 +125,8 @@ Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full validation
 ## Stack Implementation Skills
 
 Load only the relevant implementation skill for the task; these complement rather than replace the
-repository workflow skills above. The baseline has five vendored Microsoft skills and two
-local (repository-owned) skills:
+repository workflow skills above. The baseline includes seven vendored Microsoft skills and
+repository-owned workflow/frontend-boundary skills:
 
 - `agent-framework-foundry-py`: this service's `agent-framework-foundry` integration,
   `FoundryChatClient`, `SequentialBuilder`, middleware, resumable workflows, and
@@ -134,6 +134,9 @@ local (repository-owned) skills:
 - `azure-ai-projects-py`: Foundry projects, deployments, and evaluations.
 - `azure-identity-py`: Entra authentication and managed identity.
 - `azure-monitor-opentelemetry-py`: Application Insights and Azure Monitor telemetry.
+- `azure-monitor-query-py`: read-only Azure Monitor Logs queries, including the
+  `LogsQueryClient` telemetry correlation in `backend/evals/verify_telemetry.py`.
+- `microsoft-foundry`: hosted-agent, evaluation, and Foundry observability guidance.
 - `fastapi-router-py`: FastAPI HTTP routes.
 - `pydantic-models-py`: Pydantic v2 schemas.
 - `postgres-psycopg-py`: PostgreSQL, Psycopg, pgvector, and Azure PostgreSQL persistence.
@@ -146,6 +149,11 @@ local (repository-owned) skills:
   workflow contracts.
 - `e2e-rubric`: operator coverage for native SSE, durable HITL, optional
   AG-UI, CopilotKit safety, and private wrapper boundaries.
+
+`microsoft-foundry` and `azure-monitor-query-py` were selectively vendored
+(not as a full catalog install) from `microsoft/skills` revision
+`e58528db9a006528a5fb0a2c029790fa6a9a7c0e`; see
+`docs/design/techstack.md` for their exact upstream paths.
 
 Legacy shim paths have been removed. Do not add code that imports or recreates `app/models.py`, `app/config.py`, `app/db.py`, `app/state.py`, `app/workflow_run_repository.py`, `app/rag_repository.py`, `workflows/*`, `tools/*`, or root `app/api/*` router shims.
 Also do not reintroduce removed Foundry adapter/proxy surfaces such as `/api/foundry*` or `backend/app/foundry/*`.

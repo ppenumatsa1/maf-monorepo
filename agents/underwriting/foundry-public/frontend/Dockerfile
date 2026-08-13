@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package*.json .npmrc ./
 RUN npm ci --include=dev --no-audit --no-fund
 
 COPY . .

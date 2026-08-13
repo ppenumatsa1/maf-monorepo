@@ -19,7 +19,11 @@ FOUNDRY_RELEASE_BASE_REF="${FOUNDRY_RELEASE_BASE_REF:-HEAD}"
 FOUNDRY_VALIDATION_MODE="${FOUNDRY_VALIDATION_MODE:-}"
 FOUNDRY_DEPLOY_MODE="${FOUNDRY_DEPLOY_MODE:-}"
 FOUNDRY_SMOKE_MODE="${FOUNDRY_SMOKE_MODE:-happy}"
+FOUNDRY_DEPLOYMENT_PROFILE="${FOUNDRY_DEPLOYMENT_PROFILE:-}"
 
+if [[ -n "$FOUNDRY_DEPLOYMENT_PROFILE" ]]; then
+  bash "$ROOT_DIR/deployment/apply-azd-profile.sh" "$FOUNDRY_DEPLOYMENT_PROFILE"
+fi
 ./scripts/foundry/ensure_foundry_azd_defaults.sh
 
 wait_for_parallel_jobs() {
@@ -74,9 +78,8 @@ case "$deploy_mode" in
     make foundry-appinsights-connection
     ;;
   full)
-    make foundry-provision
-    make foundry-release-deploy
-    make foundry-appinsights-connection
+    echo "Routine releases are app-only. Run the explicitly approved provisioning workflow separately." >&2
+    exit 1
     ;;
   *)
     echo "Unsupported deploy mode: $deploy_mode" >&2

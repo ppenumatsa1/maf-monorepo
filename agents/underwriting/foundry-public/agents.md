@@ -73,6 +73,8 @@ Use focused skills instead of one broad review pass:
 Load only the relevant implementation skill for the task:
 
 - `agent-framework-foundry-py`
+- `agent-framework-azure-ai-py`
+- `microsoft-foundry`
 - `azure-ai-projects-py`
 - `azure-identity-py`
 - `azure-monitor-opentelemetry-py`

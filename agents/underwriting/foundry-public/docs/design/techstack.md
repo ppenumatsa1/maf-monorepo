@@ -32,6 +32,9 @@
 - Playwright (frontend E2E rubric)
 - Makefile as the primary developer and release command surface
 - Hosted validation targets such as `make foundry-smoke` and `make foundry-eval`
+- Selectively vendored Microsoft catalog skills: `microsoft-foundry` and
+  `agent-framework-azure-ai-py`; the exact source revision and refresh policy
+  are recorded in [`.github/skills/README.md`](../../.github/skills/README.md).
 
 ## Local runtime
 

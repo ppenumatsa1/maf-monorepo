@@ -115,6 +115,12 @@ CFS package feed.
 Load only the relevant implementation skill for the task; these complement
 rather than replace the repository workflow skills above:
 
+- `microsoft-foundry`: the selectively vendored complete Foundry lifecycle skill
+  for hosted-agent invocation, evaluation, trace analysis, and troubleshooting.
+  It is sourced only from
+  `microsoft/skills` revision `e58528db9a006528a5fb0a2c029790fa6a9a7c0e`
+  (`.github/plugins/azure-skills/skills/microsoft-foundry`); do not install the
+  full catalog.
 - `agent-framework-foundry-py`: this service's `agent-framework-foundry` integration,
   `FoundryChatClient`, `SequentialBuilder`, middleware, resumable workflows, and
   checkpoint-backed HITL request/response flows.

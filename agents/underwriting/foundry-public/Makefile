@@ -17,9 +17,9 @@ endif
 
 .PHONY: help bootstrap up down logs db-reset install run run-fail-once run-crash resume state events checkpoints \
 	backend-dev frontend-install frontend-dev \
-	test test-backend test-frontend test-scripts test-e2e \
+	test test-backend test-frontend test-scripts test-deployment-profile test-e2e \
 	lint lint-backend lint-frontend format format-check quality validate-quick validate-full \
-	foundry-bootstrap foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
+	foundry-profile-apply foundry-bootstrap foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
 	foundry-postgres-credentials foundry-postgres-readiness foundry-backend-deploy foundry-frontend-deploy \
 	foundry-backend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
 	foundry-up foundry-smoke foundry-hosted-e2e foundry-eval \
@@ -51,8 +51,11 @@ help:
 >@printf "  make validate-full                - Run the full validation lane\n"
 >@printf "  make test                         - Run backend + frontend tests\n"
 >@printf "  make test-scripts                 - Run Foundry helper script tests\n"
+>@printf "  make test-deployment-profile      - Run non-secret target-profile contract checks\n"
 >@printf "  make test-e2e                     - Run Playwright end-to-end tests\n"
 >@printf "\nFoundry public release commands:\n"
+>@printf "  make foundry-profile-apply FOUNDRY_DEPLOYMENT_PROFILE=/secure/path/profile.env\n"
+>@printf "                                     - Select an existing non-secret target profile\n"
 >@printf "  make foundry-bootstrap            - Refresh the local azd environment from the reused Azure resources\n"
 >@printf "  make foundry-iac-build            - Compile resource-reuse Foundry Bicep\n"
 >@printf "  make foundry-provision            - Apply approved PostgreSQL auth/firewall and Foundry connection IaC\n"
@@ -144,6 +147,9 @@ test-frontend:
 test-scripts:
 >cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_postgres_runtime_credentials.py
 
+test-deployment-profile:
+>cd $(ROOT) && bash deployment/tests/test-profile.sh
+
 test-e2e:
 >@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
 		cd $(ROOT)/frontend && npm run test:e2e; \
@@ -213,6 +219,10 @@ frontend-dev:
 
 foundry-bootstrap:
 >./scripts/foundry/bootstrap_azd_env.sh
+
+foundry-profile-apply:
+>@test -n "$(FOUNDRY_DEPLOYMENT_PROFILE)" || { echo "FOUNDRY_DEPLOYMENT_PROFILE is required." >&2; exit 2; }
+>bash ./deployment/apply-azd-profile.sh "$(FOUNDRY_DEPLOYMENT_PROFILE)"
 
 foundry-iac-build:
 >az bicep build --file infra/foundry-hosted/iac/main.bicep

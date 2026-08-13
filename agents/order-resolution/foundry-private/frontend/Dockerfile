@@ -2,7 +2,7 @@ FROM node:20.19.0-alpine3.20 AS build
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package*.json .npmrc ./
 RUN npm ci
 
 COPY . .

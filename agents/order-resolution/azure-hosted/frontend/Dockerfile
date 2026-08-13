@@ -2,8 +2,13 @@ FROM node:20.19.0-alpine3.20 AS build
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --include=dev --no-audit
+COPY package*.json .npmrc ./
+RUN for attempt in 1 2 3; do \
+      npm ci --include=dev --no-audit && test -x node_modules/.bin/tsc && exit 0; \
+      rm -rf node_modules; \
+      [ "$attempt" = 3 ] && exit 1; \
+      sleep "$attempt"; \
+    done
 
 COPY . .
 RUN npm run build

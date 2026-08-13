@@ -81,6 +81,8 @@ When the deployed frontend is in scope, run hosted Playwright against it with `P
 Load only the skills relevant to the change:
 
 - `agent-framework-foundry-py`
+- `agent-framework-azure-ai-py`
+- `microsoft-foundry`
 - `azure-ai-projects-py`
 - `azure-identity-py`
 - `azure-monitor-opentelemetry-py`
