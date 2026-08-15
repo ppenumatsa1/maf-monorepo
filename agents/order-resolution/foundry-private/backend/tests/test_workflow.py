@@ -237,7 +237,13 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
     output_messages = [
         event["payload"]["message"] for event in history if event["type"] == "workflow.output"
     ]
-    assert any("Previous result: Resolution complete." in message for message in output_messages)
+    assert any(
+        "because the reported fulfillment issue mapped to the submitted policy action"
+        in message
+        and "below the human-review threshold" in message
+        and "Previous result: Resolution complete." in message
+        for message in output_messages
+    )
 
 
 @pytest.mark.asyncio

@@ -419,8 +419,17 @@ class OrderResolutionWorkflow:
             role = str(item.get("role", "")).strip().lower()
             content = str(item.get("content", "")).strip()
             if role == "assistant" and content:
+                approval_context = (
+                    "The case crossed a human-review threshold, and the reviewer approved "
+                    "the proposed action."
+                    if content.startswith("Approval accepted.")
+                    else "The case remained below the human-review threshold, so the policy "
+                    "action could be applied automatically."
+                )
                 return (
-                    "The resolution was selected from order status and policy checks. "
+                    "The resolution was selected from order status and policy checks because "
+                    "the reported fulfillment issue mapped to the submitted policy action. "
+                    f"{approval_context} "
                     f"Previous result: {content}"
                 )
         return (

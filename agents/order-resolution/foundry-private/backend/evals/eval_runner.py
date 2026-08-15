@@ -344,7 +344,10 @@ async def _run_case(*, case: EvalCase, workflow, event_bus: EventBus) -> dict[st
         )
         if explanation_stage is None:
             raise AssertionError("explanation follow-up stage missing")
-        if "The resolution was selected from order status and policy checks." not in output_message:
+        if (
+            "The resolution was selected from order status and policy checks because"
+            not in output_message
+        ):
             raise AssertionError("explanation output missing expected rationale prefix")
 
     return {
