@@ -1616,3 +1616,12 @@ that fresh generated proof to disable PostgreSQL public access, and then runs
 the complete evidence gate again. It references only the existing PostgreSQL
 administrator bootstrap secret and cannot provision, deploy applications, or
 reconcile Foundry connections.
+
+Lockdown run `31902213675` generated fresh successful ACA and hosted-agent
+database connectivity proof, then stopped before changing public access
+because the runner's installed PostgreSQL CLI rejected the documented
+`flexible-server update --name` argument. The hardening helper now applies the
+same `properties.network.publicNetworkAccess=Disabled` update through the
+generic ARM resource command using the already validated canonical server
+resource ID. All proof, private-endpoint, DNS, target, freshness, and
+post-update state checks remain unchanged.

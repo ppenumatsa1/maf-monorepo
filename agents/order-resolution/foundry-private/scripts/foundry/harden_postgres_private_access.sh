@@ -219,10 +219,9 @@ if [[ "${public_network_access}" == "Enabled" ]]; then
 
   # Firewall APIs are unavailable after public access is disabled, so remove
   # the Azure-services rule while the endpoint is still queryable.
-  az postgres flexible-server update \
-    --resource-group "${AZURE_RESOURCE_GROUP}" \
-    --name "${postgres_server_name}" \
-    --public-access Disabled \
+  az resource update \
+    --ids "${server_id}" \
+    --set properties.network.publicNetworkAccess=Disabled \
     --only-show-errors \
     --output none
 fi
