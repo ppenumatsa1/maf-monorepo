@@ -150,7 +150,7 @@ def test_trace_ingestion_wait_is_zero_after_minimum_delay() -> None:
     )
 
 
-def test_trace_criteria_use_query_response_mapping() -> None:
+def test_trace_criteria_use_conversation_messages_mapping() -> None:
     criteria = _build_trace_testing_criteria(["coherence"], "gpt-4o-mini")
 
     assert criteria == [
@@ -159,10 +159,7 @@ def test_trace_criteria_use_query_response_mapping() -> None:
             "name": "coherence",
             "evaluator_name": "builtin.coherence",
             "initialization_parameters": {"model": "gpt-4o-mini"},
-            "data_mapping": {
-                "query": "{{item.query}}",
-                "response": "{{item.response}}",
-            },
+            "data_mapping": {"messages": "{{item.messages}}"},
         }
     ]
 

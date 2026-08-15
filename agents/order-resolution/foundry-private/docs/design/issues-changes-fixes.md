@@ -1565,3 +1565,10 @@ Evidence run `31898135479` then reached the private hosted endpoint but the
 first conversation request hit a client timeout during hosted-version warm-up.
 The existing bounded E2E retry now classifies deadline/timeout failures as
 transient alongside 404/409/429/5xx propagation responses.
+
+**Trace evaluator input mapping.** Evidence run `31898244514` completed all
+three hosted HITL conversations and telemetry correlation, but both Foundry
+evaluators errored for every trace. Official Foundry trace-evaluation samples
+map conversation evaluators from `{{item.messages}}`; the runner incorrectly
+mapped nonexistent trace `query` and `response` fields. Task completion and
+coherence now use the supported conversation-messages mapping.

@@ -174,10 +174,7 @@ def _build_trace_testing_criteria(
             "name": evaluator_name,
             "evaluator_name": f"builtin.{evaluator_name}",
             "initialization_parameters": {"model": judge_model},
-            "data_mapping": {
-                "query": "{{item.query}}",
-                "response": "{{item.response}}",
-            },
+            "data_mapping": {"messages": "{{item.messages}}"},
         }
         for evaluator_name in evaluators
     ]

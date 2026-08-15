@@ -638,8 +638,7 @@ def validate() -> None:
     for value in (
         '"type": "azure_ai_traces"',
         '"trace_ids": trace_ids',
-        '"query": "{{item.query}}"',
-        '"response": "{{item.response}}"',
+        '"messages": "{{item.messages}}"',
         "data_source=_build_exact_trace_data_source(trace_ids)",
     ):
         require(eval_runner, value, "private trace evaluation runner")
