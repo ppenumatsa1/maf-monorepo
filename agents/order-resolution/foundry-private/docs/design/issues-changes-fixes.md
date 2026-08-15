@@ -26,15 +26,29 @@ extra results. The high-risk approval response now explicitly confirms that
 approval was accepted before reporting the submitted resolution, aligning the
 terminal response with the approval request evaluated from the trace.
 
+The first strict run then exposed a separate quality defect: the low-risk
+follow-up said only that policy checks selected the action, without explaining
+the mapping requested by "Why was that resolution selected?". The explanation
+now states that the reported fulfillment issue mapped to the submitted policy
+action and whether the human-review threshold applied.
+
 **Evidence.**
 
 - Provision workflow `31906517820` completed successfully.
 - App-only deployment `31906717310` completed successfully.
 - Evidence runs `31906891692` and `31907354241` exposed the previous 2/3
   evaluator-pass condition; they are diagnostic evidence, not release success.
-- Local backend validation after the enforcement and approval-response fixes:
+- Strict evidence run `31908249911` correctly failed on the incomplete
+  low-risk explanation instead of returning success.
+- Final app-only deployment `31908682961` completed successfully from commit
+  `6e83a97`.
+- Final evidence run `31908858225` passed HITL E2E, telemetry correlation, and
+  strict evaluation with `passed=3`, `failed=0`, `errored=0`, and `skipped=0`.
+- Local backend validation after the enforcement and response fixes:
   132 tests passed and Ruff passed.
-- A fresh evidence run is required after deployment of the response fix.
+- Measured infrastructure/IaC-to-telemetry time was 13m37s. Measured
+  app-only-to-telemetry time was 8m43s; app-only to complete strict evaluation
+  was 11m54s.
 
 ## Shared authoritative drift decision (2026-08-07)
 

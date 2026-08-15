@@ -105,6 +105,22 @@ Do not reconcile infrastructure:
 No workflow may recreate the retired proof file, firewall rule, lockdown
 script/workflow, public-access fallback, or post-lockdown rerun.
 
+## Measured timings
+
+Measurements use GitHub workflow timestamps and the log timestamp at which the
+Application Insights correlation gate passed.
+
+| Flow | Runs | Time to telemetry |
+| --- | --- | ---: |
+| Infrastructure/IaC to telemetry | Provision `31906517820`, deploy `31906717310`, evidence `31906891692` | **13m 37s** |
+| App-only to telemetry | Deploy `31908682961`, evidence `31908858225` | **8m 43s** |
+| App-only to complete strict evaluation | Deploy `31908682961`, evidence `31908858225` | **11m 54s** |
+
+The largest fixed delay after E2E is telemetry ingestion. The final evidence
+run waited 172 seconds before submitting exact-trace evaluation. Automating
+workflow handoffs removes about one minute from the measured infrastructure
+path without weakening a gate.
+
 ## Stop conditions
 
 Stop the release if:
