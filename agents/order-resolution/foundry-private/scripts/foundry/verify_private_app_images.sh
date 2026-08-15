@@ -71,36 +71,42 @@ mapfile -t acr_login_servers < <(
 }
 
 for app_name in "$backend_app_name" "$frontend_app_name"; do
-  revision_name="$(
-    az containerapp show \
-      --resource-group "$resource_group" \
-      --name "$app_name" \
-      --query properties.latestReadyRevisionName \
-      --output tsv
-  )"
-  [[ -n "$revision_name" ]] || {
-    echo "Container App $app_name has no ready revision." >&2
-    exit 1
-  }
-
-  mapfile -t images < <(
-    az containerapp revision show \
-      --resource-group "$resource_group" \
-      --name "$app_name" \
-      --revision "$revision_name" \
-      --query 'properties.template.containers[].image' \
-      --output tsv
-  )
-  [[ "${#images[@]}" -gt 0 ]] || {
-    echo "Container App $app_name has no container images in its ready revision." >&2
-    exit 1
-  }
-  for image in "${images[@]}"; do
-    [[ "${image,,}" == "${configured_acr_login_server,,}/"* ]] || {
-      echo "Container App $app_name uses an image outside the selected private ACR." >&2
-      exit 1
-    }
+  verified=false
+  for attempt in $(seq 1 "${APP_IMAGE_VERIFY_MAX_ATTEMPTS:-12}"); do
+    revision_name="$(
+      az containerapp show \
+        --resource-group "$resource_group" \
+        --name "$app_name" \
+        --query properties.latestReadyRevisionName \
+        --output tsv
+    )"
+    images=()
+    if [[ -n "$revision_name" ]]; then
+      mapfile -t images < <(
+        az containerapp revision show \
+          --resource-group "$resource_group" \
+          --name "$app_name" \
+          --revision "$revision_name" \
+          --query 'properties.template.containers[].image' \
+          --output tsv
+      )
+    fi
+    if [[ "${#images[@]}" -gt 0 ]]; then
+      verified=true
+      for image in "${images[@]}"; do
+        if [[ "${image,,}" != "${configured_acr_login_server,,}/"* ]]; then
+          verified=false
+          break
+        fi
+      done
+    fi
+    [[ "$verified" == "true" ]] && break
+    sleep "${APP_IMAGE_VERIFY_RETRY_SECONDS:-10}"
   done
+  [[ "$verified" == "true" ]] || {
+    echo "Container App $app_name did not converge to a ready revision in the selected private ACR." >&2
+    exit 1
+  }
 done
 
 echo "Verified active backend and frontend Container App revisions use the selected private ACR."

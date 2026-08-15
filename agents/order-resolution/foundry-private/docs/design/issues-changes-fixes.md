@@ -1528,3 +1528,16 @@ Release run `31896627167` showed that the runner service did not inherit
 `AZD_CONFIG_DIR` from `/etc/environment`, so the workflow could not see the
 preinstalled extensions. The app-only workflow now explicitly uses the
 runner's persistent `/mnt/.azd` configuration directory.
+
+**Container App readiness convergence.** Release run `31896702903` built,
+pushed, and activated both private ACR images, but the immediate verifier read
+the prior `latestReadyRevisionName` while Container Apps was still converging.
+Image verification now performs a bounded retry until each latest ready
+revision uses the selected private ACR.
+
+Diagnostics then showed the new backend revision was unhealthy because the
+bootstrap placeholder still supplied a localhost database URL; reuse-mode
+infrastructure intentionally skips Container App mutation. App-only deployment
+now stages the secure `database-url` secret and binds `DATABASE_URL` with
+`DB_SCHEMA_MANAGED_EXTERNALLY=true` before deploying the immutable backend
+image.

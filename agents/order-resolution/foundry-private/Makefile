@@ -307,13 +307,24 @@ foundry-deploy: ensure-foundry-deploy-env
 foundry-app-deploy:
 	@test -f backend/Dockerfile
 	@test -f frontend/Dockerfile
+	@set -euo pipefail; \
+	cd infra/foundry-hosted; \
+	resource_group="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"; \
+	backend_name="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value BACKEND_CONTAINER_APP_NAME)"; \
+	runtime_database_url="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value RUNTIME_DATABASE_URL)"; \
+	az containerapp secret set --resource-group "$$resource_group" --name "$$backend_name" \
+		--secrets "database-url=$$runtime_database_url" --only-show-errors --output none; \
+	az containerapp update --resource-group "$$resource_group" --name "$$backend_name" \
+		--set-env-vars DATABASE_URL=secretref:database-url DB_SCHEMA_MANAGED_EXTERNALLY=true \
+		--only-show-errors --output none
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
 	@set -euo pipefail; \
 	cd infra/foundry-hosted; \
 	resource_group="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"; \
 	backend_name="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value BACKEND_CONTAINER_APP_NAME)"; \
 	az containerapp update --resource-group "$$resource_group" --name "$$backend_name" \
-		--set-env-vars DB_SCHEMA_MANAGED_EXTERNALLY=true --only-show-errors --output none
+		--set-env-vars DATABASE_URL=secretref:database-url DB_SCHEMA_MANAGED_EXTERNALLY=true \
+		--only-show-errors --output none
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
 
 foundry-app-images-verify:
