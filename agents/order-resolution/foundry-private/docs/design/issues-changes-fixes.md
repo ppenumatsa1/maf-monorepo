@@ -1560,3 +1560,8 @@ because the preview AZD connection extension emitted non-JSON text alongside
 its JSON payload. Evidence collection now reads the Application Insights
 connection directly from the authoritative project ARM resource and parses
 only its `properties.target`.
+
+Evidence run `31898135479` then reached the private hosted endpoint but the
+first conversation request hit a client timeout during hosted-version warm-up.
+The existing bounded E2E retry now classifies deadline/timeout failures as
+transient alongside 404/409/429/5xx propagation responses.

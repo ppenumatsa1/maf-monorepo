@@ -70,7 +70,7 @@ invoke_responses_payload() {
     if [[ $rc -eq 0 ]]; then
       break
     fi
-    if echo "$raw" | grep -Eqi 'HTTP (404|409|429|5[0-9]{2})'; then
+    if echo "$raw" | grep -Eqi 'HTTP (404|409|429|5[0-9]{2})|context deadline exceeded|Client\.Timeout|timed out'; then
       echo "Transient payload invoke failure (attempt $attempt/20, conversation_id=${conversation_id:-<new>}). Retrying..."
       sleep 15
       continue
