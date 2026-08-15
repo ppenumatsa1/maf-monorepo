@@ -1523,3 +1523,8 @@ dependency/RBAC preflight and then stopped before image build because AZD
 refuses automatic extension installation in CI. Runner host bootstrap now
 preinstalls the required `azure.ai.agents` and `azure.ai.connections`
 extensions; app-only workflows remain non-bootstrap release paths.
+
+Release run `31896627167` showed that the runner service did not inherit
+`AZD_CONFIG_DIR` from `/etc/environment`, so the workflow could not see the
+preinstalled extensions. The app-only workflow now explicitly uses the
+runner's persistent `/mnt/.azd` configuration directory.

@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  AZD_CONFIG_DIR: /mnt/.azd
   AZD_ENVIRONMENT_NAME: ${{ vars.AZURE_ENV_NAME }}
   TARGET_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
   TARGET_FOUNDRY_PROJECT: ${{ vars.FOUNDRY_PROJECT_NAME }}
