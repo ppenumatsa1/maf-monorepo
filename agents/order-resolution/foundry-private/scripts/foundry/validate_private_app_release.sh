@@ -11,7 +11,7 @@ require_bin() {
 require_env() {
   local key="$1"
   local value
-  value="$(azd env get-value "$key" 2>/dev/null || true)"
+  value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null || true)"
   [[ -n "$value" ]] || {
     echo "AZD environment value $key is required." >&2
     exit 1
@@ -36,7 +36,7 @@ require_single_resource_name() {
   local -a names
   mapfile -t names < <(
     az "$@" list \
-      --resource-group "$TARGET_RESOURCE_GROUP" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
       --query '[].name' \
       --output tsv
   )
@@ -142,7 +142,7 @@ require_container_apps_acr_pull() {
     local -a registry_values
     mapfile -t registry_values < <(
       az containerapp registry list \
-        --resource-group "$TARGET_RESOURCE_GROUP" \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
         --name "$app_name" \
         --query '[0].[identity,server]' \
         --output tsv
@@ -192,24 +192,33 @@ for binary in az azd python3; do
   require_bin "$binary"
 done
 
-: "${AZD_ENVIRONMENT_NAME:?AZD_ENVIRONMENT_NAME is required}"
-: "${AZURE_SUBSCRIPTION_ID:?AZURE_SUBSCRIPTION_ID is required}"
-: "${TARGET_RESOURCE_GROUP:?TARGET_RESOURCE_GROUP is required}"
-: "${TARGET_FOUNDRY_PROJECT:?TARGET_FOUNDRY_PROJECT is required}"
-: "${TARGET_POSTGRES_DATABASE:?TARGET_POSTGRES_DATABASE is required}"
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 
 cd "$FOUNDRY_DIR"
-azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 
-require_exact_env AZURE_RESOURCE_GROUP "$TARGET_RESOURCE_GROUP"
-require_exact_env FOUNDRY_PROJECT_NAME "$TARGET_FOUNDRY_PROJECT"
-require_exact_env POSTGRES_DATABASE_NAME "$TARGET_POSTGRES_DATABASE"
+require_exact_env AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
+require_exact_env AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
+require_exact_env AZURE_LOCATION "$AZURE_LOCATION"
+require_exact_env NAME_PREFIX "$NAME_PREFIX"
 require_exact_env NETWORK_MODE private
 require_exact_env ENABLE_CONTAINER_APPS true
 require_exact_env ENABLE_POSTGRES_PRIVATE_ENDPOINT true
+require_exact_env DB_SCHEMA_MANAGED_EXTERNALLY true
+
+target_foundry_project="$(require_env FOUNDRY_PROJECT_NAME)"
+target_postgres_database="$(require_env POSTGRES_DATABASE_NAME)"
 
 postgres_server_name="$(require_env POSTGRES_SERVER_NAME)"
 postgres_server_fqdn="$(require_env POSTGRES_SERVER_FQDN)"
@@ -236,11 +245,11 @@ actual_subscription_id="$(az account show --query id --output tsv)"
   exit 1
 }
 
-az group show --name "$TARGET_RESOURCE_GROUP" --output none
+az group show --name "$AZURE_RESOURCE_GROUP" --output none
 
 foundry_project_id_lower="${foundry_project_id,,}"
-expected_resource_group_segment="/resourcegroups/${TARGET_RESOURCE_GROUP,,}/"
-expected_project_segment="/projects/${TARGET_FOUNDRY_PROJECT,,}"
+expected_resource_group_segment="/resourcegroups/${AZURE_RESOURCE_GROUP,,}/"
+expected_project_segment="/projects/${target_foundry_project,,}"
 [[ "$foundry_project_id_lower" == *"$expected_resource_group_segment"* &&
   "$foundry_project_id_lower" == *"/providers/microsoft.cognitiveservices/accounts/"* &&
   "$foundry_project_id_lower" == *"$expected_project_segment" ]] || {
@@ -264,7 +273,7 @@ PY
   exit 1
 }
 
-expected_project_endpoint="https://${foundry_account_name}.services.ai.azure.com/api/projects/${TARGET_FOUNDRY_PROJECT}"
+expected_project_endpoint="https://${foundry_account_name}.services.ai.azure.com/api/projects/${target_foundry_project}"
 [[ "${foundry_project_endpoint,,}" == "${expected_project_endpoint,,}" ]] || {
   echo "FOUNDRY_PROJECTS_ENDPOINT does not match the selected Foundry account and project." >&2
   exit 1
@@ -272,7 +281,7 @@ expected_project_endpoint="https://${foundry_account_name}.services.ai.azure.com
 
 foundry_kind="$(
   az cognitiveservices account show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$foundry_account_name" \
     --query kind \
     --output tsv
@@ -284,7 +293,7 @@ foundry_kind="$(
 
 foundry_public_network_access="$(
   az cognitiveservices account show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$foundry_account_name" \
     --query properties.publicNetworkAccess \
     --output tsv
@@ -302,7 +311,7 @@ foundry_project_resource_name="$(
     --output tsv
 )"
 foundry_project_name="${foundry_project_resource_name##*/}"
-[[ "$foundry_project_name" == "$TARGET_FOUNDRY_PROJECT" ]] || {
+[[ "$foundry_project_name" == "$target_foundry_project" ]] || {
   echo "The selected Foundry project does not exist." >&2
   exit 1
 }
@@ -319,14 +328,14 @@ foundry_project_principal_id="$(
 }
 
 az cognitiveservices account deployment show \
-  --resource-group "$TARGET_RESOURCE_GROUP" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
   --name "$foundry_account_name" \
   --deployment-name "$foundry_model_deployment_name" \
   --output none
 
 postgres_fqdn="$(
   az postgres flexible-server show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$postgres_server_name" \
     --query fullyQualifiedDomainName \
     --output tsv
@@ -338,9 +347,9 @@ postgres_fqdn="$(
 
 database_count="$(
   az postgres flexible-server db list \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --server-name "$postgres_server_name" \
-    --query "[?name=='${TARGET_POSTGRES_DATABASE}'] | length(@)" \
+    --query "[?name=='${target_postgres_database}'] | length(@)" \
     --output tsv
 )"
 [[ "$database_count" == "1" ]] || {
@@ -349,20 +358,20 @@ database_count="$(
 }
 
 az network private-endpoint show \
-  --resource-group "$TARGET_RESOURCE_GROUP" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
   --name "$postgres_private_endpoint_name" \
   --output none
 
 container_environment_id="$(
   az containerapp env show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$container_environment_name" \
     --query id \
     --output tsv
 )"
 container_environment_subnet_id="$(
   az containerapp env show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$container_environment_name" \
     --query properties.vnetConfiguration.infrastructureSubnetId \
     --output tsv
@@ -375,7 +384,7 @@ container_environment_subnet_id="$(
 for app_name in "$backend_app_name" "$frontend_app_name"; do
   app_environment_id="$(
     az containerapp show \
-      --resource-group "$TARGET_RESOURCE_GROUP" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
       --name "$app_name" \
       --query properties.managedEnvironmentId \
       --output tsv
@@ -388,14 +397,14 @@ done
 
 backend_external_ingress="$(
   az containerapp show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$backend_app_name" \
     --query properties.configuration.ingress.external \
     --output tsv
 )"
 frontend_external_ingress="$(
   az containerapp show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$frontend_app_name" \
     --query properties.configuration.ingress.external \
     --output tsv
@@ -406,7 +415,7 @@ frontend_external_ingress="$(
 }
 
 mapfile -t acr_names < <(
-  az acr list --resource-group "$TARGET_RESOURCE_GROUP" --query '[].name' --output tsv
+  az acr list --resource-group "$AZURE_RESOURCE_GROUP" --query '[].name' --output tsv
 )
 [[ "${#acr_names[@]}" == "1" ]] || {
   echo "Expected exactly one private ACR in the selected resource group." >&2
@@ -415,14 +424,14 @@ mapfile -t acr_names < <(
 acr_name="${acr_names[0]}"
 acr_login_server="$(
   az acr show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$acr_name" \
     --query loginServer \
     --output tsv
 )"
 acr_public_network_access="$(
   az acr show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$acr_name" \
     --query publicNetworkAccess \
     --output tsv
@@ -437,7 +446,7 @@ acr_public_network_access="$(
 
 acr_id="$(
   az acr show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$acr_name" \
     --query id \
     --output tsv
@@ -448,14 +457,14 @@ storage_account_name="$(
 )"
 storage_resource_id="$(
   az storage account show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$storage_account_name" \
     --query id \
     --output tsv
 )"
 storage_target="$(
   az storage account show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$storage_account_name" \
     --query primaryEndpoints.blob \
     --output tsv
@@ -466,14 +475,14 @@ cosmos_account_name="$(
 )"
 cosmos_resource_id="$(
   az cosmosdb show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$cosmos_account_name" \
     --query id \
     --output tsv
 )"
 cosmos_target="$(
   az cosmosdb show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$cosmos_account_name" \
     --query documentEndpoint \
     --output tsv
@@ -484,7 +493,7 @@ search_service_name="$(
 )"
 search_resource_id="$(
   az search service show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$search_service_name" \
     --query id \
     --output tsv
@@ -496,19 +505,19 @@ application_insights_resource_id="$(
 az monitor app-insights component show --ids "$application_insights_resource_id" --output none
 
 require_project_connection \
-  "${cosmos_account_name}-${TARGET_FOUNDRY_PROJECT}" \
+  "${cosmos_account_name}-${target_foundry_project}" \
   CosmosDB \
   AAD \
   "$cosmos_target" \
   "$cosmos_resource_id"
 require_project_connection \
-  "${storage_account_name}-${TARGET_FOUNDRY_PROJECT}" \
+  "${storage_account_name}-${target_foundry_project}" \
   AzureStorageAccount \
   AAD \
   "$storage_target" \
   "$storage_resource_id"
 require_project_connection \
-  "${search_service_name}-${TARGET_FOUNDRY_PROJECT}" \
+  "${search_service_name}-${target_foundry_project}" \
   CognitiveSearch \
   AAD \
   "https://${search_service_name}.search.windows.net" \

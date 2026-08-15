@@ -10,16 +10,25 @@ require_bin() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IDENTITY_DIR="${ROOT_DIR}/infra/github-actions-identity"
+ORDER_RESOLUTION_DIR="$(cd "$ROOT_DIR/.." && pwd -P)"
+PROFILE_PATH="${DEPLOYMENT_PROFILE_PATH:-$ORDER_RESOLUTION_DIR/deployment/profiles/foundry-private.env}"
+source "$ORDER_RESOLUTION_DIR/deployment/profile.sh"
+deployment_profile_load "$PROFILE_PATH"
+deployment_profile_validate
+deployment_profile_export
 
-SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-4f18d577-3506-4a11-85e5-a83b14727a84}"
-RESOURCE_GROUP="${TARGET_RESOURCE_GROUP:-rg-maf-ora-foundry-v2}"
-GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-ppenumatsa1/maf-monorepo}"
-GITHUB_ENVIRONMENT="${GITHUB_ENVIRONMENT:-foundry-private-env}"
-AZURE_TENANT_ID="${AZURE_TENANT_ID:-5a591fcf-3aaf-4a22-92a3-6871a34fa158}"
+: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+
+SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+RESOURCE_GROUP="$AZURE_RESOURCE_GROUP"
+AZURE_TENANT_ID="$(deployment_profile_value AZURE_TENANT_ID)"
 DEPLOYMENT_NAME="order-resolution-private-github-identity"
-LOCATION="${AZURE_LOCATION:-eastus2}"
-LEGACY_APPLICATION_ID="${LEGACY_APPLICATION_ID:-d4b2e92f-2555-4565-aca3-290cbe6a97f1}"
-LEGACY_FEDERATED_CREDENTIAL_NAME="github-maf-monorepo-foundry-private-env"
+GITHUB_SUBJECT="${GITHUB_SUBJECT:-repo:${GITHUB_REPOSITORY}:ref:refs/heads/main}"
+APPLICATION_UNIQUE_NAME="${APPLICATION_UNIQUE_NAME:-order-resolution-private-${SUBSCRIPTION_ID}}"
+APPLICATION_DISPLAY_NAME="${APPLICATION_DISPLAY_NAME:-Order Resolution Foundry Private GitHub Actions}"
+FEDERATED_CREDENTIAL_NAME="${FEDERATED_CREDENTIAL_NAME:-github-main}"
+LEGACY_APPLICATION_ID="${LEGACY_APPLICATION_ID:-}"
+LEGACY_FEDERATED_CREDENTIAL_NAME="${LEGACY_FEDERATED_CREDENTIAL_NAME:-}"
 INCORRECT_MANAGED_IDENTITY_OPERATOR_ROLE_ID="f1a07417-d97a-45cb-824c-7a7467783830"
 
 require_bin az
@@ -35,6 +44,10 @@ deployment_json="$(
     --template-file "${IDENTITY_DIR}/main.bicep" \
     --parameters \
       githubRepository="$GITHUB_REPOSITORY" \
+      githubSubject="$GITHUB_SUBJECT" \
+      applicationUniqueName="$APPLICATION_UNIQUE_NAME" \
+      applicationDisplayName="$APPLICATION_DISPLAY_NAME" \
+      federatedCredentialName="$FEDERATED_CREDENTIAL_NAME" \
     --output json
 )"
 
@@ -44,22 +57,23 @@ client_id="$(jq -r '.properties.outputs.githubActionsClientId.value // empty' <<
   exit 1
 }
 
-gh api --method PUT "repos/${GITHUB_REPOSITORY}/environments/${GITHUB_ENVIRONMENT}" --silent
-gh variable set AZURE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$client_id"
-gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$AZURE_TENANT_ID"
-gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" --body "$SUBSCRIPTION_ID"
+gh variable set AZURE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --body "$client_id"
+gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --body "$AZURE_TENANT_ID"
+gh variable set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPOSITORY" --body "$SUBSCRIPTION_ID"
 
-legacy_credential_id="$(
-  az ad app federated-credential list \
-    --id "$LEGACY_APPLICATION_ID" \
-    --query "[?name=='${LEGACY_FEDERATED_CREDENTIAL_NAME}'].id | [0]" \
-    --output tsv
-)"
-if [[ -n "$legacy_credential_id" ]]; then
-  az ad app federated-credential delete \
-    --id "$LEGACY_APPLICATION_ID" \
-    --federated-credential-id "$legacy_credential_id"
-  echo "Retired the temporary legacy monorepo federated credential."
+if [[ -n "$LEGACY_APPLICATION_ID" && -n "$LEGACY_FEDERATED_CREDENTIAL_NAME" ]]; then
+  legacy_credential_id="$(
+    az ad app federated-credential list \
+      --id "$LEGACY_APPLICATION_ID" \
+      --query "[?name=='${LEGACY_FEDERATED_CREDENTIAL_NAME}'].id | [0]" \
+      --output tsv
+  )"
+  if [[ -n "$legacy_credential_id" ]]; then
+    az ad app federated-credential delete \
+      --id "$LEGACY_APPLICATION_ID" \
+      --federated-credential-id "$legacy_credential_id"
+    echo "Retired the explicitly selected legacy federated credential."
+  fi
 fi
 
 incorrect_role_assignment_ids="$(

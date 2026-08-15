@@ -8,12 +8,7 @@ set -euo pipefail
 #   export GH_PAT=...
 #   export REPO=ppenumatsa1/maf-order-resolution-agent
 #   export AZURE_CLIENT_ID=...
-#   export AZURE_TENANT_ID=...
-#   export AZURE_SUBSCRIPTION_ID=...
-#   export FOUNDRY_RESOURCE_GROUP=rg-maf-ora-foundry-v2
-#   export FOUNDRY_PROJECT_NAME=order-resolution
 #   export POSTGRES_SERVER_NAME=<canonical-private-flexible-server>
-#   export POSTGRES_DATABASE_NAME=maf_workflow
 #   ./scripts/github/bootstrap_foundry_github_config.sh
 
 require_bin() {
@@ -26,17 +21,28 @@ require_bin() {
 require_bin gh
 require_bin jq
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+order_resolution_dir="$(cd "$script_dir/../../.." && pwd -P)"
+profile_path="${DEPLOYMENT_PROFILE_PATH:-$order_resolution_dir/deployment/profiles/foundry-private.env}"
+source "$order_resolution_dir/deployment/profile.sh"
+deployment_profile_load "$profile_path"
+deployment_profile_validate
+deployment_profile_export
+
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "DEPLOYMENT_LANE must be foundry-private."
+  exit 1
+}
+
+AZURE_TENANT_ID="$(deployment_profile_value AZURE_TENANT_ID)"
+FOUNDRY_PROJECT_NAME="$(deployment_profile_value FOUNDRY_PROJECT_NAME)"
+POSTGRES_DATABASE_NAME="$(deployment_profile_value POSTGRES_DATABASE_NAME)"
+PRIVATE_RUNNER_LABEL="$(deployment_profile_value PRIVATE_RUNNER_LABEL)"
+PRIVATE_RUNNER_VM_NAME="$(deployment_profile_value PRIVATE_RUNNER_VM_NAME)"
+
 : "${REPO:=}"
 : "${AZURE_CLIENT_ID:?AZURE_CLIENT_ID is required}"
-: "${AZURE_TENANT_ID:?AZURE_TENANT_ID is required}"
-: "${AZURE_SUBSCRIPTION_ID:?AZURE_SUBSCRIPTION_ID is required}"
-: "${FOUNDRY_RESOURCE_GROUP:?FOUNDRY_RESOURCE_GROUP is required}"
 : "${POSTGRES_SERVER_NAME:?POSTGRES_SERVER_NAME is required}"
-
-ENV_NAME="foundry-private-env"
-RUNNER_LABEL="foundry-private-v2"
-FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_NAME:-order-resolution}"
-POSTGRES_DATABASE_NAME="${POSTGRES_DATABASE_NAME:-maf_workflow}"
 
 if [[ -z "$REPO" ]]; then
   remote_url="$(git remote get-url origin 2>/dev/null || true)"
@@ -50,13 +56,6 @@ if [[ -z "$REPO" ]]; then
   exit 1
 fi
 
-if [[ "$FOUNDRY_RESOURCE_GROUP" != "rg-maf-ora-foundry-v2" ||
-      "$FOUNDRY_PROJECT_NAME" != "order-resolution" ||
-      "$POSTGRES_DATABASE_NAME" != "maf_workflow" ]]; then
-  echo "This bootstrap script only configures the canonical foundry-private-env target."
-  exit 1
-fi
-
 if [[ -n "${GH_PAT:-}" ]]; then
   export GH_TOKEN="$GH_PAT"
 elif [[ -n "${GH_TOKEN:-}" ]]; then
@@ -66,23 +65,19 @@ elif ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Creating/updating environment: $ENV_NAME"
-gh api -X PUT "repos/$REPO/environments/$ENV_NAME" >/dev/null
-
-echo "Setting environment-scoped OIDC and target variables"
-gh variable set AZURE_CLIENT_ID -R "$REPO" --env "$ENV_NAME" -b "$AZURE_CLIENT_ID"
-gh variable set AZURE_TENANT_ID -R "$REPO" --env "$ENV_NAME" -b "$AZURE_TENANT_ID"
-gh variable set AZURE_SUBSCRIPTION_ID -R "$REPO" --env "$ENV_NAME" -b "$AZURE_SUBSCRIPTION_ID"
-gh variable set FOUNDRY_RESOURCE_GROUP -R "$REPO" --env "$ENV_NAME" -b "$FOUNDRY_RESOURCE_GROUP"
-gh variable set FOUNDRY_PROJECT_NAME -R "$REPO" --env "$ENV_NAME" -b "$FOUNDRY_PROJECT_NAME"
-gh variable set POSTGRES_SERVER_NAME -R "$REPO" --env "$ENV_NAME" -b "$POSTGRES_SERVER_NAME"
-gh variable set POSTGRES_DATABASE_NAME -R "$REPO" --env "$ENV_NAME" -b "$POSTGRES_DATABASE_NAME"
-gh variable set RUNNER_LABEL -R "$REPO" --env "$ENV_NAME" -b "$RUNNER_LABEL"
+echo "Setting repository-scoped OIDC and target variables"
+gh variable set AZURE_CLIENT_ID -R "$REPO" -b "$AZURE_CLIENT_ID"
+gh variable set AZURE_TENANT_ID -R "$REPO" -b "$AZURE_TENANT_ID"
+gh variable set AZURE_SUBSCRIPTION_ID -R "$REPO" -b "$AZURE_SUBSCRIPTION_ID"
+gh variable set AZURE_ENV_NAME -R "$REPO" -b "$AZURE_ENV_NAME"
+gh variable set AZURE_RESOURCE_GROUP -R "$REPO" -b "$AZURE_RESOURCE_GROUP"
+gh variable set FOUNDRY_PROJECT_NAME -R "$REPO" -b "$FOUNDRY_PROJECT_NAME"
+gh variable set POSTGRES_SERVER_NAME -R "$REPO" -b "$POSTGRES_SERVER_NAME"
+gh variable set POSTGRES_DATABASE_NAME -R "$REPO" -b "$POSTGRES_DATABASE_NAME"
+gh variable set PRIVATE_RUNNER_LABEL -R "$REPO" -b "$PRIVATE_RUNNER_LABEL"
+gh variable set PRIVATE_RUNNER_VM_NAME -R "$REPO" -b "$PRIVATE_RUNNER_VM_NAME"
 
 echo "Validation: variables"
-gh variable list -R "$REPO" --env "$ENV_NAME" --json name | jq -r '.[].name' | grep -E 'RUNNER_LABEL|AZURE_CLIENT_ID|AZURE_TENANT_ID|AZURE_SUBSCRIPTION_ID|FOUNDRY_RESOURCE_GROUP|FOUNDRY_PROJECT_NAME|POSTGRES_SERVER_NAME|POSTGRES_DATABASE_NAME' || true
-
-echo "Validation: environment exists"
-gh api "repos/$REPO/environments/$ENV_NAME" --jq '.name'
+gh variable list -R "$REPO" --json name | jq -r '.[].name' | grep -E 'PRIVATE_RUNNER_(LABEL|VM_NAME)|AZURE_(CLIENT_ID|TENANT_ID|SUBSCRIPTION_ID|ENV_NAME|RESOURCE_GROUP)|FOUNDRY_PROJECT_NAME|POSTGRES_SERVER_NAME|POSTGRES_DATABASE_NAME' || true
 
 echo "Done. The private runner must retain the selected AZD environment and its secrets locally."

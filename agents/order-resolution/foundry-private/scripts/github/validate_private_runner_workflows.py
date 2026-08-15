@@ -12,18 +12,38 @@ DEPLOYMENT_WORKFLOWS = (
 )
 PACKAGE_VALIDATION_WORKFLOW = "order-resolution-private-package-validation.yml"
 EVIDENCE_WORKFLOW = "order-resolution-private-evidence.yml"
+RUNNER_START_WORKFLOW = "order-resolution-private-runner-start.yml"
+OBSERVABILITY_WORKFLOW = "order-resolution-private-observability.yml"
 SERIALIZED_PRIVATE_WORKFLOWS = (
     *DEPLOYMENT_WORKFLOWS,
     PACKAGE_VALIDATION_WORKFLOW,
     EVIDENCE_WORKFLOW,
-    "order-resolution-private-observability.yml",
+    OBSERVABILITY_WORKFLOW,
+)
+PRIVATE_DISPATCH_WORKFLOWS = (
+    *SERIALIZED_PRIVATE_WORKFLOWS,
+    RUNNER_START_WORKFLOW,
 )
 PRIVATE_PREFIX = "agents/order-resolution/foundry-private"
-EXPECTED_TARGETS = (
-    "AZD_ENVIRONMENT_NAME: foundry-private-env",
-    "TARGET_RESOURCE_GROUP: rg-maf-ora-foundry-v2",
-    "TARGET_FOUNDRY_PROJECT: order-resolution",
-    "TARGET_POSTGRES_DATABASE: maf_workflow",
+PROFILE_MIRROR_SCRIPT = (
+    f"{PRIVATE_PREFIX}/scripts/github/validate_github_profile_mirror.sh"
+)
+EXPECTED_TARGET_MIRRORS = (
+    "AZD_ENVIRONMENT_NAME: ${{ vars.AZURE_ENV_NAME }}",
+    "TARGET_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}",
+    "TARGET_FOUNDRY_PROJECT: ${{ vars.FOUNDRY_PROJECT_NAME }}",
+    "TARGET_POSTGRES_DATABASE: ${{ vars.POSTGRES_DATABASE_NAME }}",
+    "PRIVATE_RUNNER_LABEL: ${{ vars.PRIVATE_RUNNER_LABEL }}",
+    "PRIVATE_RUNNER_VM_NAME: ${{ vars.PRIVATE_RUNNER_VM_NAME }}",
+)
+FORBIDDEN_TARGET_LITERALS = (
+    "rg-maf-ora-" + "foundry-v2",
+    "rg-maf-ora-" + "foundry-private",
+    "foundry-private-" + "env",
+    "foundry-private-" + "v2",
+    "vm-maffnd-" + "runner",
+    "maf_" + "workflow",
+    "7df95e88-701c-4693-" + "af77-3159f83b558d",
 )
 
 
@@ -49,10 +69,8 @@ def require_order(text: str, values: tuple[str, ...], source: str) -> None:
 def validate_deployment_workflow(name: str) -> None:
     text = (WORKFLOWS / name).read_text()
     require(text, "workflow_dispatch:", name)
-    require(text, "confirmation:", name)
-    require(text, "environment: foundry-private-env", name)
     require(text, "self-hosted", name)
-    require(text, "foundry-private-v2", name)
+    require(text, 'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]', name)
     require(text, "id-token: write", name)
     require(text, "uses: azure/login@v2", name)
     require(text, "client-id: ${{ vars.AZURE_CLIENT_ID }}", name)
@@ -83,31 +101,85 @@ def validate_deployment_workflow(name: str) -> None:
         raise AssertionError(
             f"{name} must not read secrets during an app-only private release."
         )
-    for target in EXPECTED_TARGETS:
+    require(text, PROFILE_MIRROR_SCRIPT, name)
+    require_order(
+        text,
+        ("uses: actions/checkout@v4", PROFILE_MIRROR_SCRIPT, "uses: azure/login@v2"),
+        name,
+    )
+    for target in EXPECTED_TARGET_MIRRORS:
         require(text, target, name)
+    for literal in FORBIDDEN_TARGET_LITERALS:
+        forbid(text, literal, name)
 
 
 def validate() -> None:
+    profile_mirror = Path(PROFILE_MIRROR_SCRIPT).read_text()
+    for value in (
+        "deployment/profile.sh",
+        "deployment_profile_load",
+        "deployment_profile_validate",
+        "DEPLOYMENT_LANE",
+        "AZURE_ENV_NAME",
+        "AZURE_TENANT_ID",
+        "AZURE_SUBSCRIPTION_ID",
+        "AZURE_RESOURCE_GROUP",
+        "FOUNDRY_PROJECT_NAME",
+        "POSTGRES_DATABASE_NAME",
+        "PRIVATE_RUNNER_LABEL",
+        "PRIVATE_RUNNER_VM_NAME",
+    ):
+        require(profile_mirror, value, PROFILE_MIRROR_SCRIPT)
+    if not (Path(PROFILE_MIRROR_SCRIPT).stat().st_mode & 0o111):
+        raise AssertionError(f"{PROFILE_MIRROR_SCRIPT} must be executable")
+
+    for name in PRIVATE_DISPATCH_WORKFLOWS:
+        text = (WORKFLOWS / name).read_text()
+        require(text, "workflow_dispatch:", name)
+        forbid(text, "confirmation:", name)
+        forbid(text, "inputs.confirmation", name)
+        forbid(text, "environment:", name)
+        for literal in FORBIDDEN_TARGET_LITERALS:
+            forbid(text, literal, name)
+
+    for name in SERIALIZED_PRIVATE_WORKFLOWS:
+        text = (WORKFLOWS / name).read_text()
+        require(text, PROFILE_MIRROR_SCRIPT, name)
+        require_order(
+            text,
+            ("uses: actions/checkout@v4", PROFILE_MIRROR_SCRIPT, "uses: azure/login@v2"),
+            name,
+        )
+        for target in EXPECTED_TARGET_MIRRORS:
+            require(text, target, name)
+
     for name in DEPLOYMENT_WORKFLOWS:
         validate_deployment_workflow(name)
 
-    runner_start_workflow = (WORKFLOWS / "order-resolution-private-runner-start.yml").read_text()
+    runner_start_workflow = (WORKFLOWS / RUNNER_START_WORKFLOW).read_text()
     for value in (
-        "confirmation:",
-        "options: [cancel, start]",
         "runs-on: ubuntu-latest",
-        "environment: foundry-private-env",
         "id-token: write",
         "az vm start",
-        'PRIVATE_RUNNER_VM_NAME: vm-maffnd-runner',
+        PROFILE_MIRROR_SCRIPT,
         "PowerState/running",
-        "PRIVATE_RUNNER_LABEL",
+        "PRIVATE_RUNNER_LABEL: ${{ vars.PRIVATE_RUNNER_LABEL }}",
+        "PRIVATE_RUNNER_VM_NAME: ${{ vars.PRIVATE_RUNNER_VM_NAME }}",
     ):
-        require(runner_start_workflow, value, "private runner-start workflow")
+        require(runner_start_workflow, value, RUNNER_START_WORKFLOW)
+    require_order(
+        runner_start_workflow,
+        ("uses: actions/checkout@v4", PROFILE_MIRROR_SCRIPT, "uses: azure/login@v2"),
+        RUNNER_START_WORKFLOW,
+    )
+    for target in EXPECTED_TARGET_MIRRORS:
+        require(runner_start_workflow, target, RUNNER_START_WORKFLOW)
+    for literal in FORBIDDEN_TARGET_LITERALS:
+        forbid(runner_start_workflow, literal, RUNNER_START_WORKFLOW)
     forbid(
         runner_start_workflow,
         "az vm run-command",
-        "private runner-start workflow",
+        RUNNER_START_WORKFLOW,
     )
 
     for name in SERIALIZED_PRIVATE_WORKFLOWS:
@@ -132,7 +204,6 @@ def validate() -> None:
     forbid(deploy, "run_smoke:", deploy_name)
     forbid(deploy, "run_evidence:", deploy_name)
     forbid(deploy, "make foundry-hosted-refresh", deploy_name)
-    forbid(deploy, "postgres_lockdown_confirmation:", deploy_name)
     forbid(deploy, "azd ext install", deploy_name)
     forbid(deploy, "bootstrap_private_azd_environment.sh", deploy_name)
     forbid(deploy, "ensure_foundry_azd_defaults.sh", deploy_name)
@@ -148,11 +219,9 @@ def validate() -> None:
     package_validation = (WORKFLOWS / PACKAGE_VALIDATION_WORKFLOW).read_text()
     for value in (
         "workflow_dispatch:",
-        "confirmation:",
-        "options: [cancel, validate]",
-        "environment: foundry-private-env",
         "self-hosted",
-        "foundry-private-v2",
+        'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]',
+        PROFILE_MIRROR_SCRIPT,
         "id-token: write",
         "uses: azure/login@v2",
         "client-id: ${{ vars.AZURE_CLIENT_ID }}",
@@ -180,11 +249,9 @@ def validate() -> None:
     evidence = (WORKFLOWS / EVIDENCE_WORKFLOW).read_text()
     for value in (
         "workflow_dispatch:",
-        "confirmation:",
-        "options: [cancel, collect]",
-        "environment: foundry-private-env",
         "self-hosted",
-        "foundry-private-v2",
+        'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]',
+        PROFILE_MIRROR_SCRIPT,
         "id-token: write",
         "uses: azure/login@v2",
         "uses: actions/setup-python@v5",
@@ -213,6 +280,19 @@ def validate() -> None:
         "make foundry-postgres-lockdown",
     ):
         forbid(evidence, forbidden_operation, EVIDENCE_WORKFLOW)
+
+    observability = (WORKFLOWS / OBSERVABILITY_WORKFLOW).read_text()
+    for value in (
+        "self-hosted",
+        'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]',
+        PROFILE_MIRROR_SCRIPT,
+        "id-token: write",
+        "uses: azure/login@v2",
+        "bootstrap_private_azd_environment.sh",
+        "validate_private_runner_environment.sh",
+        "diagnose_hosted_observability.sh",
+    ):
+        require(observability, value, OBSERVABILITY_WORKFLOW)
 
     makefile = (Path(PRIVATE_PREFIX) / "Makefile").read_text()
     app_only_preflight_body = makefile.split(
@@ -382,11 +462,6 @@ def validate() -> None:
     )
     require(
         access_path_body,
-        'azd env select "$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}" --no-prompt',
-        "foundry-access-path Make target",
-    )
-    require(
-        access_path_body,
         "AZURE_DEV_USER_AGENT=microsoft_foundry_skill $(MAKE) -C ../.. foundry-preflight",
         "foundry-access-path Make target",
     )
@@ -421,7 +496,7 @@ def validate() -> None:
     ).read_text()
     require(
         register_runner,
-        'RUNNER_LABEL="${RUNNER_LABEL:-foundry-private-v2}"',
+        ': "${RUNNER_LABEL:?RUNNER_LABEL is required}"',
         "register_vm_runner.sh",
     )
     main_bicep = (
@@ -429,7 +504,12 @@ def validate() -> None:
     ).read_text()
     require(
         main_bicep,
-        "param restoreFoundryAccount bool = true",
+        "param restoreFoundryAccount bool",
+        "private Foundry Bicep",
+    )
+    forbid(
+        main_bicep,
+        "param restoreFoundryAccount bool =",
         "private Foundry Bicep",
     )
     require(
@@ -465,6 +545,20 @@ def validate() -> None:
     ):
         require(main_bicep, dependency, "private Foundry Bicep")
 
+    github_actions_identity = (
+        Path(PRIVATE_PREFIX) / "infra/github-actions-identity/main.bicep"
+    ).read_text()
+    require(
+        github_actions_identity,
+        "param githubSubject string",
+        "private GitHub Actions identity",
+    )
+    forbid(
+        github_actions_identity,
+        "param githubSubject string =",
+        "private GitHub Actions identity",
+    )
+
     main_parameters = (
         Path(PRIVATE_PREFIX) / "infra/foundry-hosted/iac/main.parameters.json"
     ).read_text()
@@ -478,7 +572,12 @@ def validate() -> None:
     ).read_text()
     require(
         azd_defaults,
-        'set_if_missing RESTORE_FOUNDRY_ACCOUNT "${RESTORE_FOUNDRY_ACCOUNT:-$restore_foundry_account_default}"',
+        'set_if_missing RESTORE_FOUNDRY_ACCOUNT "$RESTORE_FOUNDRY_ACCOUNT"',
+        "private AZD defaults",
+    )
+    forbid(
+        azd_defaults,
+        "restore_foundry_account_default=",
         "private AZD defaults",
     )
     require(
@@ -567,13 +666,21 @@ def validate() -> None:
     )[0]
     require(evidence_target, "ensure-backend-env", "private evidence Make target")
 
-    core_provision_body = makefile.split("foundry-provision:\n", maxsplit=1)[1].split(
+    core_provision_body = makefile.split("foundry-provision:", maxsplit=1)[1].split(
         "\n\nfoundry-project-connections:", maxsplit=1
     )[0]
     require(
         core_provision_body,
-        "azd env set MANAGE_PROJECT_CONNECTIONS false",
+        "provision_private_infrastructure.sh",
         "foundry-provision Make target",
+    )
+    private_profile = Path(
+        "agents/order-resolution/deployment/profiles/foundry-private.env"
+    ).read_text()
+    require(
+        private_profile,
+        "MANAGE_PROJECT_CONNECTIONS=false",
+        "private deployment profile",
     )
     connection_provision_body = makefile.split(
         "foundry-project-connections:\n", maxsplit=1

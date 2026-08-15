@@ -42,15 +42,18 @@ command -v "$azd_command" >/dev/null 2>&1 || {
 (
   cd "$project_dir"
   if [[ -f ".azure/$AZURE_ENV_NAME/.env" ]]; then
-    "$azd_command" env select "$AZURE_ENV_NAME"
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill "$azd_command" env select "$AZURE_ENV_NAME"
   else
-    "$azd_command" env new "$AZURE_ENV_NAME" --no-prompt
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill "$azd_command" env new "$AZURE_ENV_NAME" --no-prompt
   fi
 
-  "$azd_command" env set AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
-  "$azd_command" env set AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
-  "$azd_command" env set AZURE_LOCATION "$AZURE_LOCATION"
-  "$azd_command" env set NAME_PREFIX "$NAME_PREFIX"
+  for key in "${!DEPLOYMENT_PROFILE_VALUES[@]}"; do
+    case "$key" in
+      CONTRACT_VERSION|DEPLOYMENT_LANE|AZURE_ENV_NAME) continue ;;
+    esac
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+      "$azd_command" env set "$key" "${DEPLOYMENT_PROFILE_VALUES[$key]}"
+  done
 )
 
 printf 'Applied %s target profile to %s.\n' "$DEPLOYMENT_LANE" "$AZURE_ENV_NAME"

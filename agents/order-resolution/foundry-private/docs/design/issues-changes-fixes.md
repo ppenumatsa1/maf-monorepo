@@ -13,15 +13,22 @@ ACR, Cosmos, Application Insights, and Search.
 **Decision.** The preview is not deployment evidence. No full Bicep apply,
 shared-resource reconciliation, PostgreSQL lockdown, or application deployment
 success is claimed from this run. Full bootstrap/reconciliation is blocked
-until the responsible owners review the changes and explicitly approve the
-intended state for every shared resource.
+until recorded review and current validation evidence establish the intended
+state for every shared resource.
 
 **Safe release boundary.** A routine app-only release may change only existing
 ACA backend/frontend revisions and the existing hosted agent, while validating
 the existing private dependencies. It must not invoke full Bicep, accept or
 repair the reported drift, or change PostgreSQL access. PostgreSQL lockdown is
-a separate, explicitly confirmed operation that requires a fresh generated
+a separate generated-proof-gated operation that requires a fresh generated
 proof of ACA and hosted-agent connectivity to the canonical FQDN.
+
+**Current dispatch policy.** Invoking a validated private workflow starts it.
+There is no deployment confirmation input, environment approval, or owner
+approval gate. This policy does not alter business HITL approvals: they remain
+workflow-level product controls. Private-runner-only execution, serialized
+release concurrency, proof-gated PostgreSQL lockdown, no-bypass constraints,
+and validation/evidence gates remain mandatory.
 
 **Implementation.** The protected app-only workflow runs
 `make foundry-app-only-release`: its read-only preflight verifies the selected
@@ -32,7 +39,7 @@ private ACR. The workflow contract rejects full Bicep, connection/RBAC
 reconciliation, connectivity proof, lockdown, and evidence collection from
 this release class.
 
-**Open blocker/question.** Who owns and approves the intended state for each
+**Open blocker/question.** Which teams must record the intended state for each
 previewed shared resource, and which differences (if any) are authorized for
 reconciliation? Until that decision is recorded, do not progress a full-IaC
 operation. No deployment was performed by this documentation update.
@@ -124,9 +131,9 @@ remaining Foundry diagnostics finding is inherited from
 `MCAPSGovDeployPolicies` at management-group scope. The current deployment
 identity has subscription-level Owner access but Azure denied its attempt to
 read the management-group policy assignment. It therefore cannot identify or
-approve that governance exception. The policy/governance owner must authorize a
-time-bounded app-only-release exception or a shared-resource remediation plan;
-the private app-only lane must not change those resources unilaterally.
+approve that governance exception. Document a time-bounded app-only-release
+exception or a shared-resource remediation plan as audit evidence; the private
+app-only lane must not change those resources unilaterally.
 
 **App-only policy-baseline decision (2026-08-07).** The user explicitly
 authorized the routine app-only release to proceed without stopping on the
@@ -134,11 +141,11 @@ current 18 pre-existing audit findings. This is a bounded acceptance, not a
 remediation claim: backend/frontend revisions and the hosted-agent version may
 change, while shared infrastructure remains untouched and no new policy finding
 is permitted. Full-IaC reconciliation and PostgreSQL lockdown remain separate
-approved operations.
+evidence-gated operations.
 
 **Separate release-evidence execution (2026-08-07).** The app-only deploy
 workflow intentionally releases only Container App revisions and the hosted
-agent. A separately confirmed protected workflow now runs the existing fresh
+agent. A separate protected workflow runs the existing fresh
 hosted smoke/HITL E2E, enforced Foundry evaluation, and Application Insights
 telemetry verification target after deployment. It cannot provision
 infrastructure, reconcile connections/RBAC, deploy another artifact, or
@@ -191,7 +198,7 @@ scopes. The shared Container Apps identity has no direct `Foundry User`
 assignment, although the complete hosted evidence passed. This differs from
 the static role expectation and is recorded as pre-existing shared-RBAC drift;
 the app-only release did not mutate it. Any reconciliation requires the
-separate full-IaC owner approval already documented above.
+separate full-IaC review and validation evidence documented above.
 
 ## 2026-08-10 - Protected final app-only release and evidence
 
@@ -400,10 +407,10 @@ After all deployments were deleted, those optional branches could leave a
 recreated environment without the hosted agent or its required release
 evidence.
 
-**Precise fix.** All three workflows now serialize on
+**Precise fix.** At the time, all three workflows serialized on
 `order-resolution-private-release` and retain the
 `foundry-private-v2` runner plus its selected AZD environment. The deployment
-workflow requires both deployment and explicit lockdown confirmation, then
+workflow required both deployment and explicit lockdown confirmation, then
 unconditionally deploys backend/frontend and the hosted agent, generates fresh
 ACA/hosted-agent connectivity proof, performs fail-closed PostgreSQL lockdown,
 and collects hosted E2E, enforced Foundry evaluation, and telemetry evidence.
@@ -411,13 +418,15 @@ The password-repair and optional evidence/refresh paths were removed.
 `make foundry-release` now runs `make test` and always invokes
 `foundry-deploy` before proof and lockdown.
 
-**Intended validation evidence.** Static validation must show the shared
+**Intended validation evidence.** Static validation had to show the shared
 concurrency group, required ordered deploy targets, and absence of bypass
 inputs; workflow YAML and changed shell assets must parse. The sole local
-private validation is `make test`. A future manually confirmed private-runner
-release must produce the fresh connectivity-proof artifact, hosted E2E
+private validation is `make test`. A future private-runner release had to
+produce the fresh connectivity-proof artifact, hosted E2E
 conversation evidence, an enforced zero-error Foundry evaluation, and
-correlated telemetry. No Azure resources were deployed while making this fix.
+correlated telemetry. That historical confirmation policy is superseded by the
+current dispatch policy above. No Azure resources were deployed while making
+this fix.
 
 ## Current topology
 
@@ -1315,10 +1324,12 @@ connection, or lockdown change was made.
 
 ## 2026-08-13 — Private release deferred; approved npm feed policy
 
-**Deferral.** At the environment owner's direction, the private Foundry lane
-is on hold while its existing PostgreSQL server cannot be started. Do not
-retry the lifecycle operation, IaC preview, deployment, or downstream gates
-until the owner resumes this lane.
+**Deferral.** The private Foundry lane was on hold while its existing
+PostgreSQL server could not be started. Do not retry the lifecycle operation,
+IaC preview, deployment, or downstream gates until the technical prerequisite
+is resolved. This historical deferral is not a deployment approval policy:
+validated private workflows start when dispatched under the current operating
+model.
 
 **Package policy.** The frontend and Playwright E2E package roots now use the
 approved Microsoft npm feed `https://packagefeedproxy.microsoft.io/npm/`.
@@ -1339,5 +1350,144 @@ approved feed.
 
 This package-only correction does not resume the deferred private release:
 the private PostgreSQL lifecycle, IaC preview, app-only deployment, smoke,
-HITL/resume E2E, evaluation, and telemetry remain on hold until the owner
-resumes the lane.
+HITL/resume E2E, evaluation, and telemetry remain on hold until their
+technical prerequisites are resolved.
+
+## 2026-08-15 — Fresh private target portability and database contract
+
+**Profile.** The selected fresh-bootstrap target is now isolated in
+`agents/order-resolution/deployment/profiles/foundry-private.env`. Reusable Bicep, release scripts,
+Make targets, and private workflows no longer use the legacy resource group,
+AZD environment, PostgreSQL server, runner label, region split, or resource
+names as deployment defaults. A shared fail-closed loader validates required
+non-secret inputs; GitHub variables required before checkout or by `runs-on`
+must exactly mirror the canonical profile.
+
+**Foundry bootstrap fix.** The old bootstrap script pre-constructed project
+IDs and endpoints from a historical account name. Fresh bootstrap now leaves
+those coordinates unset until the actual Foundry account/project outputs are
+available, then hydrates the selected AZD environment before connections and
+runtime deployment.
+
+**PostgreSQL fix.** The previous private runtime used the administrator URL and
+executed schema DDL during startup. Administrator-owned schema bootstrap and a
+separate least-privilege runtime credential are now explicit. Production ACA
+and hosted runtimes set `DB_SCHEMA_MANAGED_EXTERNALLY=true`; startup verifies
+database connectivity without requiring schema `CREATE` or ownership.
+
+**Runner/workflow fix.** Private workflows now use repository/environment
+variables for target and runner selection, validate those mirrors against the
+profile before mutation, preserve serialized release classes, and consistently
+set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` for AZD operations.
+
+**Verification so far.** Parallel focused validation passed Bicep compilation,
+profile/IaC contracts, workflow contracts, shell/Python syntax, database tests,
+and release portability checks. Integration found and fixed a missing shared
+profile API and remaining executable legacy defaults. No Azure resource has
+been created or modified by this preparation phase.
+
+**Full-gate test fix.** The backend topology regression test recursively read
+every frontend file as UTF-8 and failed on a checked-in binary font. The secret
+exposure assertion now scans only the frontend text/source formats and named
+text configuration files that can contain browser configuration. This keeps
+the intended browser-secret guard while avoiding unrelated binary decoding.
+
+**Package validation fix.** AZD does not interpolate `${HOSTED_AGENT_NAME}` in
+the hosted service `name` field; it treated the placeholder as the literal
+agent name and rejected its format. Omitting the field also failed because
+hosted services require a non-empty name. The field therefore uses the stable
+logical application identity `order-resolution-hosted`. Target infrastructure
+names remain profile/Bicep driven; this application identity is intentionally
+constant across environments.
+
+**Preparation validation.** The integrated preparation gate now passes:
+130 backend tests, 10/10 deterministic evaluations, seven workflow Playwright
+tests, four selected-thread Playwright tests, design review, workflow/profile
+contracts, Bicep compilation, shell syntax, database privilege tests, and AZD
+packaging for backend, frontend, and hosted-agent images. The deployment plan
+is marked `Ready for Validation`; no Azure provisioning or application
+deployment has run.
+
+**Bootstrap preview fix.** The initial core preview incorrectly required
+`RUNTIME_DATABASE_URL` before PostgreSQL and its least-privilege runtime role
+could exist. The secure Bicep parameter now defaults to an empty staged state;
+bootstrap omits the database secret/environment binding and runtime connection.
+After schema and runtime-role provisioning, the credential script stores the
+runtime URL securely and sets `infra.parameters.runtimeDatabaseUrl` for the
+connection/application reconciliation stage.
+
+**Capacity validation fixes.** Azure preflight rejected the original
+`gpt-4o-mini` 2024-07-18 deployment because that version is deprecating and
+closed to new deployments. Current Foundry capacity discovery shows
+`gpt-4o` 2024-11-20 Global Standard available in East US 2 with 450K TPM of
+subscription quota; the profile now requests 1K TPM. Azure also reported a
+capacity restriction for `Standard_D4s_v5`; the runner profile now uses
+unrestricted `Standard_D4s_v7`, with 100 vCPUs available in its quota family.
+
+**Fresh preview evidence.** After the capacity and staged-runtime fixes,
+`azd provision --preview --no-prompt` completed against
+`rg-maf-ora-foundry-private`. It proposed only expected creates for the private
+Foundry/project/models, PostgreSQL, ACR, monitoring, Storage, Cosmos DB, Search,
+VNet, six private endpoints, Container Apps environment, backend, and
+frontend. It proposed no legacy-resource mutation, deletion, or replacement.
+
+**RBAC review fix.** Static role review found the new runner managed identity
+would receive Contributor at subscription scope. The runner is now scoped to
+the selected resource group; optional User Access Administrator is likewise
+resource-group scoped and remains disabled in the target profile. Application
+and Foundry data-plane roles remain scoped to ACR, Foundry, Storage, Cosmos,
+Search, Application Insights, or Log Analytics resources.
+
+**Azure Validate result.** The authoritative Azure Validate workflow completed
+after the clean preview, package/build gates, policy/context checks, quota
+checks, and static RBAC review. The lane deployment plan is now `Validated`.
+
+**First provision retry decision.** Core provisioning created ACR, Storage,
+monitoring, Cosmos DB, and PostgreSQL, then Azure rejected AI Search because
+East US 2 had no capacity for a new service. The profile now uses East US for
+AI Search only; the resulting cross-region private-link path is explicit and
+must be measured in release evidence. NAT public-IP creation also required the
+subscription feature `Microsoft.Network/AllowBringYourOwnPublicIpAddress`;
+the feature was registered and Microsoft.Network provider propagation is
+required before the idempotent retry.
+
+**Provisioning recovery hardening.** The second provision created the Foundry
+account/project/models and most private resources, but the Foundry private
+endpoint raced the account while its provisioning state was still `Accepted`.
+The provisioning target now detects that specific failure, waits for the
+account to reach `Succeeded`, and performs one bounded idempotent retry. The
+runner NSG is attached directly to its NIC, and the canonical profile now
+matches the deterministic VM name emitted by Bicep.
+
+**Local execution fix.** The new recovery wrapper was not executable in the
+current worktree, so the Make target now invokes it explicitly with Bash. No
+Azure request was made by the failed local invocation.
+
+**Output hydration fix.** Successful core provisioning exposed that legacy
+fallback aliases (`maforapriv-private-*`) could be written before authoritative
+Bicep outputs were copied into AZD state. Bicep now publishes explicit ACR,
+Container Apps, and runner names; post-provision hydration requires and writes
+those outputs so subsequent database, workflow, and deployment scripts target
+the actual deterministic resources.
+
+**Runner identity/bootstrap fixes.** The GitHub identity bootstrap did not pass
+the required protected-branch subject and application naming inputs to its
+Bicep module, and the runner host bootstrap omitted the PostgreSQL client
+required for private schema provisioning. The script now creates a
+main-branch-scoped federated credential with deterministic application inputs,
+and runner bootstrap installs and verifies `psql`.
+
+**Capability-host naming conflict.** Foundry had already established the
+account's singleton Agents capability host using the service-defined
+`aml_aiagentservice` child name (reported by the service as
+`<account>@aml_aiagentservice`). The deterministic custom name attempted
+to create a second host for the same client ID and was rejected. IaC now
+targets the service-defined singleton name while retaining deterministic
+project capability-host naming.
+
+The account-level host is service-owned and therefore omitted from steady-state
+creation. Reusing it while creating the project capability host and post-host
+RBAC succeeded; deployment output confirmed project capability host
+`maforaprivprojhost4u2gr5q5plofy`. The canonical target profile is now in
+`reuse` mode so subsequent release operations cannot recreate stateful
+infrastructure.

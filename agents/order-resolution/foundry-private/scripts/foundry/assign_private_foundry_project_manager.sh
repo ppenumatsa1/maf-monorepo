@@ -40,19 +40,37 @@ get_arm_token() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEMPLATE_FILE="${ROOT_DIR}/infra/github-actions-identity/foundry-project-manager.bicep"
-SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-4f18d577-3506-4a11-85e5-a83b14727a84}"
-RESOURCE_GROUP="${TARGET_RESOURCE_GROUP:-rg-maf-ora-foundry-v2}"
-FOUNDRY_ACCOUNT_NAME="${FOUNDRY_ACCOUNT_NAME:-mafprv0722v3ai4aiw7fw5gjdo4}"
-FOUNDRY_PROJECT_NAME="${TARGET_FOUNDRY_PROJECT:-order-resolution}"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/deployment/profiles/foundry-private.env}"
+source "${ROOT_DIR}/deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+
+SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+RESOURCE_GROUP="${TARGET_RESOURCE_GROUP:-$AZURE_RESOURCE_GROUP}"
+FOUNDRY_PROJECT_NAME="${TARGET_FOUNDRY_PROJECT:-$FOUNDRY_PROJECT_NAME}"
 
 az account set --subscription "$SUBSCRIPTION_ID"
+
+if [[ -z "${FOUNDRY_ACCOUNT_NAME:-}" ]]; then
+  FOUNDRY_ACCOUNT_NAME="$(
+    az cognitiveservices account list \
+      --resource-group "$RESOURCE_GROUP" \
+      --query "[?kind=='AIServices'].name | [0]" \
+      --output tsv
+  )"
+fi
+[[ -n "$FOUNDRY_ACCOUNT_NAME" ]] || {
+  echo "A Foundry account is required in the selected resource group." >&2
+  exit 1
+}
 
 container_registry_name="$(az acr list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
 [[ -n "$container_registry_name" ]] || {
   echo "Expected exactly one private ACR in the selected resource group."
   exit 1
 }
-[[ "$(az acr list --resource-group "$RESOURCE_GROUP" --query 'length([])' --output tsv)" == "1" ]] || {
+[[ "$(az acr list --resource-group "$RESOURCE_GROUP" --query 'length(@)' --output tsv)" == "1" ]] || {
   echo "Expected exactly one private ACR in the selected resource group."
   exit 1
 }

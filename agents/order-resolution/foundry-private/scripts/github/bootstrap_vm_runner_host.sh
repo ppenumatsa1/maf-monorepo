@@ -32,7 +32,7 @@ install_base_packages() {
   run_privileged apt-get update -y
   run_privileged apt-get install -y \
     git curl jq tar unzip make ca-certificates gnupg lsb-release \
-    python3 python3-pip
+    python3 python3-pip postgresql-client
 }
 
 install_docker_if_missing() {
@@ -81,7 +81,7 @@ configure_runner_host_paths() {
 }
 
 post_verify() {
-  for cmd in git curl jq tar unzip make python3 pip3 docker az azd; do
+  for cmd in git curl jq tar unzip make python3 pip3 psql docker az azd; do
     if ! have_cmd "$cmd"; then
       echo "Missing required command after bootstrap: $cmd"
       exit 1

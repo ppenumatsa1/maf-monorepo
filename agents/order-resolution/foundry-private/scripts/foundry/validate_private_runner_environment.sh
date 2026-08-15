@@ -3,12 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
 
-: "${AZD_ENVIRONMENT_NAME:?AZD_ENVIRONMENT_NAME is required}"
-: "${TARGET_RESOURCE_GROUP:?TARGET_RESOURCE_GROUP is required}"
-: "${TARGET_FOUNDRY_PROJECT:?TARGET_FOUNDRY_PROJECT is required}"
-: "${TARGET_POSTGRES_DATABASE:?TARGET_POSTGRES_DATABASE is required}"
-: "${AZURE_SUBSCRIPTION_ID:?AZURE_SUBSCRIPTION_ID is required}"
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 
 for binary in az azd python3; do
   command -v "$binary" >/dev/null 2>&1 || {
@@ -18,10 +22,10 @@ for binary in az azd python3; do
 done
 
 cd "$FOUNDRY_DIR"
-azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 
 get_env_value() {
-  azd env get-value "$1" 2>/dev/null || true
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" 2>/dev/null || true
 }
 
 require_env_value() {
@@ -46,12 +50,14 @@ require_exact_value() {
   }
 }
 
-require_exact_value AZURE_RESOURCE_GROUP "$TARGET_RESOURCE_GROUP"
-require_exact_value FOUNDRY_PROJECT_NAME "$TARGET_FOUNDRY_PROJECT"
-require_exact_value POSTGRES_DATABASE_NAME "$TARGET_POSTGRES_DATABASE"
+require_exact_value AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
+require_exact_value AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
+require_exact_value AZURE_LOCATION "$AZURE_LOCATION"
+require_exact_value NAME_PREFIX "$NAME_PREFIX"
 require_exact_value NETWORK_MODE private
 require_exact_value ENABLE_CONTAINER_APPS true
 require_exact_value ENABLE_POSTGRES_PRIVATE_ENDPOINT true
+require_exact_value DB_SCHEMA_MANAGED_EXTERNALLY true
 
 actual_subscription_id="$(az account show --query id --output tsv)"
 [[ "$actual_subscription_id" == "$AZURE_SUBSCRIPTION_ID" ]] || {
@@ -62,7 +68,7 @@ actual_subscription_id="$(az account show --query id --output tsv)"
 postgres_server_name="$(require_env_value POSTGRES_SERVER_NAME)"
 postgres_fqdn="$(
   az postgres flexible-server show \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$postgres_server_name" \
     --query fullyQualifiedDomainName \
     --output tsv
@@ -73,11 +79,12 @@ expected_postgres_fqdn="${postgres_server_name,,}.postgres.database.azure.com"
   exit 1
 }
 
+postgres_database_name="$(require_env_value POSTGRES_DATABASE_NAME)"
 database_count="$(
   az postgres flexible-server db list \
-    --resource-group "$TARGET_RESOURCE_GROUP" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
     --server-name "$postgres_server_name" \
-    --query "[?name=='${TARGET_POSTGRES_DATABASE}'] | length(@)" \
+    --query "[?name=='${postgres_database_name}'] | length(@)" \
     --output tsv
 )"
 [[ "$database_count" == "1" ]] || {
@@ -100,9 +107,10 @@ PY
 }
 
 project_id="$(require_env_value FOUNDRY_PROJECT_ID)"
+foundry_project_name="$(require_env_value FOUNDRY_PROJECT_NAME)"
 project_id_lower="${project_id,,}"
-expected_resource_group_segment="/resourcegroups/${TARGET_RESOURCE_GROUP,,}/"
-expected_project_segment="/projects/${TARGET_FOUNDRY_PROJECT,,}"
+expected_resource_group_segment="/resourcegroups/${AZURE_RESOURCE_GROUP,,}/"
+expected_project_segment="/projects/${foundry_project_name,,}"
 [[ "$project_id_lower" == *"$expected_resource_group_segment"* &&
    "$project_id_lower" == *"$expected_project_segment" ]] || {
   echo "FOUNDRY_PROJECT_ID is not scoped to the selected private project."

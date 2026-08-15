@@ -10,6 +10,7 @@ require_bin() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
 RESULTS_DIR="${ROOT_DIR}/backend/.foundry/results"
 HOSTED_E2E_EVIDENCE_FILE="${FOUNDRY_E2E_EVIDENCE_FILE:-${RESULTS_DIR}/hosted-e2e-evidence.json}"
 TELEMETRY_RESULT_FILE="${TELEMETRY_RESULT_FILE:-${RESULTS_DIR}/telemetry-verification.json}"
@@ -19,6 +20,15 @@ RELEASE_EVIDENCE_REPORT_FILE="${PRIVATE_RELEASE_EVIDENCE_REPORT_FILE:-${RESULTS_
 require_bin az
 require_bin azd
 require_bin jq
+
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 
 timestamp_epoch() {
   date -u -d "$1" +%s 2>/dev/null || true
@@ -55,6 +65,12 @@ write_release_evidence_report() {
   jq -n \
     --arg release_started_at "$release_started_at" \
     --arg generated_at "$completed_at" \
+    --arg subscription_id "$AZURE_SUBSCRIPTION_ID" \
+    --arg resource_group "$AZURE_RESOURCE_GROUP" \
+    --arg azd_environment "$AZURE_ENV_NAME" \
+    --arg name_prefix "$NAME_PREFIX" \
+    --arg hosted_agent_name "$hosted_agent_name" \
+    --arg hosted_agent_version "$hosted_agent_version" \
     --arg hosted_e2e_evidence_file "$HOSTED_E2E_EVIDENCE_FILE" \
     --arg hosted_e2e_started_at "$(jq -r '.started_at' "$HOSTED_E2E_EVIDENCE_FILE")" \
     --arg hosted_e2e_generated_at "$(jq -r '.generated_at' "$HOSTED_E2E_EVIDENCE_FILE")" \
@@ -66,6 +82,16 @@ write_release_evidence_report() {
     '{
       release_started_at: $release_started_at,
       generated_at: $generated_at,
+      target: {
+        subscription_id: $subscription_id,
+        resource_group: $resource_group,
+        azd_environment: $azd_environment,
+        name_prefix: $name_prefix
+      },
+      hosted_agent: {
+        name: $hosted_agent_name,
+        version: $hosted_agent_version
+      },
       hosted_e2e: {
         evidence_file: $hosted_e2e_evidence_file,
         started_at: $hosted_e2e_started_at,
@@ -84,16 +110,25 @@ write_release_evidence_report() {
 }
 
 cd "$FOUNDRY_DIR"
-resource_group="$(azd env get-value AZURE_RESOURCE_GROUP)"
-connection_json="$(azd ai connection show ApplicationInsights --output json --no-prompt)"
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
+resource_group="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"
+subscription_id="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_SUBSCRIPTION_ID)"
+name_prefix="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value NAME_PREFIX)"
+[[ "$resource_group" == "$AZURE_RESOURCE_GROUP" &&
+  "$subscription_id" == "$AZURE_SUBSCRIPTION_ID" &&
+  "$name_prefix" == "$NAME_PREFIX" ]] || {
+  echo "Selected AZD target does not match the private deployment profile."
+  exit 1
+}
+connection_json="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai connection show ApplicationInsights --output json --no-prompt)"
 application_insights_target="$(printf '%s' "$connection_json" | jq -r '.target // .metadata.ResourceId // .properties.target // empty')"
 if [[ -z "$resource_group" || -z "$application_insights_target" ]]; then
   echo "Private release evidence requires an AZD resource group and ApplicationInsights project connection."
   exit 1
 fi
 
-hosted_agent_name="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_NAME)"
-hosted_agent_version="$(azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_VERSION)"
+hosted_agent_name="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_NAME)"
+hosted_agent_version="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AGENT_ORDER_RESOLUTION_HOSTED_VERSION)"
 if [[ -z "$hosted_agent_name" || -z "$hosted_agent_version" ]]; then
   echo "Private release evidence requires the active hosted agent name and version."
   exit 1

@@ -2,7 +2,7 @@
 param accountName string
 
 @description('Name of the account-level capability host')
-param accountCapabilityHostName string = '${accountName}@aml_aiagentservice'
+param accountCapabilityHostName string = 'aml_aiagentservice'
 
 @description('ARM resource ID of the delegated agent subnet')
 param agentSubnetResourceId string = ''

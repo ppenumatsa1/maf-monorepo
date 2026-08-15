@@ -482,13 +482,14 @@ between application delivery and shared infrastructure authority:
 | Operation | Architectural scope | Boundary |
 | --- | --- | --- |
 | Routine app-only release | Existing ACA backend/frontend revisions and existing hosted agent. | Validates existing private dependencies; does not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
-| Bootstrap/reconciliation | Full Bicep management plane. | Requires a current preview and explicit approved reconciliation plan before execution. |
-| PostgreSQL lockdown | Canonical PostgreSQL private-access controls. | Separate explicitly confirmed operation after fresh generated ACA and hosted-agent connectivity proof for the canonical FQDN. |
+| Bootstrap/reconciliation | Full Bicep management plane. | Requires a current preview and recorded reconciliation review evidence before execution. |
+| PostgreSQL lockdown | Canonical PostgreSQL private-access controls. | Separate generated-proof-gated operation after fresh ACA and hosted-agent connectivity proof for the canonical FQDN. |
 
 Preview run `31198356080` found shared authoritative drift in the VNet/subnets,
 ACA environment, Foundry account/project/models, ACR, Cosmos, Application
 Insights, and Search. Full-Bicep bootstrap/reconciliation is therefore blocked
-until owners approve the intended state. The preview neither deploys the
+until recorded review and current validation evidence establish the intended
+state. The preview neither deploys the
 application nor establishes private dependency health; it must not be reported
 as deployment success. Do not add administrator-password, public-access,
 firewall, or alternate-runner bypasses.

@@ -18,10 +18,12 @@ This model is Pareto-first: start with the minimum enforceable contract and expa
 Hosted validation and deployment are private-lane-first in the current operating posture:
 
 - **Default hosted lane:** private Foundry (`foundry-private-env` / private runner path).
-- **Deployment control plane:** PR/static validation is credential-free. The
-  protected manual provision/deploy workflows run only on
-  `self-hosted,foundry-private-v2` in `foundry-private-env` using Azure OIDC;
-  no Azure or database secret is stored in the workflow.
+- **Deployment control plane:** PR/static validation is credential-free.
+  Provision, deploy, package, evidence, and observability workflows run only
+  on `self-hosted,foundry-private-v2` using repository-scoped Azure OIDC
+  variables; no Azure or database secret is stored in the workflow. Invoking a
+  validated workflow starts it: no confirmation input, environment approval,
+  or owner approval gate is permitted.
 - No additional hosted lane is part of the required gate path unless explicitly re-enabled by a documented decision update.
 - **Private web ingress:** one external frontend ACA and one internal FastAPI
   ACA share a VNet-integrated environment on a dedicated subnet. Foundry,
@@ -65,14 +67,15 @@ Every protected private operation has exactly one of these scopes:
 | Release class | Scope | Required evidence and prohibition |
 | --- | --- | --- |
 | Routine app-only release | Existing ACA backend/frontend revisions and the existing hosted agent. | Validate existing private dependencies before and after the artifact release. Do not run full Bicep, reconcile shared resources, alter networking/identity, or change PostgreSQL access. |
-| Explicit bootstrap/reconciliation | Full Bicep management plane, including shared dependencies. | Capture a current preview, review every proposed change, and obtain explicit approval of the reconciliation plan before execution. A preview is not a deployment or a health proof. |
-| PostgreSQL lockdown | Canonical PostgreSQL private endpoint/DNS, public-access, and firewall controls. | Run separately, with explicit confirmation, only after the current generated connectivity proof shows both ACA and hosted-agent access to the canonical FQDN. It is never an app-only-release side effect. |
+| Bootstrap/reconciliation | Full Bicep management plane, including shared dependencies. | Capture a current preview and record review evidence for every proposed change before execution. A preview is not a deployment or a health proof. |
+| PostgreSQL lockdown | Canonical PostgreSQL private endpoint/DNS, public-access, and firewall controls. | Run separately only after the current generated connectivity proof shows both ACA and hosted-agent access to the canonical FQDN. It is never an app-only-release side effect. |
 
 Full-IaC preview run `31198356080` showed shared authoritative drift in the
 VNet/subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
 Application Insights, and Search. The operating decision is fail closed:
-full-Bicep bootstrap/reconciliation is blocked pending owner-approved intended
-state for those resources. Do not normalize, accept, or deploy that drift under
+full-Bicep bootstrap/reconciliation is blocked pending recorded intended-state
+review and current validation evidence for those resources. Do not normalize,
+accept, or deploy that drift under
 the routine app-only release label, and do not claim deployment success from
 the preview.
 
@@ -164,8 +167,8 @@ A change is done only when all applicable items are true:
 | --- | --- | --- |
 | App-only behavior (no hosting/IaC change) | `make test`, `make eval-backend`, `make test-e2e`, `./scripts/skills/design-review-skill.sh` | None |
 | Routine app-only release | Applicable application gates and validation of existing private dependencies | Private-runner ACA revision and hosted-agent release only; no full Bicep or PostgreSQL lockdown |
-| Bootstrap/reconciliation | IaC review and a current full-Bicep preview with an approved reconciliation decision | Approved private-runner full-Bicep execution, then applicable deployment and telemetry evidence |
-| PostgreSQL lockdown | Fresh generated ACA/hosted-agent connectivity proof for the canonical FQDN | Separately confirmed lockdown; record proof, access result, and subsequent applicable release evidence |
+| Bootstrap/reconciliation | IaC review and a current full-Bicep preview with recorded reconciliation evidence | Private-runner full-Bicep execution starts when dispatched, then applicable deployment and telemetry evidence |
+| PostgreSQL lockdown | Fresh generated ACA/hosted-agent connectivity proof for the canonical FQDN | Separate proof-gated lockdown starts when invoked; record proof, access result, and subsequent applicable release evidence |
 | HITL/business-rule change | local gates + targeted HITL rule assertions | Hosted smoke for `ORD-1001`, `ORD-1009` (+ approve/reject when applicable) |
 | MAF/Foundry runtime change | local gates + focused hosted-entry tests + `make eval-backend` | Private Foundry deploy + smoke + E2E evidence + enforced conversation trace evaluation + correlated telemetry verification |
 | IaC/network/identity/deploy workflow change | local gates as applicable + IaC review | `azure-validation` -> `azure-deployment` -> `azure-telemetry-validation` |
@@ -197,8 +200,8 @@ For each release-impacting change, capture:
   lockdown) and why that scope is sufficient
 - Commit SHA and changed surfaces
 - Gate results (pass/fail + command or run ID)
-- For full Bicep, the preview run, reviewed drift decision, and approval; for
-  PostgreSQL lockdown, the separately confirmed generated connectivity proof
+- For full Bicep, the preview run and recorded drift review; for PostgreSQL
+  lockdown, the current generated connectivity proof
 - Hosted version and conversation/thread identifiers
 - Foundry trace evidence (version-scoped)
 - App Insights correlation evidence (`workflow_run_id`, `thread_id`, exception status)

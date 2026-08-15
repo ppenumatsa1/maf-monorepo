@@ -4,7 +4,7 @@ targetScope = 'resourceGroup'
 param deploymentPrincipalId string
 
 @description('Foundry account that hosts the protected private release project.')
-param foundryAccountName string = 'mafprv0722v3ai4aiw7fw5gjdo4'
+param foundryAccountName string
 
 @description('Foundry project that receives the hosted-agent deployment role.')
 param foundryProjectName string = 'order-resolution'

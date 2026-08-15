@@ -1,12 +1,15 @@
 SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env
 PROJECT_ROOT := $(CURDIR)
+PRIVATE_DEPLOYMENT_PROFILE := ../deployment/profiles/foundry-private.env
+SHARED_PROFILE_APPLICATOR := ../deployment/apply-azd-profile.sh
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-foundry-deploy-env ensure-test-postgres \
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e test-e2e-selected-thread manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
 	foundry-up foundry-preflight foundry-iac-validate foundry-release-preflight foundry-package \
+	foundry-profile test-foundry-portability \
 	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-app-images-verify foundry-app-only-preflight foundry-hosted-app-deploy \
 	foundry-app-only-release foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
@@ -36,6 +39,8 @@ help:
 	@echo "  validate-quick  - Fast redeploy validation (Playwright + smoke if API_URL set)"
 	@echo "  validate-full   - Full validation (test + eval + e2e + design-review)"
 	@echo "  foundry-up      - Self-contained Foundry hosted-agent azd up (BYO VNET + private deps)"
+	@echo "  foundry-profile - Validate and apply the canonical secret-free private target profile"
+	@echo "  test-foundry-portability - Validate private release/profile portability contracts"
 	@echo "  foundry-preflight - Verify private release inputs without changing Azure"
 	@echo "  foundry-iac-validate - Compile private IaC without writing a generated template"
 	@echo "  foundry-release-preflight - Run independent read-only release checks concurrently"
@@ -102,7 +107,8 @@ eval-backend: ensure-backend-env ensure-test-postgres
 
 eval-foundry: ensure-backend-env
 	cd backend && . .venv/bin/activate && \
-		foundry_env_file="../infra/foundry-hosted/.azure/$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}/.env"; \
+		foundry_env_name="$$(bash -c 'source ../../deployment/profile.sh; deployment_profile_load "$$1"; deployment_profile_validate; deployment_profile_export; printf "%s" "$$AZURE_ENV_NAME"' _ "../$(PRIVATE_DEPLOYMENT_PROFILE)")"; \
+		foundry_env_file="../infra/foundry-hosted/.azure/$${foundry_env_name}/.env"; \
 		if [[ -f "$$foundry_env_file" ]]; then \
 			set -a; . "$$foundry_env_file"; set +a; \
 		fi; \
@@ -257,7 +263,14 @@ foundry-up:
 	$(MAKE) foundry-project-connections
 	$(MAKE) foundry-deploy
 
-foundry-preflight:
+foundry-profile:
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill AZD_PROJECT_DIR="$(CURDIR)/infra/foundry-hosted" \
+		bash "$(SHARED_PROFILE_APPLICATOR)" "$(PRIVATE_DEPLOYMENT_PROFILE)"
+
+test-foundry-portability:
+	bash ./scripts/foundry/tests/test_release_portability_contract.sh
+
+foundry-preflight: foundry-profile
 	./scripts/foundry/preflight_private_release.sh
 
 foundry-iac-validate:
@@ -270,23 +283,19 @@ foundry-package:
 	./scripts/foundry/sync_hosted_source.sh
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt
 
-foundry-provision-preview: foundry-preflight
-	./scripts/foundry/ensure_foundry_azd_defaults.sh
-	cd infra/foundry-hosted && azd provision --preview --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+foundry-provision-preview: foundry-profile
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --preview --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
-foundry-provision:
-	$(MAKE) foundry-preflight
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
-	cd infra/foundry-hosted && \
-		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS false && \
-		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+foundry-provision: foundry-profile
+	bash ./scripts/foundry/provision_private_infrastructure.sh
 
 foundry-project-connections:
 	$(MAKE) foundry-preflight
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	cd infra/foundry-hosted && \
 		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set MANAGE_PROJECT_CONNECTIONS true && \
-		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
+		AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,) && \
+		FOUNDRY_POST_PROVISION_HYDRATE=1 AZURE_DEV_USER_AGENT=microsoft_foundry_skill ../../scripts/foundry/ensure_foundry_azd_defaults.sh
 
 foundry-deploy: ensure-foundry-deploy-env
 	@test -f backend/Dockerfile.hosted
@@ -298,8 +307,14 @@ foundry-deploy: ensure-foundry-deploy-env
 foundry-app-deploy:
 	@test -f backend/Dockerfile
 	@test -f frontend/Dockerfile
-	cd infra/foundry-hosted && azd deploy backend --no-prompt
-	cd infra/foundry-hosted && azd deploy frontend --no-prompt
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
+	@set -euo pipefail; \
+	cd infra/foundry-hosted; \
+	resource_group="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"; \
+	backend_name="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value BACKEND_CONTAINER_APP_NAME)"; \
+	az containerapp update --resource-group "$$resource_group" --name "$$backend_name" \
+		--set-env-vars DB_SCHEMA_MANAGED_EXTERNALLY=true --only-show-errors --output none
+	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
 
 foundry-app-images-verify:
 	./scripts/foundry/verify_private_app_images.sh
@@ -325,11 +340,11 @@ foundry-connectivity-proof:
 foundry-postgres-lockdown:
 	@set -euo pipefail; \
 	cd infra/foundry-hosted && \
-	resource_group="$${FOUNDRY_RESOURCE_GROUP:-$${AZURE_RESOURCE_GROUP:-$$(azd env get-value AZURE_RESOURCE_GROUP)}}"; \
-	postgres_server="$${POSTGRES_SERVER_NAME:-$$(azd env get-value POSTGRES_SERVER_NAME 2>/dev/null || true)}"; \
-	postgres_fqdn="$${POSTGRES_SERVER_FQDN:-$$(azd env get-value POSTGRES_SERVER_FQDN 2>/dev/null || true)}"; \
-	private_endpoint="$${POSTGRES_PRIVATE_ENDPOINT_NAME:-$$(azd env get-value POSTGRES_PRIVATE_ENDPOINT_NAME 2>/dev/null || true)}"; \
-	private_dns_zone="$${POSTGRES_PRIVATE_DNS_ZONE_NAME:-$$(azd env get-value POSTGRES_PRIVATE_DNS_ZONE_NAME 2>/dev/null || true)}"; \
+	resource_group="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"; \
+	postgres_server="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_SERVER_NAME 2>/dev/null || true)"; \
+	postgres_fqdn="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_SERVER_FQDN 2>/dev/null || true)"; \
+	private_endpoint="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_PRIVATE_ENDPOINT_NAME 2>/dev/null || true)"; \
+	private_dns_zone="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_PRIVATE_DNS_ZONE_NAME 2>/dev/null || true)"; \
 	AZURE_RESOURCE_GROUP="$$resource_group" \
 	POSTGRES_SERVER_NAME="$$postgres_server" \
 	POSTGRES_SERVER_FQDN="$$postgres_fqdn" \
@@ -361,9 +376,9 @@ foundry-smoke:
 	while [[ "$$attempt" -le "$$max_attempts" ]]; do \
 		set +e; \
 		if [[ -n "$${SMOKE_THREAD_ID:-}" ]]; then \
-			output="$$(cd infra/foundry-hosted && azd ai agent invoke order-resolution-hosted "$$message" --protocol responses --conversation-id "$${SMOKE_THREAD_ID}" --no-prompt 2>&1)"; \
+			output="$$(cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$$message" --protocol responses --conversation-id "$${SMOKE_THREAD_ID}" --no-prompt 2>&1)"; \
 		else \
-			output="$$(cd infra/foundry-hosted && azd ai agent invoke order-resolution-hosted "$$message" --protocol responses --new-conversation --new-session --no-prompt 2>&1)"; \
+			output="$$(cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$$message" --protocol responses --new-conversation --new-session --no-prompt 2>&1)"; \
 		fi; \
 		rc="$$?"; \
 		set -e; \
@@ -400,8 +415,10 @@ foundry-access-path:
 		echo "RUNNER_SSH_PUBKEY_PATH is empty: $$key_path"; \
 		exit 1; \
 	}; \
+	profile_env="$$(bash -c 'source ../deployment/profile.sh; deployment_profile_load "$$1"; deployment_profile_validate; deployment_profile_export; printf "%s" "$$AZURE_ENV_NAME"' _ "$(PRIVATE_DEPLOYMENT_PROFILE)")"; \
+	[[ -n "$$profile_env" ]] || { echo "Canonical private profile is missing AZURE_ENV_NAME."; exit 1; }; \
 	cd infra/foundry-hosted; \
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$${FOUNDRY_AZD_ENV_NAME:-foundry-private-env}" --no-prompt; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$$profile_env" --no-prompt; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ../../scripts/foundry/ensure_foundry_azd_defaults.sh; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill $(MAKE) -C ../.. foundry-preflight; \
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set CREATE_PRIVATE_RUNNER_ACCESS true; \

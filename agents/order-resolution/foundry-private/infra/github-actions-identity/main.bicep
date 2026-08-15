@@ -3,16 +3,20 @@ targetScope = 'resourceGroup'
 extension microsoftGraphV1
 
 @description('GitHub owner/repository trusted by the deployment identity.')
-param githubRepository string = 'ppenumatsa1/maf-monorepo'
+param githubRepository string
 
-@description('Exact GitHub OIDC subject emitted for the protected private-release environment.')
-param githubSubject string = 'repo:ppenumatsa1@37847579/maf-monorepo@1314177122:environment:foundry-private-env'
+@description('Exact GitHub OIDC subject emitted by private release workflows from main.')
+param githubSubject string
 
 @description('Immutable Microsoft Graph alternate key for the deployment application.')
-param applicationUniqueName string = 'maf-ora-github-private-v2'
+param applicationUniqueName string
 
-var applicationDisplayName = 'maf-ora-github-private-v2'
-var federatedCredentialName = 'github-maf-monorepo-foundry-private-env'
+@description('Display name for the deployment application.')
+param applicationDisplayName string
+
+@description('Name for the GitHub federated credential.')
+param federatedCredentialName string
+
 var githubIssuer = 'https://token.actions.githubusercontent.com'
 var azureTokenExchangeAudience = 'api://AzureADTokenExchange'
 

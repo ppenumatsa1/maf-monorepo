@@ -25,6 +25,16 @@ require_bin docker
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 PYTHON="$ROOT_DIR/backend/.venv/bin/python"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 
 if [[ ! -x "$PYTHON" ]]; then
   echo "Backend virtual environment is required; run make ensure-foundry-deploy-env." >&2
@@ -32,11 +42,16 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 
 cd "$FOUNDRY_DIR"
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 get_env() {
   AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" 2>/dev/null || true
 }
 
 resource_group="$(require_env AZURE_RESOURCE_GROUP "$(get_env AZURE_RESOURCE_GROUP)")"
+[[ "$resource_group" == "$AZURE_RESOURCE_GROUP" ]] || {
+  echo "Selected AZD resource group does not match the private deployment profile." >&2
+  exit 1
+}
 registry_name="$(az acr list --resource-group "$resource_group" --query '[0].name' --output tsv)"
 registry_endpoint="$(az acr list --resource-group "$resource_group" --query '[0].loginServer' --output tsv)"
 [[ -n "$registry_name" && -n "$registry_endpoint" ]] || {
@@ -110,6 +125,7 @@ export APP_ENV="$(require_env APP_ENV "$(get_env APP_ENV)")"
 export STORE_PROVIDER="$(require_env STORE_PROVIDER "$(get_env STORE_PROVIDER)")"
 export MEMORY_PROVIDER="$(require_env MEMORY_PROVIDER "$(get_env MEMORY_PROVIDER)")"
 export RAG_PROVIDER="$(require_env RAG_PROVIDER "$(get_env RAG_PROVIDER)")"
+export DB_SCHEMA_MANAGED_EXTERNALLY="$(require_env DB_SCHEMA_MANAGED_EXTERNALLY "$(get_env DB_SCHEMA_MANAGED_EXTERNALLY)")"
 export ENABLE_TELEMETRY="$(require_env ENABLE_TELEMETRY "$(get_env ENABLE_TELEMETRY)")"
 export ENABLE_INSTRUMENTATION="$(require_env ENABLE_INSTRUMENTATION "$(get_env ENABLE_INSTRUMENTATION)")"
 export OTEL_SERVICE_NAME="$(require_env OTEL_SERVICE_NAME "$(get_env OTEL_SERVICE_NAME)")"

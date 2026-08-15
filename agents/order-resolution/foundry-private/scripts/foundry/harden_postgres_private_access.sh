@@ -1,14 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
+
 : "${AZURE_RESOURCE_GROUP:?AZURE_RESOURCE_GROUP is required}"
 : "${POSTGRES_SERVER_FQDN:?POSTGRES_SERVER_FQDN is required}"
 : "${POSTGRES_PRIVATE_ENDPOINT_NAME:?POSTGRES_PRIVATE_ENDPOINT_NAME is required}"
 : "${POSTGRES_PRIVATE_DNS_ZONE_NAME:?POSTGRES_PRIVATE_DNS_ZONE_NAME is required}"
 : "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE:?POSTGRES_CONNECTIVITY_EVIDENCE_FILE is required}"
 
-command -v jq >/dev/null 2>&1 || {
-  echo "jq is required to validate PostgreSQL connectivity evidence."
+[[ "$AZURE_RESOURCE_GROUP" == "$(deployment_profile_value AZURE_RESOURCE_GROUP)" ]] || {
+  echo "AZURE_RESOURCE_GROUP does not match the selected private deployment profile."
+  exit 1
+}
+
+for binary in az jq; do
+  command -v "$binary" >/dev/null 2>&1 || {
+    echo "$binary is required to validate and apply PostgreSQL lockdown."
+    exit 1
+  }
+done
+actual_subscription_id="$(az account show --query id --output tsv)"
+[[ "$actual_subscription_id" == "$AZURE_SUBSCRIPTION_ID" ]] || {
+  echo "Azure CLI is not scoped to the private deployment profile subscription."
   exit 1
 }
 [[ -f "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}" ]] || {
@@ -26,6 +49,10 @@ evidence_status="$(jq -r '.status // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FI
 aca_connectivity="$(jq -r '.aca_database_connectivity // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
 hosted_agent_connectivity="$(jq -r '.hosted_agent_database_connectivity // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
 evidence_fqdn="$(jq -r '.postgres_fqdn // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}" | tr '[:upper:]' '[:lower:]')"
+evidence_subscription_id="$(jq -r '.subscription_id // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
+evidence_resource_group="$(jq -r '.resource_group // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
+evidence_azd_environment="$(jq -r '.azd_environment // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
+evidence_name_prefix="$(jq -r '.name_prefix // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
 evidence_generated_at="$(jq -r '.generated_at // empty' "${POSTGRES_CONNECTIVITY_EVIDENCE_FILE}")"
 evidence_epoch="$(date -u -d "${evidence_generated_at}" +%s 2>/dev/null || true)"
 maximum_evidence_age_seconds="${POSTGRES_CONNECTIVITY_MAX_AGE_SECONDS:-3600}"
@@ -35,6 +62,10 @@ if [[ "$evidence_status" != "passed" ||
       "$aca_connectivity" != "passed" ||
       "$hosted_agent_connectivity" != "passed" ||
       "$evidence_fqdn" != "$canonical_fqdn" ||
+      "$evidence_subscription_id" != "$AZURE_SUBSCRIPTION_ID" ||
+      "$evidence_resource_group" != "$AZURE_RESOURCE_GROUP" ||
+      "$evidence_azd_environment" != "$AZURE_ENV_NAME" ||
+      "$evidence_name_prefix" != "$NAME_PREFIX" ||
       -z "$evidence_epoch" ||
       "$evidence_age_seconds" -lt 0 ||
       "$evidence_age_seconds" -gt "$maximum_evidence_age_seconds" ]]; then

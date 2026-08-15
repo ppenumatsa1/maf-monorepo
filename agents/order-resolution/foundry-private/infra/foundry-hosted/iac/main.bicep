@@ -1,114 +1,88 @@
 targetScope = 'resourceGroup'
 
 @description('Deployment location')
-param location string = resourceGroup().location
+param location string
 
-@description('Prefix used for deterministic naming and defaults')
+@description('AZD environment name used for deployment and evidence correlation')
+param azdEnvironmentName string
+
+@description('Prefix used with the deployment scope for deterministic naming')
 @minLength(3)
-param namePrefix string = 'maffnd'
+param namePrefix string
 
 @description('Network profile for the Foundry-hosted infrastructure')
 @allowed([
   'private'
 ])
-param networkMode string = 'private'
+param networkMode string
+
+@description('Bootstrap creates stateful resources and initial workloads; reuse references them without resetting workload images or secrets.')
+@allowed([
+  'bootstrap'
+  'reuse'
+])
+param deploymentMode string
 
 @description('Foundry project name')
-param foundryProjectName string = 'order-resolution'
+param foundryProjectName string
 
 @description('Hosted agent name used to compose default responses URL')
-param hostedAgentName string = 'order-resolution-hosted'
-
-@description('Optional override for Foundry account name')
-param foundryAccountName string = ''
+param hostedAgentName string
 
 @description('Restore a soft-deleted Foundry account with this name when Azure reports one. Keep true for the intentional private-lane teardown; set false only after purging the account name.')
-param restoreFoundryAccount bool = true
+param restoreFoundryAccount bool
 
-@description('Optional override for Storage account name')
-param storageAccountName string = ''
+@description('Cosmos DB region')
+param cosmosLocation string
 
-@description('Optional override for Cosmos DB account name')
-param cosmosAccountName string = ''
-
-@description('Optional Cosmos DB region override when primary region has capacity issues')
-param cosmosLocation string = ''
-
-@description('Optional override for AI Search service name')
-param aiSearchName string = ''
-
-@description('AI Search region. Default is East US for capacity resilience; set equal to deployment location to keep same-region data path/residency.')
+@description('AI Search region')
 @minLength(1)
-param aiSearchLocation string = 'eastus'
+param aiSearchLocation string
 
-@description('Optional override for ACR name')
-param containerRegistryName string = ''
+@description('AI Search SKU name')
+param aiSearchSkuName string
 
 @description('Name of the callback token setting used by backend event ingress')
 param foundryEventCallbackTokenSettingName string = 'FOUNDRY_EVENT_CALLBACK_TOKEN'
 
-@description('Name of the account-level capability host')
-param accountCapabilityHostName string = 'caphostacct'
-
-@description('Name of the project-level capability host')
-param projectCapabilityHostName string = 'caphostproj'
-
-@description('Virtual network name')
-param virtualNetworkName string = ''
-
 @description('VNet address prefix')
-param vnetAddressPrefix string = '10.90.0.0/16'
+param vnetAddressPrefix string
 
 @description('Agent subnet name')
 param agentSubnetName string = 'snet-agent-host'
 
 @description('Agent subnet prefix')
-param agentSubnetPrefix string = '10.90.1.0/24'
+param agentSubnetPrefix string
 
 @description('Private endpoint subnet name')
 param privateEndpointSubnetName string = 'snet-private-endpoints'
 
 @description('Private endpoint subnet prefix')
-param privateEndpointSubnetPrefix string = '10.90.2.0/24'
+param privateEndpointSubnetPrefix string
 
 @description('Azure Container Apps infrastructure subnet name')
 param containerAppsSubnetName string = 'snet-container-apps'
 
 @description('Azure Container Apps infrastructure subnet prefix. Consumption environments require at least /23.')
-param containerAppsSubnetPrefix string = '10.90.6.0/23'
+param containerAppsSubnetPrefix string
 
 @description('Enable the public frontend and internal backend Container Apps.')
-param enableContainerApps bool = true
-
-@description('Container Apps environment name')
-param containerAppsEnvironmentName string = 'maffnd-private-aca'
-
-@description('Internal FastAPI Container App name')
-param backendContainerAppName string = 'maffnd-private-backend'
-
-@description('External React frontend Container App name')
-param frontendContainerAppName string = 'maffnd-private-frontend'
+param enableContainerApps bool
 
 @description('Backend bootstrap or azd-published container image')
-param backendImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'
+param backendImageName string
 
 @description('Frontend bootstrap or azd-published container image')
-param frontendImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'
+param frontendImageName string
 
 @description('Create NAT gateway for controlled outbound from the agent subnet.')
-param createNatGateway bool = true
-
-@description('Optional override for NAT gateway name')
-param natGatewayName string = ''
-
-@description('Optional override for NAT public IP name')
-param natPublicIpName string = ''
+param createNatGateway bool
 
 @description('Enable private runner access resources (runner subnet, Bastion, and VM).')
-param createPrivateRunnerAccess bool = false
+param createPrivateRunnerAccess bool
 
-@description('Assign subscription-scope RBAC to runner UAMI so azd can validate and run deployments non-interactively.')
-param assignRunnerSubscriptionRbac bool = true
+@description('Assign resource-group RBAC to runner UAMI so azd can validate and run deployments non-interactively.')
+param assignRunnerResourceGroupRbac bool
 
 @description('Also assign User Access Administrator for runner UAMI when templates create role assignments.')
 param assignRunnerUserAccessAdministrator bool = false
@@ -117,40 +91,30 @@ param assignRunnerUserAccessAdministrator bool = false
 param runnerSubnetName string = 'snet-runner'
 
 @description('Runner subnet prefix')
-param runnerSubnetPrefix string = '10.90.3.0/24'
+param runnerSubnetPrefix string
 
 @description('Azure Bastion subnet name. Must be AzureBastionSubnet.')
 param bastionSubnetName string = 'AzureBastionSubnet'
 
 @description('Azure Bastion subnet prefix (minimum /26).')
-param bastionSubnetPrefix string = '10.90.4.0/26'
+param bastionSubnetPrefix string
 
 @description('Create Azure Bastion host for browser/SSH tunneling access.')
-param createBastionHost bool = true
+param createBastionHost bool
 
 @description('Create a private VM runner in the runner subnet.')
-param createRunnerVm bool = true
-
-@description('Runner VM name')
-param runnerVmName string = 'vm-maffnd-runner'
+param createRunnerVm bool
 
 @description('Runner VM size')
-param runnerVmSize string = 'Standard_D4s_v5'
+param runnerVmSize string
 
 @description('Runner VM admin username')
-param runnerVmAdminUsername string = 'azureuser'
+param runnerVmAdminUsername string
 
 @description('SSH public key for runner VM admin user. Required when createRunnerVm is true.')
-param runnerVmSshPublicKey string = ''
-
-@description('Runner subnet NSG name')
-param runnerSubnetNsgName string = 'nsg-maffnd-runner'
-
-@description('Azure Bastion host name')
-param bastionHostName string = 'bas-maffnd'
-
-@description('Azure Bastion public IP name')
-param bastionPublicIpName string = 'pip-maffnd-bastion'
+@secure()
+@minLength(1)
+param runnerVmSshPublicKey string
 
 @description('Private DNS zones used for private endpoint resolution')
 param privateDnsZoneNames array = [
@@ -165,129 +129,149 @@ param privateDnsZoneNames array = [
 ]
 
 @description('Create private DNS VNet links.')
-param createPrivateDnsVnetLinks bool = true
+param createPrivateDnsVnetLinks bool
 
 @description('Create private endpoints for dependent services.')
-param createPrivateEndpoints bool = true
+param createPrivateEndpoints bool
 
 @description('Assign pre-capability-host RBAC (Storage Blob Data Contributor, Cosmos DB Operator, Search roles).')
-param assignPreCaphostRbac bool = false
+param assignPreCaphostRbac bool
 
 @description('Assign post-capability-host RBAC (Storage Blob Data Owner conditional and Cosmos SQL role).')
-param assignPostCaphostRbac bool = false
+param assignPostCaphostRbac bool
 
 @description('Create or update account-level capability host configuration.')
-param createAccountCapabilityHost bool = false
+param createAccountCapabilityHost bool
 
 @description('Create or update project-level capability host configuration.')
-param createProjectCapabilityHost bool = false
+param createProjectCapabilityHost bool
 
 @description('Manage project connections through the connections API. Disable on reruns when capability host already owns these connections.')
-param manageProjectConnections bool = true
+param manageProjectConnections bool
 
 @description('Enable Standard Agent network injection scenario on newly created Foundry account.')
-param enableStandardAgentNetworkInjection bool = true
+param enableStandardAgentNetworkInjection bool
 
 @description('Foundry chat deployment name')
-param foundryChatDeploymentName string = 'gpt-4o-mini'
+param foundryChatDeploymentName string
 
 @description('Foundry chat model format')
-param foundryChatModelFormat string = 'OpenAI'
+param foundryChatModelFormat string
 
 @description('Foundry chat model name')
-param foundryChatModelName string = 'gpt-4o-mini'
+param foundryChatModelName string
 
 @description('Foundry chat model version')
-param foundryChatModelVersion string = '2024-07-18'
+param foundryChatModelVersion string
 
 @description('Foundry chat deployment SKU name')
-param foundryChatDeploymentSkuName string = 'GlobalStandard'
+param foundryChatDeploymentSkuName string
 
 @description('Foundry chat deployment capacity')
-param foundryChatDeploymentCapacity int = 1
+param foundryChatDeploymentCapacity int
 
 @description('Foundry embeddings deployment name')
-param foundryEmbeddingsDeploymentName string = 'text-embedding-3-small'
+param foundryEmbeddingsDeploymentName string
 
 @description('Foundry embeddings model format')
-param foundryEmbeddingsModelFormat string = 'OpenAI'
+param foundryEmbeddingsModelFormat string
 
 @description('Foundry embeddings model name')
-param foundryEmbeddingsModelName string = 'text-embedding-3-small'
+param foundryEmbeddingsModelName string
 
 @description('Foundry embeddings model version')
-param foundryEmbeddingsModelVersion string = '1'
+param foundryEmbeddingsModelVersion string
 
 @description('Foundry embeddings deployment SKU name')
-param foundryEmbeddingsDeploymentSkuName string = 'GlobalStandard'
+param foundryEmbeddingsDeploymentSkuName string
 
 @description('Foundry embeddings deployment capacity')
-param foundryEmbeddingsDeploymentCapacity int = 1
+param foundryEmbeddingsDeploymentCapacity int
 
 @description('Responsible AI policy name applied to model deployments')
-param foundryRaiPolicyName string = 'Microsoft.Default'
-
-@description('Connection name for hosted runtime custom key values')
-param runtimeConnectionName string = 'orderresolutionruntimesecrets'
+param foundryRaiPolicyName string
 
 @description('Hosted runtime PostgreSQL connection string stored in Foundry CustomKeys connection as database_url')
 @secure()
 param runtimeDatabaseUrl string = ''
 
 @description('Create PostgreSQL Flexible Server for workflow persistence. Set false when connecting the private endpoint to an existing canonical server.')
-param createPostgresServer bool = false
-
-@description('Canonical PostgreSQL Flexible Server name. Required whether creating or using an existing server.')
-@minLength(3)
-param postgresServerName string
+param createPostgresServer bool
 
 @description('PostgreSQL administrator username.')
-param postgresAdminUsername string = 'pgadmin'
+param postgresAdminUsername string
 
 @description('PostgreSQL administrator password (required when createPostgresServer is true).')
 @secure()
-param postgresAdminPassword string = ''
+@minLength(1)
+param postgresAdminPassword string
 
 @description('Workflow database name.')
-param postgresDatabaseName string = 'maf_workflow'
+param postgresDatabaseName string
 
 @description('PostgreSQL server location.')
-param postgresLocation string = 'centralus'
+param postgresLocation string
+
+@description('PostgreSQL Flexible Server SKU name')
+param postgresSkuName string
+
+@description('PostgreSQL Flexible Server SKU tier')
+param postgresSkuTier string
+
+@description('PostgreSQL major version')
+param postgresVersion string
+
+@description('PostgreSQL storage size in GB')
+param postgresStorageSizeGb int
+
+@description('PostgreSQL backup retention in days')
+param postgresBackupRetentionDays int
 
 @description('Enable the PostgreSQL private endpoint and DNS zone.')
-param enablePostgresPrivateEndpoint bool = true
+param enablePostgresPrivateEndpoint bool
 
 @description('Keep the temporary Azure-services PostgreSQL firewall rule during staged cutover.')
-param createPostgresAzureServicesFirewall bool = true
+param createPostgresAzureServicesFirewall bool
 
 var suffix = toLower(uniqueString(resourceGroup().id))
 var normalizedPrefix = toLower(replace(namePrefix, '-', ''))
-var effectiveFoundryAccountName = empty(foundryAccountName) ? take('${normalizedPrefix}ai${suffix}', 64) : foundryAccountName
-var effectiveStorageAccountName = empty(storageAccountName) ? take('${normalizedPrefix}st${suffix}', 24) : storageAccountName
-var effectiveCosmosAccountName = empty(cosmosAccountName) ? take('${normalizedPrefix}cosmos${suffix}', 44) : cosmosAccountName
-var effectiveAiSearchName = empty(aiSearchName) ? take('${normalizedPrefix}srch${suffix}', 60) : aiSearchName
+var effectiveFoundryAccountName = take('${normalizedPrefix}ai${suffix}', 64)
+var effectiveStorageAccountName = take('${normalizedPrefix}st${suffix}', 24)
+var effectiveCosmosAccountName = take('${normalizedPrefix}cosmos${suffix}', 44)
+var effectiveAiSearchName = take('${normalizedPrefix}srch${suffix}', 60)
 var effectiveAiSearchLocation = aiSearchLocation
-var effectiveContainerRegistryName = empty(containerRegistryName) ? take('${normalizedPrefix}acr${suffix}', 50) : containerRegistryName
-var effectiveVirtualNetworkName = empty(virtualNetworkName) ? '${normalizedPrefix}-vnet' : virtualNetworkName
-var effectiveNatGatewayName = empty(natGatewayName) ? take('${namePrefix}-nat-${suffix}', 80) : natGatewayName
-var effectiveNatPublicIpName = empty(natPublicIpName) ? take('${namePrefix}-nat-pip-${suffix}', 80) : natPublicIpName
+var effectiveContainerRegistryName = take('${normalizedPrefix}acr${suffix}', 50)
+var effectiveVirtualNetworkName = '${normalizedPrefix}-vnet-${suffix}'
+var effectiveNatGatewayName = take('${namePrefix}-nat-${suffix}', 80)
+var effectiveNatPublicIpName = take('${namePrefix}-nat-pip-${suffix}', 80)
+var containerAppsEnvironmentName = take('${namePrefix}-aca-${suffix}', 60)
+var backendContainerAppName = take('${namePrefix}-backend-${suffix}', 32)
+var frontendContainerAppName = take('${namePrefix}-frontend-${suffix}', 32)
+var runnerVmName = take('${namePrefix}-runner-${suffix}', 64)
+var runnerSubnetNsgName = take('${namePrefix}-runner-nsg-${suffix}', 80)
+var runnerUamiName = take('${namePrefix}-runner-id-${suffix}', 128)
+var bastionHostName = take('${namePrefix}-bastion-${suffix}', 80)
+var bastionPublicIpName = take('${namePrefix}-bastion-pip-${suffix}', 80)
+var accountCapabilityHostName = 'aml_aiagentservice'
+var projectCapabilityHostName = take('${normalizedPrefix}projhost${suffix}', 64)
 var effectiveCosmosConnectionName = '${effectiveCosmosAccountName}-${foundryProjectName}'
 var effectiveStorageConnectionName = '${effectiveStorageAccountName}-${foundryProjectName}'
 var effectiveAiSearchConnectionName = '${effectiveAiSearchName}-${foundryProjectName}'
-var effectiveRuntimeConnectionName = runtimeConnectionName
-var effectivePostgresServerName = toLower(postgresServerName)
-var postgresFullyQualifiedDomainName = '${effectivePostgresServerName}.postgres.database.azure.com'
+var effectiveRuntimeConnectionName = take('${normalizedPrefix}runtime${suffix}', 64)
+var effectivePostgresServerName = take('${normalizedPrefix}pg${suffix}', 63)
 var effectivePrivateDnsZoneNames = union(privateDnsZoneNames, [
   'privatelink.postgres.database.azure.com'
 ])
-var effectiveCosmosLocation = empty(cosmosLocation) ? location : cosmosLocation
+var effectiveCosmosLocation = cosmosLocation
 var privateNetworking = networkMode == 'private'
+var bootstrapDeployment = deploymentMode == 'bootstrap'
+var createPostgresServerEffective = bootstrapDeployment && createPostgresServer
 var enableNat = privateNetworking && createNatGateway
 var enablePrivateDns = privateNetworking
 var enablePrivateEndpoints = privateNetworking && createPrivateEndpoints
 var enableAgentNetworkInjection = privateNetworking && enableStandardAgentNetworkInjection
 var enablePrivateRunnerAccess = privateNetworking && createPrivateRunnerAccess
-var enablePrivateContainerApps = privateNetworking && enableContainerApps
+var enablePrivateContainerApps = privateNetworking && enableContainerApps && bootstrapDeployment
 var agentSubnetResourceId = resourceId('Microsoft.Network/virtualNetworks/subnets', effectiveVirtualNetworkName, agentSubnetName)
 var foundryNetworkInjectionProperties = enableAgentNetworkInjection ? {
   #disable-next-line BCP037
@@ -395,22 +379,22 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = if (createPostgresServer) {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = if (createPostgresServerEffective) {
   name: effectivePostgresServerName
   location: postgresLocation
   sku: {
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    name: postgresSkuName
+    tier: postgresSkuTier
   }
   properties: {
     administratorLogin: postgresAdminUsername
     administratorLoginPassword: postgresAdminPassword
-    version: '18'
+    version: postgresVersion
     storage: {
-      storageSizeGB: 32
+      storageSizeGB: postgresStorageSizeGb
     }
     backup: {
-      backupRetentionDays: 7
+      backupRetentionDays: postgresBackupRetentionDays
       geoRedundantBackup: 'Disabled'
     }
     highAvailability: {
@@ -419,11 +403,11 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' =
   }
 }
 
-resource existingPostgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = if (!createPostgresServer) {
+resource existingPostgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = if (!createPostgresServerEffective) {
   name: effectivePostgresServerName
 }
 
-resource postgresAzureServicesFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (createPostgresServer && createPostgresAzureServicesFirewall) {
+resource postgresAzureServicesFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (createPostgresServerEffective && createPostgresAzureServicesFirewall) {
   name: 'allow-azure-services'
   parent: postgresServer
   properties: {
@@ -432,7 +416,7 @@ resource postgresAzureServicesFirewall 'Microsoft.DBforPostgreSQL/flexibleServer
   }
 }
 
-resource postgresWorkflowDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (createPostgresServer) {
+resource postgresWorkflowDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (createPostgresServerEffective) {
   name: postgresDatabaseName
   parent: postgresServer
   properties: {
@@ -445,7 +429,7 @@ resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: effectiveAiSearchName
   location: effectiveAiSearchLocation
   sku: {
-    name: 'basic'
+    name: aiSearchSkuName
   }
   properties: {
     publicNetworkAccess: privateNetworking ? 'disabled' : 'enabled'
@@ -695,6 +679,8 @@ module privateRunnerAccess './modules/private-runner-access.bicep' = if (enableP
     bastionSubnetPrefix: bastionSubnetPrefix
     createBastionSubnet: false
     runnerNsgName: runnerSubnetNsgName
+    runnerUamiName: runnerUamiName
+    createRunnerUami: true
     createBastion: createBastionHost
     createRunnerVm: createRunnerVm
     runnerVmName: runnerVmName
@@ -709,9 +695,8 @@ module privateRunnerAccess './modules/private-runner-access.bicep' = if (enableP
   ]
 }
 
-module runnerSubscriptionRbac './modules/runner-subscription-rbac.bicep' = if (enablePrivateRunnerAccess && createRunnerVm && assignRunnerSubscriptionRbac) {
-  name: 'runner-subscription-rbac-${suffix}'
-  scope: subscription()
+module runnerResourceGroupRbac './modules/runner-resource-group-rbac.bicep' = if (enablePrivateRunnerAccess && createRunnerVm && assignRunnerResourceGroupRbac) {
+  name: 'runner-resource-group-rbac-${suffix}'
   params: {
     principalId: privateRunnerAccess!.outputs.runnerUamiPrincipalId
     assignContributor: true
@@ -826,7 +811,7 @@ module postgresPrivateEndpoint './modules/private-endpoint.bicep' = if (enablePr
     location: location
     name: '${namePrefix}-postgres-pe-${suffix}'
     subnetId: virtualNetwork!.outputs.privateEndpointSubnetId
-    targetResourceId: createPostgresServer ? postgresServer!.id : existingPostgresServer!.id
+    targetResourceId: createPostgresServerEffective ? postgresServer!.id : existingPostgresServer!.id
     groupIds: [
       'postgresqlServer'
     ]
@@ -855,6 +840,10 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
   dependsOn: [
     virtualNetwork
   ]
+}
+
+resource existingContainerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = if (privateNetworking && enableContainerApps && !bootstrapDeployment) {
+  name: containerAppsEnvironmentName
 }
 
 resource containerAppsRegistryPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (enablePrivateContainerApps) {
@@ -894,16 +883,17 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (enab
           identity: containerAppsRegistryPullIdentity!.id
         }
       ]
-      secrets: [
-        {
-          name: 'database-url'
-          value: runtimeDatabaseUrl
-        }
+      secrets: concat([
         {
           name: 'application-insights-connection-string'
           value: applicationInsights.properties.ConnectionString
         }
-      ]
+      ], empty(runtimeDatabaseUrl) ? [] : [
+        {
+          name: 'database-url'
+          value: runtimeDatabaseUrl
+        }
+      ])
       ingress: {
         external: false
         allowInsecure: false
@@ -926,7 +916,7 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (enab
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'APP_ENV'
               value: 'aca-private'
@@ -976,10 +966,6 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (enab
               value: 'false'
             }
             {
-              name: 'DATABASE_URL'
-              secretRef: 'database-url'
-            }
-            {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               secretRef: 'application-insights-connection-string'
             }
@@ -987,7 +973,16 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (enab
               name: 'APPINSIGHTS_CONNECTION_STRING'
               secretRef: 'application-insights-connection-string'
             }
-          ]
+          ], empty(runtimeDatabaseUrl) ? [] : [
+            {
+              name: 'DATABASE_URL'
+              secretRef: 'database-url'
+            }
+            {
+              name: 'DB_SCHEMA_MANAGED_EXTERNALLY'
+              value: 'true'
+            }
+          ])
           probes: [
             {
               type: 'Startup'
@@ -1035,6 +1030,10 @@ resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (enab
     containerAppsRegistryPullRoleAssignment
     postgresPrivateEndpoint
   ]
+}
+
+resource existingBackendContainerApp 'Microsoft.App/containerApps@2024-03-01' existing = if (privateNetworking && enableContainerApps && !bootstrapDeployment) {
+  name: backendContainerAppName
 }
 
 resource backendContainerAppFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enablePrivateContainerApps) {
@@ -1143,6 +1142,10 @@ resource frontendContainerApp 'Microsoft.App/containerApps@2024-03-01' = if (ena
   dependsOn: [
     backendContainerApp
   ]
+}
+
+resource existingFrontendContainerApp 'Microsoft.App/containerApps@2024-03-01' existing = if (privateNetworking && enableContainerApps && !bootstrapDeployment) {
+  name: frontendContainerAppName
 }
 
 module projectConnections './modules/foundry-project-existing-connections.bicep' = if (manageProjectConnections) {
@@ -1299,12 +1302,18 @@ module cosmosContainerRoleAssignments './modules/cosmos-container-role-assignmen
   ]
 }
 
-var foundryProjectEndpoint = 'https://${effectiveFoundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
+var resolvedPostgresServerName = createPostgresServerEffective ? postgresServer!.name : existingPostgresServer!.name
+var postgresFullyQualifiedDomainName = createPostgresServerEffective ? postgresServer!.properties.fullyQualifiedDomainName : existingPostgresServer!.properties.fullyQualifiedDomainName
+var foundryProjectEndpoint = 'https://${foundryAccount.name}.services.ai.azure.com/api/projects/${foundryProject.name}'
 var foundryHostedResponsesUrl = '${foundryProjectEndpoint}/agents/${hostedAgentName}/endpoint/protocols/openai/responses?api-version=v1'
 var isCrossRegionAiSearch = toLower(effectiveAiSearchLocation) != toLower(location)
+var resolvedFrontendFqdn = enableContainerApps ? (bootstrapDeployment ? frontendContainerApp!.properties.configuration.ingress.fqdn : existingFrontendContainerApp!.properties.configuration.ingress.fqdn) : ''
 
 output foundryAccountName string = foundryAccount.name
+output foundryAccountId string = foundryAccount.id
+output foundryAccountEndpoints object = foundryAccount.properties.endpoints
 output foundryProjectName string = foundryProject.name
+output foundryProjectId string = foundryProject.id
 output foundryProjectEndpoint string = foundryProjectEndpoint
 // Keep the deployment's canonical project coordinates in the AZD environment.
 // These legacy aliases are consumed by the hosted-agent CLI and release tooling.
@@ -1317,9 +1326,11 @@ output natGatewayId string = enableNat ? natGateway.id : ''
 output foundryHostedResponsesUrl string = foundryHostedResponsesUrl
 output foundryEventCallbackTokenSettingName string = foundryEventCallbackTokenSettingName
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.name
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output postgresFullyQualifiedDomainName string = postgresFullyQualifiedDomainName
 output postgresDatabaseName string = postgresDatabaseName
-output POSTGRES_SERVER_NAME string = effectivePostgresServerName
+output POSTGRES_SERVER_NAME string = resolvedPostgresServerName
 output POSTGRES_SERVER_FQDN string = postgresFullyQualifiedDomainName
 output POSTGRES_PRIVATE_DNS_ZONE_NAME string = 'privatelink.postgres.database.azure.com'
 output POSTGRES_PRIVATE_ENDPOINT_NAME string = (enablePrivateEndpoints && enablePostgresPrivateEndpoint) ? postgresPrivateEndpoint!.outputs.name : ''
@@ -1363,11 +1374,14 @@ output privateEndpointIds object = enablePrivateEndpoints ? {
   acr: ''
   postgres: ''
 }
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = enablePrivateContainerApps ? containerAppsEnvironment!.name : ''
-output SERVICE_BACKEND_NAME string = enablePrivateContainerApps ? backendContainerApp!.name : ''
-output BACKEND_INTERNAL_FQDN string = enablePrivateContainerApps ? backendContainerApp!.properties.configuration.ingress.fqdn : ''
-output SERVICE_FRONTEND_NAME string = enablePrivateContainerApps ? frontendContainerApp!.name : ''
-output WEB_URL string = enablePrivateContainerApps ? 'https://${frontendContainerApp!.properties.configuration.ingress.fqdn}' : ''
+output AZURE_CONTAINER_ENVIRONMENT_NAME string = enableContainerApps ? (bootstrapDeployment ? containerAppsEnvironment!.name : existingContainerAppsEnvironment!.name) : ''
+output SERVICE_BACKEND_NAME string = enableContainerApps ? (bootstrapDeployment ? backendContainerApp!.name : existingBackendContainerApp!.name) : ''
+output BACKEND_CONTAINER_APP_NAME string = enableContainerApps ? (bootstrapDeployment ? backendContainerApp!.name : existingBackendContainerApp!.name) : ''
+output BACKEND_INTERNAL_FQDN string = enableContainerApps ? (bootstrapDeployment ? backendContainerApp!.properties.configuration.ingress.fqdn : existingBackendContainerApp!.properties.configuration.ingress.fqdn) : ''
+output SERVICE_FRONTEND_NAME string = enableContainerApps ? (bootstrapDeployment ? frontendContainerApp!.name : existingFrontendContainerApp!.name) : ''
+output FRONTEND_CONTAINER_APP_NAME string = enableContainerApps ? (bootstrapDeployment ? frontendContainerApp!.name : existingFrontendContainerApp!.name) : ''
+output CONTAINER_APPS_ENVIRONMENT_NAME string = enableContainerApps ? (bootstrapDeployment ? containerAppsEnvironment!.name : existingContainerAppsEnvironment!.name) : ''
+output WEB_URL string = enableContainerApps ? 'https://${resolvedFrontendFqdn}' : ''
 output aiSearchTopologyWarning string = (privateNetworking && isCrossRegionAiSearch) ? 'WARNING: AI Search location differs from deployment location; this introduces a cross-region private-link data path and should be reviewed for latency/residency requirements.' : ''
 output privateRunnerAccess object = enablePrivateRunnerAccess ? {
   enabled: true
@@ -1392,7 +1406,31 @@ output privateRunnerAccess object = enablePrivateRunnerAccess ? {
   bastionHostId: ''
   bastionPublicIpId: ''
 }
+output PRIVATE_RUNNER_VM_NAME string = enablePrivateRunnerAccess ? runnerVmName : ''
 output requiredBackendSettings array = [
   'FOUNDRY_PROJECTS_ENDPOINT=${foundryProjectEndpoint}'
 ]
+output deploymentContext object = {
+  subscriptionId: subscription().subscriptionId
+  tenantId: tenant().tenantId
+  resourceGroupName: resourceGroup().name
+  resourceGroupId: resourceGroup().id
+  azdEnvironmentName: azdEnvironmentName
+  deploymentMode: deploymentMode
+  namePrefix: namePrefix
+  locations: {
+    foundry: location
+    aiSearch: aiSearchLocation
+    cosmos: cosmosLocation
+    postgres: postgresLocation
+  }
+  foundryAccountId: foundryAccount.id
+  foundryProjectId: foundryProject.id
+  foundryProjectEndpoint: foundryProjectEndpoint
+  hostedResponsesEndpoint: foundryHostedResponsesUrl
+  postgresServerName: resolvedPostgresServerName
+  postgresFqdn: postgresFullyQualifiedDomainName
+  containerRegistryName: containerRegistry.name
+  virtualNetworkName: effectiveVirtualNetworkName
+}
 output nextStep string = 'Run azd deploy order-resolution-hosted, then azd ai agent invoke with responses protocol and verify Foundry + App Insights telemetry.'

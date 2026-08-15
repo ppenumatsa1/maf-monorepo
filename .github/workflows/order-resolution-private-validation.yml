@@ -44,6 +44,10 @@ jobs:
           bash -n agents/order-resolution/foundry-private/scripts/foundry/verify_private_connectivity.sh
           bash -n agents/order-resolution/foundry-private/scripts/foundry/harden_postgres_private_access.sh
           bash -n agents/order-resolution/foundry-private/scripts/foundry/collect_private_release_evidence.sh
+          bash -n agents/order-resolution/foundry-private/scripts/github/bootstrap_foundry_github_config.sh
+          bash -n agents/order-resolution/foundry-private/scripts/github/bootstrap_private_release_identity.sh
+          bash -n agents/order-resolution/foundry-private/scripts/github/migrate_private_release_secrets.sh
+          bash -n agents/order-resolution/foundry-private/scripts/github/validate_github_profile_mirror.sh
       - name: Validate deployment parameter JSON
         run: |
           set -euo pipefail

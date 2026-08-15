@@ -38,10 +38,10 @@ param containerAppsSubnetPrefix string = '192.168.6.0/23'
 param createRunnerSubnet bool = false
 
 @description('Runner subnet name')
-param runnerSubnetName string = 'snet-runner'
+param runnerSubnetName string
 
 @description('Runner subnet prefix')
-param runnerSubnetPrefix string = '192.168.2.0/24'
+param runnerSubnetPrefix string
 
 @description('Optional NSG resource ID for runner subnet')
 param runnerSubnetNsgResourceId string = ''

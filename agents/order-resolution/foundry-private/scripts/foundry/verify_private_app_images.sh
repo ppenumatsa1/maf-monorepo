@@ -11,7 +11,7 @@ require_bin() {
 require_env() {
   local key="$1"
   local value
-  value="$(azd env get-value "$key" 2>/dev/null || true)"
+  value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null || true)"
   [[ -n "$value" ]] || {
     echo "AZD environment value $key is required." >&2
     exit 1
@@ -23,17 +23,24 @@ for binary in az azd; do
   require_bin "$binary"
 done
 
-: "${AZD_ENVIRONMENT_NAME:?AZD_ENVIRONMENT_NAME is required}"
-: "${TARGET_RESOURCE_GROUP:?TARGET_RESOURCE_GROUP is required}"
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 
 cd "$FOUNDRY_DIR"
-azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 
 resource_group="$(require_env AZURE_RESOURCE_GROUP)"
-[[ "$resource_group" == "$TARGET_RESOURCE_GROUP" ]] || {
+[[ "$resource_group" == "$AZURE_RESOURCE_GROUP" ]] || {
   echo "AZURE_RESOURCE_GROUP does not match the selected private release target." >&2
   exit 1
 }
@@ -41,6 +48,18 @@ resource_group="$(require_env AZURE_RESOURCE_GROUP)"
 backend_app_name="$(require_env BACKEND_CONTAINER_APP_NAME)"
 frontend_app_name="$(require_env FRONTEND_CONTAINER_APP_NAME)"
 configured_acr_login_server="$(require_env containerRegistryLoginServer)"
+
+backend_schema_management="$(
+  az containerapp show \
+    --resource-group "$resource_group" \
+    --name "$backend_app_name" \
+    --query "properties.template.containers[0].env[?name=='DB_SCHEMA_MANAGED_EXTERNALLY'].value | [0]" \
+    --output tsv
+)"
+[[ "$backend_schema_management" == "true" ]] || {
+  echo "The production backend must set DB_SCHEMA_MANAGED_EXTERNALLY=true." >&2
+  exit 1
+}
 
 mapfile -t acr_login_servers < <(
   az acr list --resource-group "$resource_group" --query '[].loginServer' --output tsv

@@ -39,19 +39,20 @@ Provisioning now reads `iac/main.parameters.json`, which maps AZD environment ke
 ## Private release flow
 
 PR validation is credential-free through
-`.github/workflows/order-resolution-private-validation.yml`. Authenticated infrastructure
-and application deployment is available only by manually dispatching
+`.github/workflows/order-resolution-private-validation.yml`. Authenticated
+infrastructure and application workflows are started by dispatching
 `order-resolution-private-provision.yml` or
-`order-resolution-private-deploy.yml`; both are protected by the
-`foundry-private-env` GitHub environment, share the
+`order-resolution-private-deploy.yml`; a validated dispatch starts immediately
+with no confirmation input, environment approval, or owner approval gate. They
+share the
 `order-resolution-private-release` concurrency group with the observability
 workflow, and run only on
 `self-hosted,foundry-private-v2` with Azure OIDC. They use the runner's retained
 selected AZD environment, so do not recreate that environment or place its
 database credentials in GitHub workflow configuration.
-Before the first dispatch, configure the environment-scoped nonsecret OIDC and
+Before the first dispatch, configure repository-scoped nonsecret OIDC and
 target variables with `scripts/github/bootstrap_foundry_github_config.sh` and
-enable the required GitHub environment protection rules.
+the `POSTGRES_ADMIN_PASSWORD` repository secret.
 
 The release target executes this fixed sequence:
 
@@ -64,7 +65,8 @@ The release target executes this fixed sequence:
 5. hosted-agent deployment from the current source;
 6. ACA readiness plus hosted-agent workflow proof of PostgreSQL connectivity;
 7. PostgreSQL public-network lockdown and removal of the Azure-services
-   firewall rule after explicit workflow confirmation;
+   firewall rule only after fresh generated ACA and hosted-agent connectivity
+   proof;
 8. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
 
 ```bash
@@ -72,11 +74,10 @@ make foundry-provision-preview  # no Azure resource changes
 make foundry-release
 ```
 
-The deployment workflow runs only when both manual inputs select
-`confirmation=deploy` and `postgres_lockdown_confirmation=lockdown`; this
-prevents a partially configured release from reaching the irreversible
-lockdown. It does not expose a password-repair, public-access, firewall, or
-administrator-user workaround.
+Deployment workflows start when dispatched. The generated proof—not an
+approval or confirmation input—prevents a partially configured release from
+reaching irreversible lockdown. No path exposes a password-repair,
+public-access, firewall, or administrator-user workaround.
 
 ### Staged Foundry project connections
 
@@ -162,7 +163,7 @@ Optional defaults:
 - `RUNNER_LABEL` (default and required release target: `foundry-private-v2`)
 - `RUNNER_VERSION` (default: `2.328.0`)
 
-The private runner is the only GitHub Actions host permitted to run the manual
+The private runner is the only GitHub Actions host permitted to run the
 provision/deployment lane and remains an in-VNet operator host for the local
 release flow. Runner recovery is an explicit management-plane prerequisite,
 not a release deployment path. Do not dispatch provision or deploy until the

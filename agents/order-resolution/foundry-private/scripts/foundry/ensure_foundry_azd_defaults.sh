@@ -2,12 +2,22 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+source "${ROOT_DIR}/../deployment/profile.sh"
+deployment_profile_load "$PROFILE_FILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$DEPLOYMENT_LANE" == "foundry-private" ]] || {
+  echo "The selected deployment profile is not the foundry-private lane." >&2
+  exit 1
+}
 cd "${ROOT_DIR}/infra/foundry-hosted"
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 
 get_env_value() {
   local key="$1"
   local value
-  if value="$(azd env get-value "$key" 2>/dev/null)"; then
+  if value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null)"; then
     printf "%s" "$value"
   fi
 }
@@ -71,85 +81,71 @@ set_if_missing() {
   fi
   existing="$(get_env_value "$key")"
   if [[ -z "$existing" ]]; then
-    azd env set "$key" "$value" >/dev/null
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set "$key" "$value" >/dev/null
     echo "defaulted $key=$value"
   fi
 }
 
 mode="${NETWORK_MODE:-$(get_env_value NETWORK_MODE)}"
-if [[ -z "$mode" ]]; then
-  mode="private"
-fi
 if [[ "$mode" != "private" ]]; then
   echo "NETWORK_MODE must be 'private' for this branch. Found: $mode"
   exit 1
 fi
 
-private_dns_default="true"
-private_endpoints_default="true"
-nat_default="true"
-runner_access_default="false"
-bastion_default="true"
-runner_vm_default="true"
-network_injection_default="true"
-assign_pre_caphost_default="true"
-assign_post_caphost_default="true"
-create_account_caphost_default="false"
-create_project_caphost_default="true"
-manage_project_connections_default="true"
-container_apps_default="true"
-restore_foundry_account_default="true"
-
 set_if_missing NETWORK_MODE "$mode"
-set_if_missing AI_SEARCH_LOCATION "${AI_SEARCH_LOCATION:-eastus}"
-set_if_missing FOUNDRY_PROJECT_NAME "${FOUNDRY_PROJECT_NAME:-order-resolution}"
-set_if_missing RESTORE_FOUNDRY_ACCOUNT "${RESTORE_FOUNDRY_ACCOUNT:-$restore_foundry_account_default}"
-set_if_missing HOSTED_AGENT_NAME "${HOSTED_AGENT_NAME:-order-resolution-hosted}"
+set_if_missing AI_SEARCH_LOCATION "$AI_SEARCH_LOCATION"
+set_if_missing FOUNDRY_PROJECT_NAME "$FOUNDRY_PROJECT_NAME"
+set_if_missing RESTORE_FOUNDRY_ACCOUNT "$RESTORE_FOUNDRY_ACCOUNT"
+set_if_missing HOSTED_AGENT_NAME "$HOSTED_AGENT_NAME"
 set_if_missing RUNTIME_DATABASE_URL "${RUNTIME_DATABASE_URL:-}"
 set_if_missing DATABASE_URL "${DATABASE_URL:-}"
-set_if_missing CREATE_POSTGRES_SERVER "${CREATE_POSTGRES_SERVER:-false}"
+set_if_missing CREATE_POSTGRES_SERVER "$CREATE_POSTGRES_SERVER"
 set_if_missing POSTGRES_SERVER_NAME "${POSTGRES_SERVER_NAME:-}"
-set_if_missing POSTGRES_ADMIN_USERNAME "${POSTGRES_ADMIN_USERNAME:-pgadmin}"
+set_if_missing POSTGRES_ADMIN_USERNAME "$POSTGRES_ADMIN_USERNAME"
 set_if_missing POSTGRES_ADMIN_PASSWORD "${POSTGRES_ADMIN_PASSWORD:-}"
-set_if_missing POSTGRES_DATABASE_NAME "${POSTGRES_DATABASE_NAME:-maf_workflow}"
-set_if_missing POSTGRES_LOCATION "${POSTGRES_LOCATION:-centralus}"
+set_if_missing POSTGRES_DATABASE_NAME "$POSTGRES_DATABASE_NAME"
+set_if_missing POSTGRES_LOCATION "$POSTGRES_LOCATION"
 name_prefix="$(get_env_value NAME_PREFIX)"
-name_prefix="${name_prefix:-maffnd}"
-set_if_missing ENABLE_CONTAINER_APPS "$container_apps_default"
+[[ "$name_prefix" == "$NAME_PREFIX" ]] || {
+  echo "AZD NAME_PREFIX does not match the selected deployment profile." >&2
+  exit 1
+}
+set_if_missing ENABLE_CONTAINER_APPS "$ENABLE_CONTAINER_APPS"
 set_if_missing CONTAINER_APPS_ENVIRONMENT_NAME "${CONTAINER_APPS_ENVIRONMENT_NAME:-${name_prefix}-private-aca}"
 set_if_missing BACKEND_CONTAINER_APP_NAME "${BACKEND_CONTAINER_APP_NAME:-${name_prefix}-private-backend}"
 set_if_missing FRONTEND_CONTAINER_APP_NAME "${FRONTEND_CONTAINER_APP_NAME:-${name_prefix}-private-frontend}"
 set_if_missing SERVICE_BACKEND_IMAGE_NAME "${SERVICE_BACKEND_IMAGE_NAME:-mcr.microsoft.com/k8se/quickstart:latest}"
 set_if_missing SERVICE_FRONTEND_IMAGE_NAME "${SERVICE_FRONTEND_IMAGE_NAME:-mcr.microsoft.com/k8se/quickstart:latest}"
-set_if_missing ENABLE_POSTGRES_PRIVATE_ENDPOINT "${ENABLE_POSTGRES_PRIVATE_ENDPOINT:-true}"
-set_if_missing CREATE_POSTGRES_AZURE_SERVICES_FIREWALL "${CREATE_POSTGRES_AZURE_SERVICES_FIREWALL:-true}"
-set_if_missing CREATE_PRIVATE_DNS_VNET_LINKS "$private_dns_default"
-set_if_missing CREATE_PRIVATE_ENDPOINTS "$private_endpoints_default"
-set_if_missing CREATE_NAT_GATEWAY "$nat_default"
-set_if_missing CREATE_PRIVATE_RUNNER_ACCESS "$runner_access_default"
-set_if_missing CREATE_BASTION_HOST "$bastion_default"
-set_if_missing CREATE_RUNNER_VM "$runner_vm_default"
-set_if_missing ENABLE_STANDARD_AGENT_NETWORK_INJECTION "$network_injection_default"
-set_if_missing ASSIGN_PRE_CAPHOST_RBAC "$assign_pre_caphost_default"
-set_if_missing ASSIGN_POST_CAPHOST_RBAC "$assign_post_caphost_default"
-set_if_missing CREATE_ACCOUNT_CAPABILITY_HOST "$create_account_caphost_default"
-set_if_missing CREATE_PROJECT_CAPABILITY_HOST "$create_project_caphost_default"
-set_if_missing MANAGE_PROJECT_CONNECTIONS "$manage_project_connections_default"
-set_if_missing FOUNDRY_MODEL_DEPLOYMENT_NAME "${FOUNDRY_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}"
+set_if_missing ENABLE_POSTGRES_PRIVATE_ENDPOINT "$ENABLE_POSTGRES_PRIVATE_ENDPOINT"
+set_if_missing CREATE_POSTGRES_AZURE_SERVICES_FIREWALL "$CREATE_POSTGRES_AZURE_SERVICES_FIREWALL"
+set_if_missing CREATE_PRIVATE_DNS_VNET_LINKS "$CREATE_PRIVATE_DNS_VNET_LINKS"
+set_if_missing CREATE_PRIVATE_ENDPOINTS "$CREATE_PRIVATE_ENDPOINTS"
+set_if_missing CREATE_NAT_GATEWAY "$CREATE_NAT_GATEWAY"
+set_if_missing CREATE_PRIVATE_RUNNER_ACCESS "$CREATE_PRIVATE_RUNNER_ACCESS"
+set_if_missing CREATE_BASTION_HOST "$CREATE_BASTION_HOST"
+set_if_missing CREATE_RUNNER_VM "$CREATE_RUNNER_VM"
+set_if_missing ENABLE_STANDARD_AGENT_NETWORK_INJECTION "$ENABLE_STANDARD_AGENT_NETWORK_INJECTION"
+set_if_missing ASSIGN_PRE_CAPHOST_RBAC "$ASSIGN_PRE_CAPHOST_RBAC"
+set_if_missing ASSIGN_POST_CAPHOST_RBAC "$ASSIGN_POST_CAPHOST_RBAC"
+set_if_missing CREATE_ACCOUNT_CAPABILITY_HOST "$CREATE_ACCOUNT_CAPABILITY_HOST"
+set_if_missing CREATE_PROJECT_CAPABILITY_HOST "$CREATE_PROJECT_CAPABILITY_HOST"
+set_if_missing MANAGE_PROJECT_CONNECTIONS "$MANAGE_PROJECT_CONNECTIONS"
+set_if_missing FOUNDRY_MODEL_DEPLOYMENT_NAME "$FOUNDRY_MODEL_DEPLOYMENT_NAME"
 set_if_missing FOUNDRY_EVAL_MODEL "${FOUNDRY_EVAL_MODEL:-$(get_env_value FOUNDRY_MODEL_DEPLOYMENT_NAME)}"
-set_if_missing FOUNDRY_CHAT_DEPLOYMENT_CAPACITY "${FOUNDRY_CHAT_DEPLOYMENT_CAPACITY:-30}"
-set_if_missing FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY "${FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY:-2}"
+set_if_missing FOUNDRY_CHAT_DEPLOYMENT_CAPACITY "$FOUNDRY_CHAT_DEPLOYMENT_CAPACITY"
+set_if_missing FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY "$FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY"
 set_if_missing RUNNER_VM_SSH_PUBLIC_KEY "${RUNNER_VM_SSH_PUBLIC_KEY:-}"
 set_if_missing ENABLE_TELEMETRY "${ENABLE_TELEMETRY:-true}"
 set_if_missing ENABLE_INSTRUMENTATION "${ENABLE_INSTRUMENTATION:-true}"
-set_if_missing APP_ENV "${APP_ENV:-foundry-private}"
+set_if_missing APP_ENV "${APP_ENV:-production}"
 set_if_missing STORE_PROVIDER "${STORE_PROVIDER:-postgres}"
 set_if_missing MEMORY_PROVIDER "${MEMORY_PROVIDER:-postgres}"
 set_if_missing RAG_PROVIDER "${RAG_PROVIDER:-pgvector}"
 set_if_missing OTEL_SERVICE_NAME "${OTEL_SERVICE_NAME:-maf-order-resolution-hosted}"
 set_if_missing OTEL_SERVICE_NAMESPACE "${OTEL_SERVICE_NAMESPACE:-maf-order-resolution}"
 set_if_missing OTEL_RECORD_CONTENT "${OTEL_RECORD_CONTENT:-false}"
-azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT true >/dev/null
+set_if_missing DB_SCHEMA_MANAGED_EXTERNALLY true
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT true >/dev/null
 echo "enforced FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT=true for marked private evaluation requests"
 
 restore_foundry_account="$(get_env_value RESTORE_FOUNDRY_ACCOUNT)"
@@ -163,7 +159,7 @@ if [[ "$restore_foundry_account" == "true" && -n "$azure_resource_group" && -n "
     --resource-group "$azure_resource_group" \
     --query id \
     --output tsv >/dev/null 2>&1; then
-  azd env set RESTORE_FOUNDRY_ACCOUNT false >/dev/null
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set RESTORE_FOUNDRY_ACCOUNT false >/dev/null
   echo "cleared RESTORE_FOUNDRY_ACCOUNT because $foundry_account_name is active"
 fi
 
@@ -174,49 +170,25 @@ postgres_admin_username="$(get_env_value POSTGRES_ADMIN_USERNAME)"
 postgres_admin_password="$(get_env_value POSTGRES_ADMIN_PASSWORD)"
 postgres_database_name="$(get_env_value POSTGRES_DATABASE_NAME)"
 
-if [[ -z "$postgres_server_name" ]]; then
-  echo "POSTGRES_SERVER_NAME is required and must name the canonical Flexible Server."
+if [[ -n "$postgres_server_name" ]]; then
+  expected_host="${postgres_server_name,,}.postgres.database.azure.com"
+  runtime_host="$(url_host "$runtime_database_url_existing")"
+  if [[ -n "$runtime_database_url_existing" && "$runtime_host" != "$expected_host" ]]; then
+    echo "RUNTIME_DATABASE_URL must target the canonical PostgreSQL server ${expected_host}."
+    exit 1
+  fi
+  set_if_missing POSTGRES_SERVER_FQDN "$expected_host"
+elif [[ "$create_postgres_server" != "true" ]]; then
+  echo "POSTGRES_SERVER_NAME is required when CREATE_POSTGRES_SERVER is not true."
   exit 1
 fi
 
-expected_host="${postgres_server_name,,}.postgres.database.azure.com"
-runtime_host="$(url_host "$runtime_database_url_existing")"
-if [[ "$create_postgres_server" != "true" && ( -z "$runtime_database_url_existing" || "$runtime_host" != "$expected_host" ) ]]; then
-  echo "RUNTIME_DATABASE_URL must target the canonical PostgreSQL server ${expected_host} when CREATE_POSTGRES_SERVER=false."
+if [[ "$create_postgres_server" != "true" && -z "$runtime_database_url_existing" ]]; then
+  echo "RUNTIME_DATABASE_URL is required when reusing an existing PostgreSQL server."
   exit 1
 fi
 
-if [[ "$create_postgres_server" == "true" ]]; then
-  computed_runtime_database_url=""
-  if [[ -n "$postgres_admin_username" && -n "$postgres_admin_password" && -n "$postgres_database_name" ]]; then
-    encoded_password="$(url_encode "$postgres_admin_password")"
-    computed_runtime_database_url="postgresql://${postgres_admin_username}:${encoded_password}@${postgres_server_name}.postgres.database.azure.com:5432/${postgres_database_name}?sslmode=require"
-  fi
-  runtime_legacy_scheme="false"
-  if [[ "$runtime_database_url_existing" == postgresql+psycopg://* ]]; then
-    runtime_legacy_scheme="true"
-  fi
-
-  if [[ -z "$runtime_database_url_existing" && -n "$computed_runtime_database_url" ]]; then
-    azd env set RUNTIME_DATABASE_URL "$computed_runtime_database_url" >/dev/null
-    echo "defaulted RUNTIME_DATABASE_URL from postgres settings"
-  elif [[ "$runtime_host" != "$expected_host" || "$runtime_legacy_scheme" == "true" ]]; then
-    sync_runtime_database_url="$computed_runtime_database_url"
-    if [[ -z "$sync_runtime_database_url" && -n "$runtime_database_url_existing" ]]; then
-      sync_runtime_database_url="$(replace_url_host "$runtime_database_url_existing" "$expected_host")"
-    fi
-    if [[ -n "$sync_runtime_database_url" ]]; then
-      azd env set RUNTIME_DATABASE_URL "$sync_runtime_database_url" >/dev/null
-      azd env set DATABASE_URL "$sync_runtime_database_url" >/dev/null
-      azd env set runtimeDatabaseUrl "$sync_runtime_database_url" >/dev/null
-      azd env set databaseUrl "$sync_runtime_database_url" >/dev/null
-      echo "synchronized runtime DB URLs to current postgres server host ${expected_host}"
-    fi
-  fi
-fi
-
-set_if_missing DATABASE_URL "$(get_env_value RUNTIME_DATABASE_URL)"
-set_if_missing POSTGRES_SERVER_FQDN "$expected_host"
+set_if_missing DATABASE_URL "$runtime_database_url_existing"
 set_if_missing POSTGRES_PRIVATE_DNS_ZONE_NAME "privatelink.postgres.database.azure.com"
 
 # Preserve lowercase env keys used by older scripts/workflows.
@@ -249,3 +221,33 @@ set_if_missing foundryEmbeddingsDeploymentCapacity "$(get_env_value FOUNDRY_EMBE
 set_if_missing runnerVmSshPublicKey "$(get_env_value RUNNER_VM_SSH_PUBLIC_KEY)"
 set_if_missing runtimeDatabaseUrl "$(get_env_value RUNTIME_DATABASE_URL)"
 set_if_missing databaseUrl "$(get_env_value DATABASE_URL)"
+
+project_endpoint="$(get_env_value AZURE_AI_PROJECT_ENDPOINT)"
+project_id="$(get_env_value AZURE_AI_PROJECT_ID)"
+if [[ "${FOUNDRY_POST_PROVISION_HYDRATE:-0}" == "1" ]]; then
+  [[ -n "$project_endpoint" && -n "$project_id" ]] || {
+    echo "Provision did not publish the Foundry project endpoint and resource ID." >&2
+    exit 1
+  }
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set FOUNDRY_PROJECT_ENDPOINT "$project_endpoint" >/dev/null
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set FOUNDRY_PROJECTS_ENDPOINT "$project_endpoint" >/dev/null
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set FOUNDRY_PROJECT_ID "$project_id" >/dev/null
+  for output_key in \
+    AZURE_CONTAINER_REGISTRY_NAME AZURE_CONTAINER_REGISTRY_ENDPOINT \
+    CONTAINER_APPS_ENVIRONMENT_NAME BACKEND_CONTAINER_APP_NAME \
+    FRONTEND_CONTAINER_APP_NAME PRIVATE_RUNNER_VM_NAME; do
+    output_value="$(get_env_value "$output_key")"
+    [[ -n "$output_value" ]] || {
+      echo "Provision did not publish required output: $output_key" >&2
+      exit 1
+    }
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+      azd env set "$output_key" "$output_value" >/dev/null
+  done
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env set SERVICE_BACKEND_NAME "$(get_env_value BACKEND_CONTAINER_APP_NAME)" >/dev/null
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env set SERVICE_FRONTEND_NAME "$(get_env_value FRONTEND_CONTAINER_APP_NAME)" >/dev/null
+elif [[ -z "$project_endpoint" || -z "$project_id" ]]; then
+  echo "Foundry outputs are not available yet; they will be hydrated after provisioning."
+fi

@@ -3,12 +3,6 @@ name: Order Resolution Private Provision
 on:
   workflow_dispatch:
     inputs:
-      confirmation:
-        description: Select provision to apply private Foundry infrastructure changes.
-        required: true
-        type: choice
-        default: cancel
-        options: [cancel, provision]
       provision_no_state:
         description: Run azd provision with --no-state.
         required: true
@@ -29,16 +23,16 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AZD_ENVIRONMENT_NAME: foundry-private-env
-  TARGET_RESOURCE_GROUP: rg-maf-ora-foundry-v2
-  TARGET_FOUNDRY_PROJECT: order-resolution
-  TARGET_POSTGRES_DATABASE: maf_workflow
+  AZD_ENVIRONMENT_NAME: ${{ vars.AZURE_ENV_NAME }}
+  TARGET_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  TARGET_FOUNDRY_PROJECT: ${{ vars.FOUNDRY_PROJECT_NAME }}
+  TARGET_POSTGRES_DATABASE: ${{ vars.POSTGRES_DATABASE_NAME }}
+  PRIVATE_RUNNER_LABEL: ${{ vars.PRIVATE_RUNNER_LABEL }}
+  PRIVATE_RUNNER_VM_NAME: ${{ vars.PRIVATE_RUNNER_VM_NAME }}
 
 jobs:
   provision:
-    if: ${{ inputs.confirmation == 'provision' }}
-    runs-on: [self-hosted, foundry-private-v2]
-    environment: foundry-private-env
+    runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]
     defaults:
       run:
         shell: bash
@@ -50,6 +44,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
+      - name: Validate GitHub target variables against the canonical profile
+        run: agents/order-resolution/foundry-private/scripts/github/validate_github_profile_mirror.sh
       - name: Clean workspace while retaining the private azd environment
         run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
       - name: Authenticate with the runner's federated Azure identity
@@ -63,9 +59,9 @@ jobs:
         run: |
           set -euo pipefail
           az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-          azd config set auth.useAzCliAuth true
-          azd ext install azure.ai.agents --no-prompt
-          azd ext install azure.ai.connections --no-prompt
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd config set auth.useAzCliAuth true
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.agents --no-prompt
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.connections --no-prompt
       - name: Reconstruct private AZD environment
         env:
           POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
@@ -75,7 +71,7 @@ jobs:
           set -euo pipefail
           (
             cd agents/order-resolution/foundry-private/infra/foundry-hosted
-            azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
+            AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZD_ENVIRONMENT_NAME" --no-prompt
           )
           agents/order-resolution/foundry-private/scripts/foundry/ensure_foundry_azd_defaults.sh
       - name: Verify the selected private deployment environment

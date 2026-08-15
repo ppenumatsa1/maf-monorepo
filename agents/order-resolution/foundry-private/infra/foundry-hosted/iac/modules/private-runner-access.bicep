@@ -1,5 +1,5 @@
 @description('Enable private runner access resources')
-param enabled bool = false
+param enabled bool
 
 @description('Deployment location')
 param location string
@@ -8,58 +8,60 @@ param location string
 param vnetName string
 
 @description('Runner subnet name')
-param runnerSubnetName string = 'snet-runner'
+param runnerSubnetName string
 
 @description('Runner subnet prefix')
-param runnerSubnetPrefix string = '10.90.3.0/24'
+param runnerSubnetPrefix string
 
 @description('Create the runner subnet in this module. Disable when subnet is managed by another module.')
-param createRunnerSubnet bool = true
+param createRunnerSubnet bool
 
 @description('Azure Bastion subnet name. Must be AzureBastionSubnet.')
-param bastionSubnetName string = 'AzureBastionSubnet'
+param bastionSubnetName string
 
 @description('Azure Bastion subnet prefix (minimum /26).')
-param bastionSubnetPrefix string = '10.90.4.0/26'
+param bastionSubnetPrefix string
 
 @description('Create the Bastion subnet in this module. Disable when subnet is managed by another module.')
-param createBastionSubnet bool = true
+param createBastionSubnet bool
 
 @description('Runner NSG name')
-param runnerNsgName string = 'nsg-maffnd-runner'
+param runnerNsgName string
 
 @description('Create Azure Bastion host')
-param createBastion bool = true
+param createBastion bool
 
 @description('Create private VM runner')
-param createRunnerVm bool = true
+param createRunnerVm bool
 
 @description('Create and attach a user-assigned managed identity to the runner VM.')
-param createRunnerUami bool = true
+param createRunnerUami bool
 
 @description('Runner user-assigned managed identity name')
-param runnerUamiName string = 'uami-maffnd-runner'
+param runnerUamiName string
 
 @description('Keep system-assigned identity on VM in addition to UAMI.')
 param keepSystemAssignedIdentity bool = false
 
 @description('Runner VM name')
-param runnerVmName string = 'vm-maffnd-runner'
+param runnerVmName string
 
 @description('Runner VM size')
-param runnerVmSize string = 'Standard_D4s_v5'
+param runnerVmSize string
 
 @description('Runner admin username')
-param runnerAdminUsername string = 'azureuser'
+param runnerAdminUsername string
 
 @description('SSH public key for runner VM admin user. Required when createRunnerVm is true.')
-param runnerSshPublicKey string = ''
+@secure()
+@minLength(1)
+param runnerSshPublicKey string
 
 @description('Azure Bastion host name')
-param bastionName string = 'bas-maffnd'
+param bastionName string
 
 @description('Azure Bastion public IP name')
-param bastionPublicIpName string = 'pip-maffnd-bastion'
+param bastionPublicIpName string
 
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' existing = {
   name: vnetName
@@ -107,7 +109,7 @@ resource bastionSubnetExisting 'Microsoft.Network/virtualNetworks/subnets@2023-0
 var runnerSubnetId = createRunnerSubnet ? runnerSubnet.id : runnerSubnetExisting.id
 var bastionSubnetId = createBastionSubnet ? bastionSubnet.id : bastionSubnetExisting.id
 
-var createRunnerVmEffective = enabled && createRunnerVm && !empty(runnerSshPublicKey)
+var createRunnerVmEffective = enabled && createRunnerVm
 
 resource runnerUami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (enabled && createRunnerVm && createRunnerUami) {
   name: runnerUamiName
@@ -118,6 +120,9 @@ resource runnerNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (create
   name: '${runnerVmName}-nic'
   location: location
   properties: {
+    networkSecurityGroup: {
+      id: runnerNsg.id
+    }
     ipConfigurations: [
       {
         name: 'ipconfig1'
@@ -231,4 +236,3 @@ output runnerUamiPrincipalId string = (enabled && createRunnerVm && createRunner
 output runnerUamiClientId string = (enabled && createRunnerVm && createRunnerUami) ? runnerUami!.properties.clientId : ''
 output bastionHostId string = (enabled && createBastion) ? bastionHost.id : ''
 output bastionPublicIpId string = (enabled && createBastion) ? bastionPublicIp.id : ''
-output runnerVmSkippedReason string = (enabled && createRunnerVm && empty(runnerSshPublicKey)) ? 'runnerVmSshPublicKey is empty; VM creation skipped' : ''

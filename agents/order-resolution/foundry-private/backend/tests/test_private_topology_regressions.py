@@ -77,10 +77,14 @@ def test_frontend_uses_same_origin_proxy_without_browser_secrets() -> None:
     assert "NGINX_API_UPSTREAM must be set to the internal backend URL" in entrypoint
     assert public_config.strip() == "window.__APP_CONFIG__ = {};"
 
+    text_suffixes = {".css", ".html", ".js", ".json", ".sh", ".ts", ".tsx"}
+    text_names = {"Dockerfile", "nginx.conf"}
     browser_sources = "\n".join(
         path.read_text()
         for path in frontend.rglob("*")
-        if path.is_file() and "node_modules" not in path.parts
+        if path.is_file()
+        and "node_modules" not in path.parts
+        and (path.suffix in text_suffixes or path.name in text_names)
     )
     for secret_name in (
         "FOUNDRY_RESPONSES_ENDPOINT",

@@ -2,11 +2,23 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    "location": {
+      "value": "${FOUNDRY_LOCATION}"
+    },
+    "azdEnvironmentName": {
+      "value": "${AZD_ENVIRONMENT_NAME}"
+    },
     "namePrefix": {
       "value": "${NAME_PREFIX}"
     },
     "aiSearchLocation": {
       "value": "${AI_SEARCH_LOCATION}"
+    },
+    "aiSearchSkuName": {
+      "value": "${AI_SEARCH_SKU_NAME}"
+    },
+    "cosmosLocation": {
+      "value": "${COSMOS_LOCATION}"
     },
     "foundryProjectName": {
       "value": "${FOUNDRY_PROJECT_NAME}"
@@ -17,15 +29,6 @@
     "hostedAgentName": {
       "value": "${HOSTED_AGENT_NAME}"
     },
-    "containerAppsEnvironmentName": {
-      "value": "${CONTAINER_APPS_ENVIRONMENT_NAME}"
-    },
-    "backendContainerAppName": {
-      "value": "${BACKEND_CONTAINER_APP_NAME}"
-    },
-    "frontendContainerAppName": {
-      "value": "${FRONTEND_CONTAINER_APP_NAME}"
-    },
     "backendImageName": {
       "value": "${SERVICE_BACKEND_IMAGE_NAME}"
     },
@@ -34,6 +37,27 @@
     },
     "networkMode": {
       "value": "${NETWORK_MODE}"
+    },
+    "deploymentMode": {
+      "value": "${DEPLOYMENT_MODE}"
+    },
+    "vnetAddressPrefix": {
+      "value": "${VNET_ADDRESS_PREFIX}"
+    },
+    "agentSubnetPrefix": {
+      "value": "${AGENT_SUBNET_PREFIX}"
+    },
+    "privateEndpointSubnetPrefix": {
+      "value": "${PRIVATE_ENDPOINT_SUBNET_PREFIX}"
+    },
+    "containerAppsSubnetPrefix": {
+      "value": "${CONTAINER_APPS_SUBNET_PREFIX}"
+    },
+    "runnerSubnetPrefix": {
+      "value": "${RUNNER_SUBNET_PREFIX}"
+    },
+    "bastionSubnetPrefix": {
+      "value": "${BASTION_SUBNET_PREFIX}"
     },
     "createPrivateDnsVnetLinks": {
       "value": "${CREATE_PRIVATE_DNS_VNET_LINKS}"
@@ -56,11 +80,23 @@
     "createPrivateRunnerAccess": {
       "value": "${CREATE_PRIVATE_RUNNER_ACCESS}"
     },
+    "assignRunnerResourceGroupRbac": {
+      "value": "${ASSIGN_RUNNER_RESOURCE_GROUP_RBAC}"
+    },
+    "assignRunnerUserAccessAdministrator": {
+      "value": "${ASSIGN_RUNNER_USER_ACCESS_ADMINISTRATOR}"
+    },
     "createBastionHost": {
       "value": "${CREATE_BASTION_HOST}"
     },
     "createRunnerVm": {
       "value": "${CREATE_RUNNER_VM}"
+    },
+    "runnerVmSize": {
+      "value": "${RUNNER_VM_SIZE}"
+    },
+    "runnerVmAdminUsername": {
+      "value": "${RUNNER_VM_ADMIN_USERNAME}"
     },
     "runnerVmSshPublicKey": {
       "value": "${RUNNER_VM_SSH_PUBLIC_KEY}"
@@ -86,20 +122,44 @@
     "foundryChatDeploymentName": {
       "value": "${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
     },
+    "foundryChatModelFormat": {
+      "value": "${FOUNDRY_CHAT_MODEL_FORMAT}"
+    },
+    "foundryChatModelName": {
+      "value": "${FOUNDRY_CHAT_MODEL_NAME}"
+    },
+    "foundryChatModelVersion": {
+      "value": "${FOUNDRY_CHAT_MODEL_VERSION}"
+    },
+    "foundryChatDeploymentSkuName": {
+      "value": "${FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME}"
+    },
     "foundryChatDeploymentCapacity": {
       "value": "${FOUNDRY_CHAT_DEPLOYMENT_CAPACITY}"
     },
     "foundryEmbeddingsDeploymentCapacity": {
       "value": "${FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY}"
     },
-    "runtimeConnectionName": {
-      "value": "orderresolutionruntimesecrets"
+    "foundryEmbeddingsDeploymentName": {
+      "value": "${FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME}"
+    },
+    "foundryEmbeddingsModelFormat": {
+      "value": "${FOUNDRY_EMBEDDINGS_MODEL_FORMAT}"
+    },
+    "foundryEmbeddingsModelName": {
+      "value": "${FOUNDRY_EMBEDDINGS_MODEL_NAME}"
+    },
+    "foundryEmbeddingsModelVersion": {
+      "value": "${FOUNDRY_EMBEDDINGS_MODEL_VERSION}"
+    },
+    "foundryEmbeddingsDeploymentSkuName": {
+      "value": "${FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME}"
+    },
+    "foundryRaiPolicyName": {
+      "value": "${FOUNDRY_RAI_POLICY_NAME}"
     },
     "createPostgresServer": {
       "value": "${CREATE_POSTGRES_SERVER}"
-    },
-    "postgresServerName": {
-      "value": "${POSTGRES_SERVER_NAME}"
     },
     "postgresAdminUsername": {
       "value": "${POSTGRES_ADMIN_USERNAME}"
@@ -113,8 +173,20 @@
     "postgresLocation": {
       "value": "${POSTGRES_LOCATION}"
     },
-    "runtimeDatabaseUrl": {
-      "value": "${RUNTIME_DATABASE_URL}"
+    "postgresSkuName": {
+      "value": "${POSTGRES_SKU_NAME}"
+    },
+    "postgresSkuTier": {
+      "value": "${POSTGRES_SKU_TIER}"
+    },
+    "postgresVersion": {
+      "value": "${POSTGRES_VERSION}"
+    },
+    "postgresStorageSizeGb": {
+      "value": "${POSTGRES_STORAGE_SIZE_GB}"
+    },
+    "postgresBackupRetentionDays": {
+      "value": "${POSTGRES_BACKUP_RETENTION_DAYS}"
     }
   }
 }

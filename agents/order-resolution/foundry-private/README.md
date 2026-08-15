@@ -92,8 +92,9 @@ not yet been run for this implementation.
   connection and Foundry's native
   `APPLICATIONINSIGHTS_CONNECTION_STRING` injection; do not add runtime
   connection-string aliases or instrumentation-key fallbacks.
-- Private release and database lockdown remain gated by a fresh ACA and
-  hosted-agent connectivity proof for the canonical PostgreSQL FQDN.
+- Private release and database lockdown retain their technical validation
+  gates, including fresh ACA and hosted-agent connectivity proof for the
+  canonical PostgreSQL FQDN before lockdown.
 - Current private telemetry RCA and run evidence are tracked in:
   - [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 
@@ -120,28 +121,31 @@ operations, not interchangeable steps of one routine release:
 | Operation | Permitted scope | Required decision and evidence |
 | --- | --- | --- |
 | Routine app-only release | Existing ACA backend/frontend revisions and the existing hosted agent only. | Validate the existing private dependencies and release the application artifacts. Do not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
-| Bootstrap or reconciliation | Full Bicep management-plane scope. | First capture a preview, review every shared-resource change, and obtain explicit approval for the accepted reconciliation plan. |
-| PostgreSQL lockdown | The canonical PostgreSQL private-access controls only. | A separately confirmed operation after a fresh generated ACA and hosted-agent connectivity proof for the canonical FQDN. It is never implied by an app-only release. |
+| Bootstrap or reconciliation | Full Bicep management-plane scope. | First capture a current preview and record review evidence for every shared-resource change. Dispatch starts the validated operation. |
+| PostgreSQL lockdown | The canonical PostgreSQL private-access controls only. | A separate, generated-proof-gated operation after a fresh ACA and hosted-agent connectivity proof for the canonical FQDN. It is never implied by an app-only release. |
 
 IaC preview run `31198356080` detected shared authoritative drift in the VNet
 and subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
 Application Insights, and Search. This is a no-go for full Bicep application
-until the resource owners approve a reconciliation plan. The preview is
+until a reconciliation plan and current validation evidence establish the
+intended state. The preview is
 evidence only: it does not establish that an application was deployed or that
 any dependency is healthy.
 
-PR validation remains credential-free. Protected manual workflows
+PR validation remains credential-free. Protected dispatch workflows
 `order-resolution-private-provision.yml` and
 `order-resolution-private-deploy.yml` run only on the
-`foundry-private-v2` self-hosted runner in `foundry-private-env`, using Azure
-OIDC and the runner's retained private AZD environment. Provision,
+`foundry-private-v2` self-hosted runner, using repository-scoped Azure OIDC
+variables and the runner's retained private AZD environment. Invoking a
+validated workflow starts it: no confirmation input, environment approval, or
+owner approval gate is allowed. Provision,
 reconciliation, application release, and observability dispatches share one
 release concurrency group. A routine app-only release is restricted to the
 existing ACA revisions and hosted agent and validates its existing
 dependencies. It must not accept or repair the previewed shared-resource drift.
-Bootstrap/reconciliation remains an explicitly approved full-Bicep operation.
-PostgreSQL lockdown requires its own explicit confirmation and current
-generated proof; do not bundle it into an app-only release. No operation may use
+Bootstrap/reconciliation remains a separate full-Bicep operation. PostgreSQL
+lockdown requires its own current generated proof; do not bundle it into an
+app-only release. No operation may use
 password-repair, public-access, firewall, or administrator-user bypasses.
 
 The same source-of-truth target is available only from the private runner:
@@ -151,8 +155,8 @@ make foundry-provision-preview
 make foundry-release
 ```
 
-`make foundry-provision-preview` is for the explicit
-bootstrap/reconciliation decision and must not be treated as an app-only
+`make foundry-provision-preview` provides the required
+bootstrap/reconciliation evidence and must not be treated as an app-only
 preflight. `make foundry-release` is the full staged release path; do not use
 it to characterize a routine app-only release. The generated connectivity proof
 records ACA and hosted-agent connectivity in
@@ -173,11 +177,11 @@ only after that account name has been purged from Azure.
 Clean provisioning is staged: `make foundry-provision` creates the private
 account, project, identities, and RBAC without storing Foundry connection
 secrets. After the project identity has propagated, run
-`make foundry-project-connections` only in the separately approved
+`make foundry-project-connections` only in the separate
 bootstrap/reconciliation operation. A routine app-only release validates those
 existing connections read-only and does not recreate them. If Azure reports
 that a private endpoint is still deleting, wait for that operation to finish
-and retry the approved provisioning stage; do not open public access or remove
+and retry the same provisioning stage; do not open public access or remove
 the connection.
 
 ### Private runner recovery
@@ -201,9 +205,9 @@ then run `scripts/github/bootstrap_vm_runner_host.sh` and
 private release be dispatched.
 
 If the source-controlled VM and registration remain intact but the VM is
-deallocated, dispatch **Order Resolution Private Runner Start** with
-`confirmation=start`. It starts only `vm-maffnd-runner` through the existing
-environment-scoped OIDC identity and waits for `PowerState/running`. The
+deallocated, dispatch **Order Resolution Private Runner Start**. It starts
+immediately and starts only `vm-maffnd-runner` through the existing
+repository-scoped OIDC identity, then waits for `PowerState/running`. The
 subsequent protected release job is the GitHub registration readiness proof;
 the workflow token intentionally lacks runner-administration permission.
 It does not create or modify RBAC, OIDC, networking, secrets, or VM extensions.

@@ -16,6 +16,10 @@ services:
         project: ./agent
         host: azure.ai.agent
         language: docker
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
         description: Order Resolution private hosted workflow agent.
         kind: hosted
         name: order-resolution-hosted
@@ -23,10 +27,6 @@ services:
             - protocol: responses
               version: 2.0.0
         startupCommand: python -m foundry.main
-        container:
-            resources:
-                cpu: "0.5"
-                memory: 1Gi
 infra:
     provider: bicep
     path: ./iac
