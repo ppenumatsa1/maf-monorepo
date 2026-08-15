@@ -25,9 +25,13 @@ endpoint = require("FOUNDRY_PROJECT_ENDPOINT")
 agent_name = require("FOUNDRY_HOSTED_AGENT_NAME")
 image = require("FOUNDRY_IMAGE")
 
+runtime_connection_name = require("FOUNDRY_RUNTIME_CONNECTION_NAME")
+
 environment_variables = {
     "AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME"),
-    "DATABASE_URL": "${{connections.orderresolutionruntimesecrets.credentials.database_url}}",
+    "DATABASE_URL": (
+        f"${{{{connections.{runtime_connection_name}.credentials.database_url}}}}"
+    ),
     "APP_ENV": require("APP_ENV"),
     "STORE_PROVIDER": require("STORE_PROVIDER"),
     "MEMORY_PROVIDER": require("MEMORY_PROVIDER"),

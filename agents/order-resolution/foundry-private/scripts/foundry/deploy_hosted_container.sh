@@ -68,6 +68,10 @@ agent_name="$(require_env HOSTED_AGENT_NAME "$(get_env HOSTED_AGENT_NAME)")"
 model_name="$(require_env FOUNDRY_MODEL_DEPLOYMENT_NAME "$(get_env FOUNDRY_MODEL_DEPLOYMENT_NAME)")"
 runtime_database_url="$(require_env RUNTIME_DATABASE_URL "$(get_env RUNTIME_DATABASE_URL)")"
 postgres_server_name="$(require_env POSTGRES_SERVER_NAME "$(get_env POSTGRES_SERVER_NAME)")"
+runtime_connection_name="$(
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])["runtimeSecrets"])' \
+    "$(require_env connectionNames "$(get_env connectionNames)")"
+)"
 
 if [[ "$runtime_database_url" != *"${postgres_server_name}.postgres.database.azure.com"* ]]; then
   echo "RUNTIME_DATABASE_URL must target ${postgres_server_name}.postgres.database.azure.com." >&2
@@ -121,6 +125,7 @@ export FOUNDRY_PROJECT_ENDPOINT="$project_endpoint"
 export FOUNDRY_HOSTED_AGENT_NAME="$agent_name"
 export FOUNDRY_IMAGE="$image"
 export FOUNDRY_MODEL_DEPLOYMENT_NAME="$model_name"
+export FOUNDRY_RUNTIME_CONNECTION_NAME="$runtime_connection_name"
 export APP_ENV="$(require_env APP_ENV "$(get_env APP_ENV)")"
 export STORE_PROVIDER="$(require_env STORE_PROVIDER "$(get_env STORE_PROVIDER)")"
 export MEMORY_PROVIDER="$(require_env MEMORY_PROVIDER "$(get_env MEMORY_PROVIDER)")"

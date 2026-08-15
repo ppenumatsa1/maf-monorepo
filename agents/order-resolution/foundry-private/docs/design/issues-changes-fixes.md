@@ -1548,3 +1548,9 @@ OIDC principal lacked `Microsoft.CognitiveServices/accounts/AIServices/agents/wr
 The principal now has project-scoped Foundry Project Manager and ACR push
 roles, and release identity bootstrap provisions both roles after the Foundry
 project exists.
+
+After RBAC propagation, release run `31897647396` reached version creation but
+the hosted-agent template still referenced the legacy fixed runtime connection
+name. Hosted deployment now derives the `runtimeSecrets` connection from the
+authoritative `connectionNames` output and builds the Foundry environment
+template from that value.
