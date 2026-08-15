@@ -1498,3 +1498,11 @@ new runner but Azure login rejected the conventional
 immutable-ID subject form (`owner@id/repository@id`). Identity bootstrap now
 queries GitHub for those IDs and creates the exact protected-main federated
 subject instead of assuming the conventional format.
+
+**Fresh-runner AZD state reconstruction.** Release run `31895907375`
+authenticated successfully but found no local `ora-foundry-private` AZD
+environment on the newly enrolled VM. The runner is seeded once with the
+selected AZD environment and its secure runtime values, while bootstrap now
+reapplies the canonical reuse profile and discovers authoritative live
+resource names. App-only workflows continue to read no GitHub secrets and
+preserve the runner-local `.azure` state during workspace cleanup.
