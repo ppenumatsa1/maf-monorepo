@@ -1591,3 +1591,14 @@ conversation-ID preview source. The runner now restores the documented trace
 `deployment_name` initialization parameter; Coherence retains its `model`
 parameter. Per-item output persistence remains enabled for the next guarded
 run.
+
+**Judge deployment capacity correction.** Evidence run `31900543632` accepted
+the corrected mappings and judge parameters, but all six evaluator calls
+returned HTTP 429. The deployed `gpt-4o` GlobalStandard model had capacity
+`1`, which exposes only one request per ten seconds and 1,000 tokens per
+minute; the trace run evaluates two criteria across three exact traces.
+Subscription usage showed 1 of 450 East US 2 GlobalStandard `gpt-4o` capacity
+units allocated. The canonical portable profile now requests capacity `30`,
+providing bounded headroom for the release gate without changing model,
+version, SKU, region, data source, evaluator, identity, network, database, or
+public-access contracts.
