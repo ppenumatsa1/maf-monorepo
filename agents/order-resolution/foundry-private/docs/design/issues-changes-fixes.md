@@ -1631,3 +1631,14 @@ surface mismatch: the firewall-rule commands use `--server-name`, while
 `--name` identifies the firewall rule itself. The helper now uses
 `--server-name` for the canonical server and `--name allow-azure-services` for
 the exact rule deletion before the ARM public-access update.
+
+**Final private release evidence.** Lockdown workflow
+[`31902456251`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31902456251)
+completed successfully. It generated fresh ACA and hosted-agent PostgreSQL
+connectivity proof, removed the Azure-services firewall rule, disabled
+PostgreSQL public access, and then passed the complete post-lockdown hosted
+evidence gate: smoke, all three HITL conversations, Application Insights
+correlation, and exact-trace Task Completion and Coherence evaluation.
+Control-plane verification reports the canonical PostgreSQL server `Ready`
+with `network.publicNetworkAccess=Disabled`; firewall APIs are consequently
+unavailable by design. The private lane is fully released and validated.
