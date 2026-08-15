@@ -1511,3 +1511,9 @@ preserve the runner-local `.azure` state during workspace cleanup.
 dependency preflight but looked for the legacy fixed connection
 `orderresolutionruntimesecrets`. Validation now reads the authoritative
 `runtimeSecrets` value from the hydrated Bicep `connectionNames` output.
+
+The next preflight confirmed the authoritative name but found no live runtime
+connection. `main.parameters.json` had never mapped `RUNTIME_DATABASE_URL` to
+the Bicep `runtimeDatabaseUrl` parameter, so the conditional connection module
+was skipped even though its fallback name appeared in outputs. The secure
+parameter is now explicitly mapped.

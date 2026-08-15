@@ -119,6 +119,9 @@
     "manageProjectConnections": {
       "value": "${MANAGE_PROJECT_CONNECTIONS}"
     },
+    "runtimeDatabaseUrl": {
+      "value": "${RUNTIME_DATABASE_URL}"
+    },
     "foundryChatDeploymentName": {
       "value": "${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
     },
