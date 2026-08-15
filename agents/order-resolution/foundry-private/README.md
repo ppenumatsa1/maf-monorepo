@@ -92,9 +92,9 @@ not yet been run for this implementation.
   connection and Foundry's native
   `APPLICATIONINSIGHTS_CONNECTION_STRING` injection; do not add runtime
   connection-string aliases or instrumentation-key fallbacks.
-- Private release and database lockdown retain their technical validation
-  gates, including fresh ACA and hosted-agent connectivity proof for the
-  canonical PostgreSQL FQDN before lockdown.
+- Private releases retain a private PostgreSQL readiness gate that verifies the
+  canonical FQDN, private endpoint, DNS, and least-privilege runtime role before
+  application deployment.
 - Current private telemetry RCA and run evidence are tracked in:
   - [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 
@@ -122,7 +122,7 @@ operations, not interchangeable steps of one routine release:
 | --- | --- | --- |
 | Routine app-only release | Existing ACA backend/frontend revisions and the existing hosted agent only. | Validate the existing private dependencies and release the application artifacts. Do not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
 | Bootstrap or reconciliation | Full Bicep management-plane scope. | First capture a current preview and record review evidence for every shared-resource change. Dispatch starts the validated operation. |
-| PostgreSQL lockdown | The canonical PostgreSQL private-access controls only. | A separate, generated-proof-gated operation after a fresh ACA and hosted-agent connectivity proof for the canonical FQDN. It is never implied by an app-only release. |
+| PostgreSQL initialization/readiness | The canonical private-only PostgreSQL server, schema, and least-privilege runtime role. | Runs from the VNet runner before application deployment. Public access and firewall bypasses are unsupported. |
 
 IaC preview run `31198356080` detected shared authoritative drift in the VNet
 and subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,
@@ -144,8 +144,8 @@ release concurrency group. A routine app-only release is restricted to the
 existing ACA revisions and hosted agent and validates its existing
 dependencies. It must not accept or repair the previewed shared-resource drift.
 Bootstrap/reconciliation remains a separate full-Bicep operation. PostgreSQL
-lockdown requires its own current generated proof; do not bundle it into an
-app-only release. No operation may use
+is private-only from creation, and app-only deployment runs the read-only
+private readiness gate before activating artifacts. No operation may use
 password-repair, public-access, firewall, or administrator-user bypasses.
 
 The same source-of-truth target is available only from the private runner:
@@ -158,16 +158,11 @@ make foundry-release
 `make foundry-provision-preview` provides the required
 bootstrap/reconciliation evidence and must not be treated as an app-only
 preflight. `make foundry-release` is the full staged release path; do not use
-it to characterize a routine app-only release. The generated connectivity proof
-records ACA and hosted-agent connectivity in
-`backend/.foundry/results/private-connectivity-proof.json` before it disables
-PostgreSQL public access and removes the temporary Azure-services firewall rule.
-For the separate PostgreSQL operation, execute
-`make foundry-connectivity-proof` before `make foundry-postgres-lockdown`; the
-lockdown target rejects missing, stale, or mismatched proof for the canonical
-`POSTGRES_SERVER_NAME` FQDN. The current recorded target is
-`maffndpgv20722.postgres.database.azure.com`; preflight is authoritative if
-the AZD environment changes.
+it to characterize a routine app-only release. Fresh bootstrap initializes the
+schema and runtime role from the private runner, then
+`make foundry-postgres-readiness` verifies public access is disabled, the
+private endpoint and DNS are authoritative, and the runtime role remains
+least privilege before application deployment.
 
 The intentional private-lane teardown left the original Foundry account
 soft-deleted. `RESTORE_FOUNDRY_ACCOUNT` therefore defaults to `true` and is

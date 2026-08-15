@@ -14,7 +14,7 @@ scoped_files=(
   "$scripts_dir/validate_private_runner_environment.sh"
   "$scripts_dir/preflight_private_release.sh"
   "$scripts_dir/deploy_hosted_container.sh"
-  "$scripts_dir/verify_private_connectivity.sh"
+  "$scripts_dir/verify_private_postgres_readiness.sh"
   "$scripts_dir/collect_private_release_evidence.sh"
   "$scripts_dir/validate_private_app_release.sh"
   "$scripts_dir/verify_private_app_images.sh"
@@ -41,6 +41,7 @@ grep -Fq 'FOUNDRY_POST_PROVISION_HYDRATE=1' "$root_dir/Makefile"
 grep -Fq 'DB_SCHEMA_MANAGED_EXTERNALLY=true' "$root_dir/Makefile"
 grep -Fq '"DB_SCHEMA_MANAGED_EXTERNALLY": require("DB_SCHEMA_MANAGED_EXTERNALLY")' \
   "$scripts_dir/deploy_hosted_container.py"
-grep -Fq '/api/workflows?limit=1' "$scripts_dir/verify_private_connectivity.sh"
+grep -Fq 'public network access disabled' "$scripts_dir/verify_private_postgres_readiness.sh"
+grep -Fq 'postgres_runtime_credentials.py" verify' "$scripts_dir/verify_private_postgres_readiness.sh"
 
 echo "Private release portability contract passed."

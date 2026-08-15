@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 WORKFLOWS = Path(".github/workflows")
@@ -12,14 +13,12 @@ DEPLOYMENT_WORKFLOWS = (
 )
 PACKAGE_VALIDATION_WORKFLOW = "order-resolution-private-package-validation.yml"
 EVIDENCE_WORKFLOW = "order-resolution-private-evidence.yml"
-LOCKDOWN_WORKFLOW = "order-resolution-private-lockdown.yml"
 RUNNER_START_WORKFLOW = "order-resolution-private-runner-start.yml"
 OBSERVABILITY_WORKFLOW = "order-resolution-private-observability.yml"
 SERIALIZED_PRIVATE_WORKFLOWS = (
     *DEPLOYMENT_WORKFLOWS,
     PACKAGE_VALIDATION_WORKFLOW,
     EVIDENCE_WORKFLOW,
-    LOCKDOWN_WORKFLOW,
     OBSERVABILITY_WORKFLOW,
 )
 PRIVATE_DISPATCH_WORKFLOWS = (
@@ -95,10 +94,26 @@ def validate_deployment_workflow(name: str) -> None:
     forbid(text, "workflow_call:", name)
     if name == "order-resolution-private-provision.yml":
         require(text, "secrets.POSTGRES_ADMIN_PASSWORD", name)
-    if name == "order-resolution-private-provision.yml" and text.count("secrets.") != 1:
-        raise AssertionError(
-            f"{name} may reference only the PostgreSQL admin password secret."
+        require(text, "make foundry-postgres-bootstrap", name)
+        require(text, "make foundry-postgres-readiness", name)
+        require_order(
+            text,
+            (
+                "Provision private Foundry infrastructure",
+                "Initialize and verify private PostgreSQL",
+                "make foundry-postgres-bootstrap",
+                "make foundry-postgres-readiness",
+            ),
+            name,
         )
+    if name == "order-resolution-private-provision.yml":
+        secret_names = set(
+            re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", text)
+        )
+        if secret_names != {"POSTGRES_ADMIN_PASSWORD"}:
+            raise AssertionError(
+                f"{name} may reference only the PostgreSQL admin password secret."
+            )
     if name == "order-resolution-private-deploy.yml" and "secrets." in text:
         raise AssertionError(
             f"{name} must not read secrets during an app-only private release."
@@ -213,8 +228,6 @@ def validate() -> None:
     forbid(deploy, "make foundry-provision", deploy_name)
     forbid(deploy, "make foundry-project-connections", deploy_name)
     forbid(deploy, "make foundry-deploy", deploy_name)
-    forbid(deploy, "make foundry-connectivity-proof", deploy_name)
-    forbid(deploy, "make foundry-postgres-lockdown", deploy_name)
     forbid(deploy, "make foundry-evidence", deploy_name)
     forbid(deploy, "\n  evidence:\n", deploy_name)
 
@@ -243,7 +256,6 @@ def validate() -> None:
         "make foundry-app-only-release",
         "make foundry-hosted-app-deploy",
         "make foundry-project-connections",
-        "make foundry-postgres-lockdown",
         "make foundry-evidence",
     ):
         forbid(package_validation, forbidden_operation, PACKAGE_VALIDATION_WORKFLOW)
@@ -279,49 +291,12 @@ def validate() -> None:
         "make foundry-app-only-release",
         "make foundry-hosted-app-deploy",
         "make foundry-project-connections",
-        "make foundry-postgres-lockdown",
     ):
         forbid(evidence, forbidden_operation, EVIDENCE_WORKFLOW)
 
-    lockdown = (WORKFLOWS / LOCKDOWN_WORKFLOW).read_text()
-    for value in (
-        "workflow_dispatch:",
-        "self-hosted",
-        'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]',
-        PROFILE_MIRROR_SCRIPT,
-        "id-token: write",
-        "uses: azure/login@v2",
-        "uses: actions/setup-python@v5",
-        'python-version: "3.12"',
-        "bootstrap_private_azd_environment.sh",
-        "validate_private_runner_environment.sh",
-        "make foundry-connectivity-proof",
-        "make foundry-postgres-lockdown",
-        "make foundry-evidence",
-    ):
-        require(lockdown, value, LOCKDOWN_WORKFLOW)
-    require_order(
-        lockdown,
-        (
-            "make foundry-connectivity-proof",
-            "make foundry-postgres-lockdown",
-            "make foundry-evidence",
-        ),
-        LOCKDOWN_WORKFLOW,
-    )
-    require(lockdown, "secrets.POSTGRES_ADMIN_PASSWORD", LOCKDOWN_WORKFLOW)
-    if lockdown.count("secrets.") != 1:
-        raise AssertionError(
-            f"{LOCKDOWN_WORKFLOW} may reference only the PostgreSQL admin password secret."
-        )
-    for forbidden_operation in (
-        "azd provision",
-        "azd deploy",
-        "make foundry-app-only-release",
-        "make foundry-hosted-app-deploy",
-        "make foundry-project-connections",
-    ):
-        forbid(lockdown, forbidden_operation, LOCKDOWN_WORKFLOW)
+    retired_lockdown_workflow = WORKFLOWS / "order-resolution-private-lockdown.yml"
+    if retired_lockdown_workflow.exists():
+        raise AssertionError("Private release retains the retired PostgreSQL lockdown workflow.")
 
     observability = (WORKFLOWS / OBSERVABILITY_WORKFLOW).read_text()
     for value in (
@@ -347,11 +322,12 @@ def validate() -> None:
     )
     app_only_release_body = makefile.split(
         "foundry-app-only-release:\n", maxsplit=1
-    )[1].split("\n\nfoundry-connectivity-proof:", maxsplit=1)[0]
+    )[1].split("\n\nfoundry-evidence:", maxsplit=1)[0]
     require_order(
         app_only_release_body,
         (
             "$(MAKE) foundry-app-only-preflight",
+            "$(MAKE) foundry-postgres-readiness",
             "$(MAKE) foundry-app-deploy",
             "$(MAKE) foundry-app-images-verify",
             "$(MAKE) foundry-hosted-app-deploy",
@@ -362,8 +338,6 @@ def validate() -> None:
         "foundry-provision",
         "foundry-project-connections",
         "foundry-deploy",
-        "foundry-connectivity-proof",
-        "foundry-postgres-lockdown",
         "foundry-evidence",
     ):
         forbid(
@@ -477,11 +451,11 @@ def validate() -> None:
             "$(MAKE) test",
             "$(MAKE) foundry-provision-preview",
             "$(MAKE) foundry-provision",
+            "$(MAKE) foundry-postgres-bootstrap",
+            "$(MAKE) foundry-postgres-readiness",
             "$(MAKE) foundry-project-connections",
             "$(MAKE) foundry-app-deploy",
             "$(MAKE) foundry-deploy",
-            "$(MAKE) foundry-connectivity-proof",
-            "$(MAKE) foundry-postgres-lockdown",
             "$(MAKE) foundry-evidence",
         ),
         "foundry-release Make target",
@@ -493,6 +467,12 @@ def validate() -> None:
     )
     if repair_script.exists():
         raise AssertionError("Private release retains a PostgreSQL admin-password repair path.")
+    for retired_script in (
+        "harden_postgres_private_access.sh",
+        "verify_private_connectivity.sh",
+    ):
+        if (Path(PRIVATE_PREFIX) / "scripts/foundry" / retired_script).exists():
+            raise AssertionError(f"Private release retains retired script: {retired_script}")
 
     access_path_body = makefile.split("foundry-access-path:\n", maxsplit=1)[1].split(
         "\n\nclean:", maxsplit=1

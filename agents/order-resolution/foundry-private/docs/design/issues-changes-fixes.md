@@ -1642,3 +1642,30 @@ correlation, and exact-trace Task Completion and Coherence evaluation.
 Control-plane verification reports the canonical PostgreSQL server `Ready`
 with `network.publicNetworkAccess=Disabled`; firewall APIs are consequently
 unavailable by design. The private lane is fully released and validated.
+
+## 2026-08-15 — Private-only PostgreSQL clean cutover
+
+**Decision.** The staged public-access and later-lockdown design is retired.
+Order Resolution Foundry Private supports only PostgreSQL servers created with
+public network access disabled and an approved private endpoint/private DNS
+path. No backward-compatible firewall, proof artifact, lockdown workflow, or
+public-access mutation remains.
+
+**Source changes.** The PostgreSQL Bicep resource now declares
+`network.publicNetworkAccess=Disabled`; the Azure-services firewall parameter,
+profile value, parameter mapping, defaults hydration, and firewall child
+resource are removed. The standalone connectivity-proof and hardening scripts,
+lockdown workflow, and corresponding Make targets are deleted.
+
+**Replacement gate.** A single non-persistent private PostgreSQL readiness
+check runs on the VNet runner before application deployment. It validates the
+selected target, server state, disabled public access, approved canonical
+private endpoint, private DNS record/VNet link, runner-side private resolution,
+and the exact runtime-role privilege contract. Fresh provisioning initializes
+the administrator-owned schema and runtime role before this readiness check.
+
+**Release flow.** The supported sequence is now control-plane provisioning,
+private runner readiness, private database initialization/readiness, Foundry
+connection convergence, application/hosted-agent deployment, hosted E2E,
+telemetry correlation, and Foundry evaluation. Historical lockdown runs remain
+evidence of the former cutover only and are not an operating procedure.

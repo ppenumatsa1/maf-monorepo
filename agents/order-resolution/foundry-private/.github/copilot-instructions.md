@@ -45,10 +45,9 @@ a dedicated subnet; do not reuse the Foundry agent-host subnet. The backend
 uses managed identity, persisted workflow events, and stable native SSE types.
 For PostgreSQL privatization, use the canonical server FQDN and private DNS
 output contract. `POSTGRES_SERVER_NAME` and `RUNTIME_DATABASE_URL` must name
-the same FQDN; public access and the Azure-services firewall rule may be
-removed only after fresh explicit ACA and hosted-agent connectivity proof.
-Only the generated proof artifact may authorize lockdown; it must not be
-replaced by a manual environment flag.
+the same FQDN. PostgreSQL public access must be disabled at creation, no
+Azure-services firewall rule is permitted, and the VNet runner must pass the
+private readiness gate before application deployment.
 
 Private provision, reconciliation, app-release, and observability workflows
 must serialize on the same release group and run only on `foundry-private-v2`.
@@ -58,8 +57,7 @@ dependencies. It must not run full Bicep, reconcile shared resources, or change
 PostgreSQL access. Bootstrap/reconciliation is a separate full-Bicep
 operation. Invoking a validated workflow starts it; deployment
 workflows have no confirmation input, environment approval, or owner approval
-gate. PostgreSQL lockdown is a separate generated-proof-gated operation and is
-never implied by an app-only release.
+gate.
 Do not add optional refresh, administrator-password, public-access, or
 firewall bypasses to any path.
 

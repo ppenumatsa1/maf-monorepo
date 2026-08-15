@@ -1,6 +1,6 @@
 # Order Resolution Foundry Private Deployment Plan
 
-> **Status:** Validated
+> **Status:** Validated — private-only PostgreSQL cutover ready for deployment
 
 ## Objective
 
@@ -60,16 +60,20 @@ mutated.
 
 ## PostgreSQL contract
 
-- Bootstrap creates the server/database in the profile-selected region.
-- An administrator-owned step applies the schema over the private FQDN.
+- Bootstrap creates the server/database with public network access disabled.
+- No Azure-services firewall rule or public-access compatibility path exists.
+- An administrator-owned private-runner step applies the schema over the
+  private FQDN.
 - A separate runtime credential receives only database `CONNECT`, schema
   `USAGE`, table DML, and sequence `USAGE`.
 - Runtime Container Apps and hosted agents set
   `DB_SCHEMA_MANAGED_EXTERNALLY=true` and do not execute production DDL.
 - The runtime URL, never the administrator URL, is stored in application
   secrets and Foundry runtime connections.
-- Public access is disabled only after fresh ACA and hosted-agent connectivity
-  proof validates the canonical private endpoint and DNS.
+- `make foundry-postgres-readiness` must validate the disabled public-access
+  state, approved private endpoint, private DNS mapping/VNet link, runner
+  resolution, schema, and exact runtime privileges before app deployment.
+- The readiness check is non-persistent and creates no proof artifact.
 
 ## Execution DAG
 
@@ -82,11 +86,13 @@ mutated.
    tests, and target-literal scans.
 5. Mark this plan `Ready for Validation` and invoke Azure Validate.
 6. After validation, use Azure Deploy for provider/quota/policy checks, fresh
-   preview, runner bootstrap, full provisioning, connection/RBAC convergence,
-   database bootstrap, output hydration, and reuse preview.
-7. Deploy immutable backend/frontend/hosted-agent artifacts.
-8. Run fresh smoke, low-risk and HITL E2E, evaluation, telemetry, connectivity
-   proof, PostgreSQL lockdown, and post-lockdown verification.
+   preview, control-plane provisioning, runner bootstrap, output hydration, and
+   reuse preview.
+7. From the VNet runner, initialize the private PostgreSQL schema/runtime role
+   and pass the private readiness gate.
+8. Converge Foundry connections/RBAC and deploy immutable
+   backend/frontend/hosted-agent artifacts.
+9. Run fresh smoke, low-risk and HITL E2E, evaluation, and telemetry.
 
 ## Validation requirements
 
@@ -99,6 +105,9 @@ mutated.
 - Model/SKU, PostgreSQL SKU, Search, Container Apps quota, providers, policy,
   and scoped RBAC are validated for the selected target.
 - Runtime database startup succeeds without schema ownership or `CREATE`.
+- Fresh provisioning never enables PostgreSQL public network access or creates
+  a firewall rule.
+- Private PostgreSQL readiness passes before application deployment.
 - Only fresh release evidence is accepted.
 
 ## All validation checks pass
@@ -118,36 +127,34 @@ mutated.
 
 ### Validation proof
 
-- AZD authentication resolves the selected tenant/subscription and
-  `ora-foundry-private` environment.
-- The target resource group does not exist, as expected for clean bootstrap.
-- Required providers are registered and the deployment identity has Owner.
-- East US 2 has PostgreSQL `Standard_B1ms`/version 18 support, 48 available
-  Container Apps environments, 100 available Dsv7-family vCPUs, and sufficient
-  network quota.
-- Foundry capacity discovery selected `gpt-4o` 2024-11-20 Global Standard,
-  capacity 1, with 450K TPM available; the deprecated `gpt-4o-mini` version was
-  rejected and removed from the profile.
-- Full local validation passed: 130 backend tests, 10/10 deterministic
-  evaluations, seven workflow and four selected-thread Playwright tests,
-  design review, Bicep/profile/workflow/database contracts, and all three AZD
-  packages.
-- Fresh `azd provision --preview --no-prompt` passed with expected creates only
-  in `rg-maf-ora-foundry-private`; no legacy resource or delete/replace action
-  was proposed.
+- AZD 1.31.1 authentication resolves the selected tenant/subscription,
+  `ora-foundry-private` environment, and East US 2 target.
+- The Azure YAML schema is accepted by AZD packaging; the Bicep template
+  compiles against PostgreSQL API `2024-08-01`.
+- Full backend lint/test validation passed with 130 tests.
+- Backend, frontend, and hosted-agent AZD packages all completed successfully.
+- The PostgreSQL cutover preview completed without any delete or replacement.
+  PostgreSQL, its private endpoint, and all private endpoints were `Skip`;
+  no firewall resource or public-access enablement was proposed.
+- Azure Policy evaluation found the existing management-group audit for
+  PostgreSQL Entra-only authentication. This cutover intentionally retains
+  password authentication; passwordless authentication remains a separately
+  approved follow-up and did not block preview.
+- Static RBAC verification remains valid because the cutover changes no
+  principals, roles, or scopes.
 
 | Command or gate | Result |
 | --- | --- |
 | `make test-foundry-portability` | Passed profile/release portability contracts. |
-| `make foundry-iac-validate` | Bicep compiled; lint warnings are non-blocking and recorded. |
-| Focused database/IaC pytest selection | 11 passed. |
+| `make foundry-iac-validate` | Bicep compiled with PostgreSQL API `2024-08-01`; no PostgreSQL network-property warning remains. |
+| Focused database/IaC pytest selection | 7 passed. |
 | `validate_private_runner_workflows.py` | Passed private workflow static contracts. |
-| `make validate-full` | 130 tests, 10/10 eval cases, 7 workflow E2E, 4 selected-thread E2E, and design review passed. |
+| `make test` | Ruff passed and 130 backend tests passed. |
 | `make foundry-package` | Backend, frontend, and hosted-agent packages passed. |
-| Azure provider/RBAC/profile checks | Passed for the selected subscription, target, and Owner identity. |
-| Azure quota/capability checks | PostgreSQL, Foundry model, Container Apps, VM, and network capacity passed. |
-| `azd provision --preview --no-prompt` | Passed with expected fresh creates only. |
-| Static role verification | Passed after narrowing runner Contributor to resource-group scope. |
+| Azure profile/authentication checks | Passed for the selected subscription, resource group, environment, and East US 2 location. |
+| Azure Policy validation | Existing Entra-only PostgreSQL audit recorded as a separate passwordless-authentication follow-up. |
+| `azd provision --preview --no-prompt` | Passed; PostgreSQL and private endpoints were unchanged, with no delete/replace/public-access/firewall action. |
+| Static role verification | Passed; the cutover changes no RBAC assignments. |
 
 ## Role Assignment Verification
 
@@ -182,8 +189,10 @@ fix, verification, and remaining impact.
   public-access weakening, cross-region drift, or stateful mutation.
 - A runtime receives administrator/schema-owner credentials or attempts DDL.
 - The private runner, endpoints, DNS, project connections, capability hosts,
-  RBAC, package build, deployed revisions, smoke, E2E, evaluation, telemetry,
-  connectivity proof, or lockdown validation fails.
+  RBAC, private PostgreSQL readiness, package build, deployed revisions, smoke,
+  E2E, evaluation, or telemetry validation fails.
+- A preview proposes enabling PostgreSQL public access, creating a firewall
+  rule, replacing the server, or weakening its private endpoint/DNS contract.
 
 ## Planned repository surfaces
 

@@ -91,3 +91,11 @@ jobs:
           fi
       - name: Re-verify canonical private deployment environment
         run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Initialize and verify private PostgreSQL
+        if: ${{ inputs.preview_only != true }}
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        working-directory: agents/order-resolution/foundry-private
+        run: |
+          make foundry-postgres-bootstrap
+          make foundry-postgres-readiness

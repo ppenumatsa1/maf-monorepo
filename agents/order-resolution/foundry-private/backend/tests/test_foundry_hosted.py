@@ -173,7 +173,7 @@ def test_hosted_image_release_uses_private_safe_environment_settings() -> None:
     assert (
         '"AZURE_AI_MODEL_DEPLOYMENT_NAME": require("FOUNDRY_MODEL_DEPLOYMENT_NAME")' in release_text
     )
-    assert "connections.orderresolutionruntimesecrets.credentials.database_url" in release_text
+    assert "connections.{runtime_connection_name}.credentials.database_url" in release_text
     assert "create_version_with_transient_retry" in release_text
     assert "HttpResponseError" in release_text
     assert "enumerate((0, 30, 60), start=1)" in release_text

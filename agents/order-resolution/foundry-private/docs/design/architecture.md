@@ -402,11 +402,10 @@ MCP/RAG endpoint. Only the internal wrapper uses managed identity for the
 private Foundry data-plane request.
 
 `POSTGRES_SERVER_NAME` and `RUNTIME_DATABASE_URL` must identify the same
-canonical Flexible Server FQDN. Private PostgreSQL access and DNS are protected
-by the established connectivity-proof/lockdown process: public access and the
-Azure-services firewall rule may be removed only by the generated proof after
-both ACA and hosted-agent connectivity have succeeded. This selected-thread
-alignment does not alter that process.
+canonical Flexible Server FQDN. PostgreSQL is created with public network
+access disabled and no Azure-services firewall rule. The VNet runner validates
+the approved private endpoint, private DNS mapping, schema, and least-privilege
+runtime role before application deployment.
 
 ### Durable Stores and Recovery
 
@@ -483,7 +482,7 @@ between application delivery and shared infrastructure authority:
 | --- | --- | --- |
 | Routine app-only release | Existing ACA backend/frontend revisions and existing hosted agent. | Validates existing private dependencies; does not run full Bicep, reconcile shared resources, or change PostgreSQL access. |
 | Bootstrap/reconciliation | Full Bicep management plane. | Requires a current preview and recorded reconciliation review evidence before execution. |
-| PostgreSQL lockdown | Canonical PostgreSQL private-access controls. | Separate generated-proof-gated operation after fresh ACA and hosted-agent connectivity proof for the canonical FQDN. |
+| PostgreSQL initialization/readiness | Canonical private-only PostgreSQL server, schema, and runtime role. | Private-runner bootstrap and readiness validation must pass before application deployment. |
 
 Preview run `31198356080` found shared authoritative drift in the VNet/subnets,
 ACA environment, Foundry account/project/models, ACR, Cosmos, Application
@@ -496,7 +495,7 @@ firewall, or alternate-runner bypasses.
 
 The protected app-only release is recorded in
 [issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
-It did not reconcile the shared-resource drift or perform PostgreSQL lockdown.
+It did not reconcile the shared-resource drift.
 This architecture document remains design intent; it does not substitute for
 dated release evidence.
 
@@ -513,7 +512,7 @@ dated release evidence.
 
 Baseline scenarios are `ORD-1001` (low risk, no HITL), `ORD-1009` (high
 amount, HITL), and a damaged-item message (HITL). Future release-ready claims
-need the applicable recorded private connectivity proof, hosted smoke/E2E,
-Foundry evaluation, and Application Insights correlation required by
+need private PostgreSQL readiness, hosted smoke/E2E, Foundry evaluation, and
+Application Insights correlation required by
 [engineering-operating-model.md](engineering-operating-model.md). They must
 not be inferred from source configuration or this architecture document.

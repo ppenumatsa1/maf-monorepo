@@ -22,11 +22,11 @@ This file describes expected behavior for coding agents working in this reposito
   internal FastAPI ACA; the backend reaches private Foundry Responses and
   PostgreSQL through the VNet. Do not expose a backend ingress or browser
   credentials, and do not reuse the Foundry agent-host subnet for ACA.
-- PostgreSQL public access and the Azure-services firewall rule remain in place
-  until the canonical server's private endpoint/DNS path has explicit ACA and
-  hosted-agent connectivity proof. `POSTGRES_SERVER_NAME` and
-  `RUNTIME_DATABASE_URL` must identify that same FQDN; only the generated,
-  current connectivity-proof artifact can authorize lockdown.
+- PostgreSQL is private-only from creation. `POSTGRES_SERVER_NAME` and
+  `RUNTIME_DATABASE_URL` must identify the same canonical private FQDN.
+  Before application deployment, the VNet runner must pass the PostgreSQL
+  readiness gate for public-access state, private endpoint, DNS, schema, and
+  least-privilege runtime permissions.
 - Private provision, reconciliation, app-release, and observability workflows
   share one serialized release group on `foundry-private-v2`. Classify the
   operation before dispatch: a routine app-only release changes only existing
@@ -35,8 +35,7 @@ This file describes expected behavior for coding agents working in this reposito
   Invoking a validated workflow starts it; deployment workflows have no
   confirmation input, environment approval, or owner approval gate.
   Bootstrap/reconciliation is a separate full-Bicep operation.
-  PostgreSQL lockdown is a separate generated-proof-gated operation, never an
-  app-only release side effect. Do not add optional
+  Do not add optional
   agent-refresh, administrator-password, public-access, or firewall bypasses.
 - Preview run `31198356080` found shared authoritative drift in the VNet and
   subnets, ACA environment, Foundry account/project/models, ACR, Cosmos,

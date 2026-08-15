@@ -12,7 +12,8 @@ SHARED_PROFILE_APPLICATOR := ../deployment/apply-azd-profile.sh
 	foundry-profile test-foundry-portability \
 	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-app-images-verify foundry-app-only-preflight foundry-hosted-app-deploy \
-	foundry-app-only-release foundry-connectivity-proof foundry-postgres-lockdown foundry-evidence foundry-release foundry-smoke foundry-access-path
+	foundry-postgres-bootstrap foundry-postgres-readiness foundry-app-only-release \
+	foundry-evidence foundry-release foundry-smoke foundry-access-path
 
 help:
 	@echo "Available targets:"
@@ -53,11 +54,11 @@ help:
 	@echo "  foundry-app-only-preflight - Read-only validation of existing private app-release dependencies"
 	@echo "  foundry-app-images-verify - Verify active Container App revisions use the selected private ACR"
 	@echo "  foundry-hosted-app-deploy - Build, push, and activate a hosted-agent version without provisioning"
+	@echo "  foundry-postgres-bootstrap - Apply schema and least-privilege runtime credentials from the private runner"
+	@echo "  foundry-postgres-readiness - Verify private-only PostgreSQL networking and runtime privileges"
 	@echo "  foundry-app-only-release - Deploy only ACA revisions and a hosted-agent image/version"
-	@echo "  foundry-connectivity-proof - Record ACA and hosted-agent PostgreSQL connectivity proof"
-	@echo "  foundry-postgres-lockdown - Disable PostgreSQL public access using recorded connectivity proof"
 	@echo "  foundry-evidence - Collect hosted E2E, evaluation, and telemetry evidence"
-	@echo "  foundry-release - Test, provision, deploy apps and hosted agent, proof, lockdown, evidence"
+	@echo "  foundry-release - Test, provision private PostgreSQL, deploy, and collect evidence"
 	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
 	@echo "  foundry-access-path - Recreate the private runner VM/Bastion through the selected AZD environment"
 	@echo "  clean           - Remove caches and test artifacts"
@@ -333,6 +334,14 @@ foundry-app-images-verify:
 foundry-app-only-preflight:
 	./scripts/foundry/validate_private_app_release.sh
 
+foundry-postgres-bootstrap:
+	POSTGRES_PROFILE_FILE="$(PRIVATE_DEPLOYMENT_PROFILE)" \
+	POSTGRES_AZD_ENVIRONMENT="$${AZD_ENVIRONMENT_NAME:-$${AZURE_ENV_NAME:-ora-foundry-private}}" \
+	./scripts/foundry/provision_postgres_runtime_credentials.sh
+
+foundry-postgres-readiness:
+	./scripts/foundry/verify_private_postgres_readiness.sh
+
 foundry-hosted-app-deploy: ensure-foundry-deploy-env
 	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
@@ -341,28 +350,10 @@ foundry-hosted-app-deploy: ensure-foundry-deploy-env
 
 foundry-app-only-release:
 	$(MAKE) foundry-app-only-preflight
+	$(MAKE) foundry-postgres-readiness
 	$(MAKE) foundry-app-deploy
 	$(MAKE) foundry-app-images-verify
 	$(MAKE) foundry-hosted-app-deploy
-
-foundry-connectivity-proof:
-	./scripts/foundry/verify_private_connectivity.sh
-
-foundry-postgres-lockdown:
-	@set -euo pipefail; \
-	cd infra/foundry-hosted && \
-	resource_group="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value AZURE_RESOURCE_GROUP)"; \
-	postgres_server="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_SERVER_NAME 2>/dev/null || true)"; \
-	postgres_fqdn="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_SERVER_FQDN 2>/dev/null || true)"; \
-	private_endpoint="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_PRIVATE_ENDPOINT_NAME 2>/dev/null || true)"; \
-	private_dns_zone="$$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value POSTGRES_PRIVATE_DNS_ZONE_NAME 2>/dev/null || true)"; \
-	AZURE_RESOURCE_GROUP="$$resource_group" \
-	POSTGRES_SERVER_NAME="$$postgres_server" \
-	POSTGRES_SERVER_FQDN="$$postgres_fqdn" \
-	POSTGRES_PRIVATE_ENDPOINT_NAME="$$private_endpoint" \
-	POSTGRES_PRIVATE_DNS_ZONE_NAME="$$private_dns_zone" \
-	POSTGRES_CONNECTIVITY_EVIDENCE_FILE="$${POSTGRES_CONNECTIVITY_EVIDENCE_FILE:-../../backend/.foundry/results/private-connectivity-proof.json}" \
-	"../../scripts/foundry/harden_postgres_private_access.sh"
 
 foundry-evidence: ensure-backend-env
 	./scripts/foundry/collect_private_release_evidence.sh
@@ -372,11 +363,11 @@ foundry-release:
 	$(MAKE) foundry-release-preflight
 	$(MAKE) foundry-provision-preview
 	$(MAKE) foundry-provision
+	$(MAKE) foundry-postgres-bootstrap
+	$(MAKE) foundry-postgres-readiness
 	$(MAKE) foundry-project-connections
 	$(MAKE) foundry-app-deploy
 	$(MAKE) foundry-deploy
-	$(MAKE) foundry-connectivity-proof
-	$(MAKE) foundry-postgres-lockdown
 	$(MAKE) foundry-evidence
 
 foundry-smoke:

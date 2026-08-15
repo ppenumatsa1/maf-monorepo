@@ -230,9 +230,6 @@ param postgresBackupRetentionDays int
 @description('Enable the PostgreSQL private endpoint and DNS zone.')
 param enablePostgresPrivateEndpoint bool
 
-@description('Keep the temporary Azure-services PostgreSQL firewall rule during staged cutover.')
-param createPostgresAzureServicesFirewall bool
-
 var suffix = toLower(uniqueString(resourceGroup().id))
 var normalizedPrefix = toLower(replace(namePrefix, '-', ''))
 var effectiveFoundryAccountName = take('${normalizedPrefix}ai${suffix}', 64)
@@ -379,7 +376,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = if (createPostgresServerEffective) {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = if (createPostgresServerEffective) {
   name: effectivePostgresServerName
   location: postgresLocation
   sku: {
@@ -400,23 +397,17 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' =
     highAvailability: {
       mode: 'Disabled'
     }
+    network: {
+      publicNetworkAccess: 'Disabled'
+    }
   }
 }
 
-resource existingPostgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' existing = if (!createPostgresServerEffective) {
+resource existingPostgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existing = if (!createPostgresServerEffective) {
   name: effectivePostgresServerName
 }
 
-resource postgresAzureServicesFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2022-12-01' = if (createPostgresServerEffective && createPostgresAzureServicesFirewall) {
-  name: 'allow-azure-services'
-  parent: postgresServer
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-
-resource postgresWorkflowDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = if (createPostgresServerEffective) {
+resource postgresWorkflowDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = if (createPostgresServerEffective) {
   name: postgresDatabaseName
   parent: postgresServer
   properties: {

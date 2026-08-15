@@ -71,9 +71,6 @@
     "enablePostgresPrivateEndpoint": {
       "value": "${ENABLE_POSTGRES_PRIVATE_ENDPOINT}"
     },
-    "createPostgresAzureServicesFirewall": {
-      "value": "${CREATE_POSTGRES_AZURE_SERVICES_FIREWALL}"
-    },
     "createNatGateway": {
       "value": "${CREATE_NAT_GATEWAY}"
     },

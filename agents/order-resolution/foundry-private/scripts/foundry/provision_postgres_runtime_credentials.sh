@@ -50,6 +50,23 @@ get_input_alias() {
   printf '%s' "$value"
 }
 
+get_optional_alias() {
+  local primary="$1"
+  local fallback="$2"
+  local value
+  value="$(printenv "$primary" 2>/dev/null || true)"
+  [[ -n "$value" ]] || value="$(printenv "$fallback" 2>/dev/null || true)"
+  if [[ -z "$value" && -n "$AZD_PROFILE" ]]; then
+    value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$primary" \
+      --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true)"
+    [[ -n "$value" ]] || value="$(
+      AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$fallback" \
+        --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
+    )"
+  fi
+  printf '%s' "$value"
+}
+
 save_profile_secret() {
   local name="$1"
   local value="$2"
@@ -95,9 +112,29 @@ server_fqdn="$(get_input_alias POSTGRES_SERVER_FQDN POSTGRES_SERVER_NAME)"
 [[ "$server_fqdn" == *.* ]] || server_fqdn="${server_fqdn}.postgres.database.azure.com"
 database_name="$(get_input_alias POSTGRES_DATABASE POSTGRES_DATABASE_NAME)"
 runtime_username="$(get_input POSTGRES_RUNTIME_USERNAME)"
-runtime_password="$(get_input_alias POSTGRES_RUNTIME_PASSWORD POSTGRES_HOSTED_PASSWORD)"
+runtime_password="$(get_optional_alias POSTGRES_RUNTIME_PASSWORD POSTGRES_HOSTED_PASSWORD)"
 admin_username="$(get_input POSTGRES_ADMIN_USERNAME)"
 admin_password="$(get_input POSTGRES_ADMIN_PASSWORD)"
+
+if [[ -z "$runtime_password" ]]; then
+  existing_runtime_url="$(get_optional_alias RUNTIME_DATABASE_URL DATABASE_URL)"
+  if [[ -n "$existing_runtime_url" ]]; then
+    runtime_password="$(
+      RUNTIME_DATABASE_URL="$existing_runtime_url" python3 - <<'PY'
+import os
+from urllib.parse import unquote, urlsplit
+
+value = os.environ["RUNTIME_DATABASE_URL"]
+if value.startswith("postgresql+psycopg://"):
+    value = "postgresql://" + value.removeprefix("postgresql+psycopg://")
+print(unquote(urlsplit(value).password or ""))
+PY
+    )"
+  fi
+fi
+if [[ -z "$runtime_password" ]]; then
+  runtime_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+fi
 
 [[ "$server_fqdn" =~ ^[A-Za-z0-9][A-Za-z0-9-]*\.postgres\.database\.azure\.com$ ]] || {
   echo "POSTGRES_SERVER_FQDN must be a canonical PostgreSQL Flexible Server FQDN." >&2

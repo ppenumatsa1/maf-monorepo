@@ -114,7 +114,9 @@ def test_private_aca_topology_keeps_ingress_identity_dns_and_postgres_guardrails
     assert "module postgresPrivateEndpoint " in bicep
     assert "groupIds: [\n      'postgresqlServer'\n    ]" in bicep
     assert "privatelink.postgres.database.azure.com" in bicep
-    assert "createPostgresAzureServicesFirewall bool" in bicep
+    assert "publicNetworkAccess: 'Disabled'" in bicep
+    assert "createPostgresAzureServicesFirewall" not in bicep
+    assert "allow-azure-services" not in bicep
     assert "resource backendContainerAppFoundryUserRoleAssignment " in bicep
     assert "principalId: backendContainerApp!.identity.principalId" in bicep
     assert "type: 'SystemAssigned, UserAssigned'" in backend

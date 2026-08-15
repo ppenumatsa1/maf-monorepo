@@ -63,21 +63,19 @@ The release target executes this fixed sequence:
    provisioning;
 4. backend then frontend ACA deployment;
 5. hosted-agent deployment from the current source;
-6. ACA readiness plus hosted-agent workflow proof of PostgreSQL connectivity;
-7. PostgreSQL public-network lockdown and removal of the Azure-services
-   firewall rule only after fresh generated ACA and hosted-agent connectivity
-   proof;
-8. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
+6. private PostgreSQL readiness before application activation;
+7. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
 
 ```bash
 make foundry-provision-preview  # no Azure resource changes
 make foundry-release
 ```
 
-Deployment workflows start when dispatched. The generated proof—not an
-approval or confirmation input—prevents a partially configured release from
-reaching irreversible lockdown. No path exposes a password-repair,
-public-access, firewall, or administrator-user workaround.
+Deployment workflows start when dispatched. PostgreSQL is private-only from
+creation, and the VNet-runner readiness gate prevents application deployment
+against an invalid endpoint, DNS mapping, schema, or runtime role. No path
+exposes a password-repair, public-access, firewall, or administrator-user
+workaround.
 
 ### Staged Foundry project connections
 
@@ -100,22 +98,11 @@ wait for Azure's delete operation to complete and retry the same staged
 provision; this is a platform timing condition, not a network-control bypass.
 
 The frontend is the only external ingress and proxies browser `/api` traffic to
-the internal backend ACA. Both Container Apps keep one minimum replica so the
-private connectivity proof can verify the backend's PostgreSQL schema startup
-without a scale-to-zero race. Lockdown consumes
-`backend/.foundry/results/private-connectivity-proof.json`, produced by
-`make foundry-connectivity-proof`; it cannot be authorized with a manually set
-environment flag. The proof must report the same canonical FQDN as
-`POSTGRES_SERVER_NAME`/`RUNTIME_DATABASE_URL`; by default it expires after one
-hour. Lockdown additionally verifies that the approved `postgresqlServer`
-private endpoint, private-DNS A record, and VNet link all target that server.
-It removes the Azure-services firewall rule before disabling public access
-because Flexible Server no longer permits firewall-rule operations afterward.
-
-The latest recorded target is
-`maffndpgv20722.postgres.database.azure.com`. This is an operational record,
-not a template default: `make foundry-preflight` and the selected AZD
-environment are authoritative if the canonical server changes.
+the internal backend ACA. Before application deployment,
+`make foundry-postgres-readiness` verifies that the canonical server is Ready
+with public access disabled, the approved `postgresqlServer` private endpoint
+and private-DNS A record target that server, the runner resolves the private
+IP, and the runtime role retains its exact least-privilege contract.
 
 ### Soft-deleted Foundry account recovery
 
