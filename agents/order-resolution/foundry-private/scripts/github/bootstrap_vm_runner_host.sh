@@ -92,6 +92,10 @@ post_verify() {
   run_privileged systemctl start docker
   run_privileged usermod -aG docker "${RUNNER_USER}" || true
   run_privileged docker version >/dev/null
+  AZD_CONFIG_DIR=/mnt/.azd AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd ext install azure.ai.agents --no-prompt
+  AZD_CONFIG_DIR=/mnt/.azd AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd ext install azure.ai.connections --no-prompt
 
   echo "Runner host bootstrap completed successfully for user: ${RUNNER_USER}"
   echo "Note: If docker group was newly assigned, re-login may be required for non-sudo docker commands."

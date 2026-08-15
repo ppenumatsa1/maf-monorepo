@@ -1517,3 +1517,9 @@ connection. `main.parameters.json` had never mapped `RUNTIME_DATABASE_URL` to
 the Bicep `runtimeDatabaseUrl` parameter, so the conditional connection module
 was skipped even though its fallback name appeared in outputs. The secure
 parameter is now explicitly mapped.
+
+**Runner extension bootstrap.** Release run `31896500778` passed the full live
+dependency/RBAC preflight and then stopped before image build because AZD
+refuses automatic extension installation in CI. Runner host bootstrap now
+preinstalls the required `azure.ai.agents` and `azure.ai.connections`
+extensions; app-only workflows remain non-bootstrap release paths.
