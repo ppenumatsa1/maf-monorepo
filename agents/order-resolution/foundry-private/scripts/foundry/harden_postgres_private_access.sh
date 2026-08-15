@@ -191,15 +191,15 @@ if [[ "${public_network_access}" == "Enabled" ]]; then
   azure_services_rule="$(
     az postgres flexible-server firewall-rule list \
       --resource-group "${AZURE_RESOURCE_GROUP}" \
-      --name "${postgres_server_name}" \
+      --server-name "${postgres_server_name}" \
       --query "[?name=='allow-azure-services'].name" \
       --output tsv
   )"
   if [[ "${azure_services_rule}" == "allow-azure-services" ]]; then
     az postgres flexible-server firewall-rule delete \
       --resource-group "${AZURE_RESOURCE_GROUP}" \
-      --name "${postgres_server_name}" \
-      --rule-name allow-azure-services \
+      --server-name "${postgres_server_name}" \
+      --name allow-azure-services \
       --yes \
       --only-show-errors \
       --output none
@@ -207,7 +207,7 @@ if [[ "${public_network_access}" == "Enabled" ]]; then
     azure_services_rule="$(
       az postgres flexible-server firewall-rule list \
         --resource-group "${AZURE_RESOURCE_GROUP}" \
-        --name "${postgres_server_name}" \
+        --server-name "${postgres_server_name}" \
         --query "[?name=='allow-azure-services'].name" \
         --output tsv
     )"

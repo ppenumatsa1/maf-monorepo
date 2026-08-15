@@ -1625,3 +1625,9 @@ same `properties.network.publicNetworkAccess=Disabled` update through the
 generic ARM resource command using the already validated canonical server
 resource ID. All proof, private-endpoint, DNS, target, freshness, and
 post-update state checks remain unchanged.
+
+Retry `31902331183` reached the firewall cleanup and exposed a second CLI
+surface mismatch: the firewall-rule commands use `--server-name`, while
+`--name` identifies the firewall rule itself. The helper now uses
+`--server-name` for the canonical server and `--name allow-azure-services` for
+the exact rule deletion before the ARM public-access update.
