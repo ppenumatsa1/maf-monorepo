@@ -159,6 +159,7 @@ All validation checks pass only when the following evidence exists:
 | PostgreSQL lifecycle safety | Passed: bootstrap alone includes PostgreSQL and its exact operator-IP firewall rule; transition verifies server/database identity, deletes and verifies only `allow-bootstrap-runner`, then clears the IP and selects `steadyState`; grant hook exits without mutation in steady state |
 | Static role review | Passed: backend/frontend `AcrPull` is scoped to ACR, backend Cognitive Services OpenAI User is scoped to the Foundry account, backend Foundry User is scoped to the project, and the project identity Foundry User role is scoped to the account. No resource-group or subscription-scope application data roles |
 | Immutable image and fresh release evidence | Passed on 2026-08-15: exact backend/frontend images passed Docker E2E, were pushed by digest and deployed app-only; fresh smoke, hosted browser E2E, report-only Foundry evaluation, and exact-pair Application Insights validation all passed |
+| Current pre-release revalidation | Passed on 2026-08-15: AZD authentication/target checks, package builds for both services, policy summary, and non-mutating preview. The preview contained no create/delete/replace operations; reported modifications were Azure API/default-property readback drift, so infrastructure apply remains prohibited for this app-only release |
 
 The target resource group did not exist before either preview. Both
 `azd provision --preview --environment maf-ora-azure --no-prompt` runs stated

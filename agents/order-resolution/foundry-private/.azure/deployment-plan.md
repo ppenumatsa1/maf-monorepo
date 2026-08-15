@@ -156,6 +156,7 @@ mutated.
 | Azure Policy validation | Existing Entra-only PostgreSQL audit recorded as a separate passwordless-authentication follow-up. |
 | `azd provision --preview --no-prompt` | Passed; PostgreSQL and private endpoints were unchanged, with no delete/replace/public-access/firewall action. |
 | Static role verification | Passed; the cutover changes no RBAC assignments. |
+| Current pre-release revalidation | Passed on 2026-08-15: all three packages built, policy summary reported no non-compliance, and the non-mutating preview contained no create/delete/replace operations. PostgreSQL and all private endpoints were skipped; reported modifications were Azure API/default-property readback drift, so no infrastructure apply is authorized. |
 
 ## Live deployment and release evidence
 

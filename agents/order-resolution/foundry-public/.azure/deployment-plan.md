@@ -267,6 +267,9 @@ gitignored release-window report under `backend/.foundry/results/`.
   `modify/action` evaluation events for the hypothetical Foundry account and
   evaluation storage. It contains no resource-group write, provider resource
   write, deployment write, or delete operation; no resource was persisted.
+- The 2026-08-15 pre-release revalidation confirmed the selected subscription,
+  East US 2 target, successful hosted-agent package, a no-op reuse preview for
+  all ten existing resources, and no resource-group policy non-compliance.
 
 ## 8. Provisioning proof
 

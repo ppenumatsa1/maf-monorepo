@@ -33,7 +33,7 @@ The hosted runtime URL is converged into the Underwriting project
 `underwritingruntimesecrets` `CustomKeys` connection after credential
 provisioning; agent metadata contains only its connection placeholder.
 
-## Validation evidence
+## 7. Validation Proof
 
 - The target resource group exists in the intended subscription and region.
 - Bicep compilation, deployment-profile/bootstrap-contract tests, PostgreSQL
@@ -44,6 +44,36 @@ provisioning; agent metadata contains only its connection placeholder.
   resources without applying changes.
 - Explicit reuse preview skips every existing resource without applying
   changes.
+
+## All validation checks pass
+
+- [x] 1. AZD Installation
+- [x] 2. Schema Validation
+- [x] 3. Environment Setup
+- [x] 4. Authentication Check
+- [x] 5. Subscription/Location Check
+- [x] 6. Aspire Pre-Provisioning Checks (not applicable)
+- [x] 7. Provision Preview
+- [x] 8. Build Verification
+- [x] 9. Docker Build Context Validation
+- [x] 10. Package Validation
+- [x] 11. Azure Policy Validation
+- [x] 12. Aspire Post-Provisioning Checks (not applicable)
+
+The 2026-08-15 reuse preview skipped all ten existing resources, package
+validation built all three deployable services, and the resource-group policy
+summary reported no non-compliant policies or resources.
+
+## Role Assignment Verification
+
+- **Status:** Verified.
+- **Identities checked:** backend Container App, frontend Container App,
+  Foundry account, and Foundry project managed identities.
+- **Roles confirmed:** resource-scoped ACR pull/repository reader, Foundry user,
+  Azure AI user, monitoring reader, and evaluation Storage Blob Data Owner
+  assignments.
+- **Issues:** None. Reuse mode creates no role assignments, and the app-only
+  release does not mutate RBAC.
 
 ## Delivery flow
 
