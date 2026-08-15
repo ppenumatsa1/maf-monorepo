@@ -1491,3 +1491,10 @@ RBAC succeeded; deployment output confirmed project capability host
 `maforaprivprojhost4u2gr5q5plofy`. The canonical target profile is now in
 `reuse` mode so subsequent release operations cannot recreate stateful
 infrastructure.
+
+**GitHub OIDC immutable-subject policy.** Release run `31895832347` reached the
+new runner but Azure login rejected the conventional
+`repo:owner/repository:ref:...` subject. This repository emits GitHub's
+immutable-ID subject form (`owner@id/repository@id`). Identity bootstrap now
+queries GitHub for those IDs and creates the exact protected-main federated
+subject instead of assuming the conventional format.
