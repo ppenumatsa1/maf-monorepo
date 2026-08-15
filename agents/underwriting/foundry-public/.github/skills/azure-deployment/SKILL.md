@@ -32,16 +32,21 @@ Guidance:
 
 - Infra/auth/firewall changes -> include `make foundry-provision` and the PostgreSQL credential/schema steps.
 - Hosted agent/runtime changes -> `make foundry-deploy`.
-- Public adapter changes -> `make foundry-backend-deploy`.
-- Public frontend changes -> `make foundry-frontend-deploy`.
+- Internal backend adapter changes -> `make foundry-backend-deploy`.
+- External proxy frontend changes -> `make foundry-frontend-deploy`.
 - Use `make foundry-release-deploy` for a complete release deployment. It runs
-  PostgreSQL readiness once, then safely builds/deploys the public backend,
-  frontend, and hosted agent concurrently.
-- Do not serialize independent component deployments. The frontend resolves the
-  existing stable backend FQDN and does not require the backend image rollout
-  to finish first.
+  PostgreSQL readiness once, packages all services, deploys the hosted agent
+  and persists its active metadata, then builds/deploys the internal backend
+  and external frontend concurrently.
+- Backend and frontend remain parallel only after hosted metadata is durable.
+  The frontend resolves the existing stable backend FQDN and does not require
+  the backend image rollout to finish first.
 - Provision only for actual IaC changes. Application, Docker, script, and
   telemetry changes reuse existing infrastructure after the validated preview.
+- For a legacy environment whose backend still has external ingress, run the
+  separately guarded
+  `make foundry-backend-internalize CONFIRM=INTERNALIZE-<backend>` migration
+  before the first standardized routine release.
 
 ## Post-deploy verification
 
@@ -51,6 +56,8 @@ Run the required gates in dependency order:
 make foundry-smoke
 make -j2 foundry-hosted-e2e foundry-eval
 make foundry-telemetry
+make foundry-verify
+make foundry-evidence
 ```
 
 If the deployed frontend is in scope, also run:

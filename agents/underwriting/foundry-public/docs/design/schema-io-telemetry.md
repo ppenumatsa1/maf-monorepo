@@ -68,19 +68,45 @@
 - Runtime discovery: `GET /api/v1/underwriting/copilotkit/info`
 - Run route:
   `POST /api/v1/underwriting/copilotkit/agent/underwriting-run-assistant/run`
-- The browser uses the same configured backend base URL as the operations API.
-  CORS and the run route accept only `FRONTEND_ORIGIN`; no browser credential or direct Foundry request is used.
+- The browser uses relative `/api` paths on the frontend origin. The
+  Underwriting Nginx container proxies those paths to the internal backend
+  FQDN; no backend URL is baked into the browser bundle.
+- `/backend-health` is the same-origin verification path for backend health.
+  CORS remains defense in depth; no browser credential or direct Foundry
+  request is used.
 - The bridge sends only a selected run ID, normalized status, safe event names, safe executor names/timestamps, checkpoint counts/timestamps, and a categorical final decision. It excludes application, applicant, health, credit, income, prompts, raw model output, checkpoint payloads, and secrets.
 
 ## No-shims contract rules
 
-- Browser traffic stays on the public adapter contract above.
-- The public adapter starts or resumes hosted Responses work; it must not grow a second production orchestration contract.
+- Browser traffic stays on the external frontend's same-origin proxy contract
+  above.
+- The internal backend adapter starts or resumes hosted Responses work; it
+  must not grow a second production orchestration contract.
 - Durable reads for refresh/replay/assistant explanation come from PostgreSQL-backed projections.
 - Local-only validation settings must not leak into deployed public-lane behavior.
 - Resume accepts only checkpoints produced by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
 
 ## Database surfaces
+
+Production backend and hosted-agent environments set
+`DB_SCHEMA_MANAGED_EXTERNALLY=true`. `init_db` then performs read-only
+table/column/index parity validation and fails startup when required objects are
+missing. Only the explicit administrator schema command may emit
+`CREATE TABLE`, `ALTER TABLE`, or index DDL. Local and test defaults retain
+automatic schema creation/migration.
+
+### Hosted runtime secret contract
+
+- The deterministic Foundry project connection is
+  `underwritingruntimesecrets`, category/auth type `CustomKeys`.
+- Its `database_url` key contains the least-privilege TLS runtime URL.
+- Hosted agent `DATABASE_URL` and `RUNTIME_DATABASE_URL` values are both the
+  literal placeholder
+  `${{connections.underwritingruntimesecrets.credentials.database_url}}`.
+- Agent metadata verification compares that literal placeholder only. It never
+  requests or compares the resolved password-bearing value.
+- PostgreSQL readiness and hosted smoke are the connectivity proof after
+  Foundry resolves the connection.
 
 - `maf_checkpoints`: MAF checkpoint payloads used for workflow resume.
 - `workflow_runs`: run lifecycle summary and status.
@@ -106,7 +132,7 @@
 ### Public UI to Foundry correlation
 
 `FOUNDRY_PROJECT_ENDPOINT` is the canonical Foundry project endpoint
-configuration. For start and resume actions, the public adapter derives and
+configuration. For start and resume actions, the internal backend adapter derives and
 invokes the `underwriting-hosted` agent-specific Responses endpoint from that
 project endpoint. Start input carries the validated application only in the
 Responses body so the hosted workflow can execute it. Responses metadata
@@ -120,7 +146,11 @@ contains only safe identifiers:
 }
 ```
 
-The hosted handler executes MAF and writes PostgreSQL checkpoints, events, state, and final results. The public adapter reads those projections. The browser, public adapter, Responses metadata, and telemetry must never expose a PostgreSQL credential or token. OpenTelemetry model-content capture remains disabled.
+The hosted handler executes MAF and writes PostgreSQL checkpoints, events,
+state, and final results. The internal backend adapter reads those projections.
+The browser, frontend proxy, internal backend responses, Responses metadata,
+and telemetry must never expose a PostgreSQL credential or token. OpenTelemetry
+model-content capture remains disabled.
 
 The `foundry.responses.invoke` span deliberately provides
 `gen_ai.input.messages` and `gen_ai.output.messages` for report-only

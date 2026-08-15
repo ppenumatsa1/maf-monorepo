@@ -23,14 +23,18 @@ def required(name: str) -> str:
 endpoint = required("AZURE_AI_PROJECT_ENDPOINT")
 agent_name = required("HOSTED_AGENT_NAME")
 image = required("HOSTED_AGENT_IMAGE")
-runtime_database_url = required("RUNTIME_DATABASE_URL")
+runtime_connection_name = required("FOUNDRY_RUNTIME_CONNECTION_NAME")
+runtime_database_placeholder = (
+    f"${{{{connections.{runtime_connection_name}.credentials.database_url}}}}"
+)
 
 environment_variables = {
     "APP_ENV": "production",
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
-    "DATABASE_URL": runtime_database_url,
-    "RUNTIME_DATABASE_URL": runtime_database_url,
+    "DATABASE_URL": runtime_database_placeholder,
+    "RUNTIME_DATABASE_URL": runtime_database_placeholder,
     "DB_AUTH_MODE": "password",
+    "DB_SCHEMA_MANAGED_EXTERNALLY": required("DB_SCHEMA_MANAGED_EXTERNALLY"),
     "UNDERWRITING_MODEL_DEPLOYMENT_NAME": required("UNDERWRITING_MODEL_DEPLOYMENT_NAME"),
     "AZURE_OPENAI_ENDPOINT": required("AZURE_OPENAI_ENDPOINT"),
     "ENABLE_INSTRUMENTATION": "true",
@@ -56,9 +60,7 @@ with AIProjectClient(endpoint=endpoint, credential=DefaultAzureCredential()) as 
     print(f"Created {agent_name} version {created.version} from {image}.")
 
     for attempt in range(60):
-        version = project.agents.get_version(
-            agent_name=agent_name, agent_version=created.version
-        )
+        version = project.agents.get_version(agent_name=agent_name, agent_version=created.version)
         status = version["status"]
         print(f"{attempt + 1}/60: {status}")
         if status == "active":

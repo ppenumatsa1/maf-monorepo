@@ -13,7 +13,7 @@ SHARED_PROFILE_APPLICATOR := ../deployment/apply-azd-profile.sh
 	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-app-images-verify foundry-app-only-preflight foundry-hosted-app-deploy \
 	foundry-postgres-bootstrap foundry-postgres-readiness foundry-app-only-release \
-	foundry-evidence foundry-release foundry-smoke foundry-access-path
+	foundry-evidence foundry-release foundry-smoke foundry-access-path release-history-migration-plan
 
 help:
 	@echo "Available targets:"
@@ -350,10 +350,13 @@ foundry-hosted-app-deploy: ensure-foundry-deploy-env
 foundry-app-only-release:
 	$(MAKE) foundry-app-only-preflight
 	$(MAKE) foundry-postgres-readiness
-	./scripts/foundry/deploy_private_app_release.sh
+	PRIVATE_RELEASE_PREREQUISITES_PASSED=true ./scripts/foundry/deploy_private_app_release.sh
 
 foundry-evidence: ensure-backend-env
 	./scripts/foundry/collect_private_release_evidence.sh
+
+release-history-migration-plan:
+	python3 ./scripts/foundry/migrate_release_history.py --project-root "$(CURDIR)"
 
 foundry-release:
 	$(MAKE) test
@@ -363,8 +366,7 @@ foundry-release:
 	$(MAKE) foundry-postgres-bootstrap
 	$(MAKE) foundry-postgres-readiness
 	$(MAKE) foundry-project-connections
-	$(MAKE) foundry-app-deploy
-	$(MAKE) foundry-deploy
+	$(MAKE) foundry-app-only-release
 	$(MAKE) foundry-evidence
 
 foundry-smoke:

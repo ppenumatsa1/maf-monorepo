@@ -31,14 +31,24 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 Canonical contract: `docs/design/engineering-operating-model.md`.
 
 The Azure deployment lane is one app-hosted package: two Container Apps in
-`rg-maf-ora-azure` in North Central US, with Foundry limited to models and
+subscription `7df95e88-701c-4693-af77-3159f83b558d`,
+`rg-maf-ora-azure`, in North Central US, with Foundry limited to models and
 evaluations. East US is excluded because of the Azure PostgreSQL offer
 restriction. Do not claim deployment until current validation evidence exists.
 Normal releases are `make release-app` app-only releases. PostgreSQL is
 retained: never recreate, replace, or reset it. Infrastructure reconciliation
-requires explicit owner confirmation, a non-secret reference, and a Bicep
-preview; it is never implicit. Require fresh release-thread correlation across smoke, hosted E2E,
-report-only evaluation, and Application Insights before claiming validation.
+is never implicit, but invoking its validated workflow is execution intent:
+apply obtains its own Bicep what-if and requires the existing PostgreSQL server
+and database to be absent because steady-state IaC excludes PostgreSQL. Do not add owner approval/reference or
+caller-supplied digest gates. Require fresh smoke, hosted browser E2E, the
+three HTTP domain scenarios, a completed report-only evaluation with zero
+failed or errored rows, exact Application Insights correlation, and final
+evidence before claiming validation. Keep deployment ownership local to this
+project: `deployment/profiles/azure-hosted.env`, `deployment/profile.sh`, and
+`deployment/contracts/` must not depend on another lane. Generated release JSON
+belongs under `.artifacts/releases/<release-id>/evidence/`; logs belong under
+the sibling `logs/` directory. Failed validation must still emit final failed
+evidence.
 Retain the CFS Python package feed and Alpine/musl-compatible frontend build.
 
 ## Workflow Guardrails

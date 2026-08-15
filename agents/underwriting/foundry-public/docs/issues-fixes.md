@@ -41,6 +41,7 @@ as current topology or release evidence for this cutover.
 | Local quality and unit validation | Complete | Targeted backend tests, Ruff, frontend lint/build, and isolated local E2E pass. |
 | Local end-to-end validation | Complete | Isolated PostgreSQL, Uvicorn, Vite, Playwright, and a CopilotKit selected-run response pass with the explicit local-only execution mode. |
 | Resource-reuse IaC source | Complete | Bicep declares password auth, narrowed firewall posture, and resource reuse without secrets in parameters. |
+| Environment-independent bootstrap IaC | Validated; deployment pending | Bootstrap/reuse previews, package validation, policy/RBAC review, and local contract checks pass. No lane resources have been deployed to the new target. |
 | Credential provisioning source | Complete | Versioned script provisions/rotates the least-privilege hosted runtime role from secure local input and validates TLS/readiness. |
 | Hosted-only executor source | Complete | Public adapter relays Responses work; `backend/foundry/main.py` owns the production MAF runner. |
 | CopilotKit runtime route | Complete | Configured-origin REST discovery and named assistant route are E2E-covered; safe selected-run fields only. |
@@ -51,6 +52,32 @@ as current topology or release evidence for this cutover.
 | Hosted agent/public adapter/frontend deployment | Complete | Agent v41, backend revision `azcawhcedyxchnbtmpubbe--0000020`, and frontend revision `azcawhcedyxchnbtmpubfe--0000011` are running. |
 | Hosted smoke, E2E, telemetry, evaluation | Complete | Fresh smoke, deployed E2E, report-only Foundry evaluation, and Application Insights validation passed; identifiers are recorded below. |
 | Native evaluator generation | Blocked | The organization-enforced storage policy prevents the required public evaluation-storage route. A policy exemption or private networking is required for this optional generation path. |
+
+## Environment-independent bootstrap IaC
+
+**Change.** Replaced the reuse-only infrastructure contract with explicit
+`bootstrap` and `reuse` modes. Bootstrap parameterizes and creates the public
+lane's Foundry account/project/model deployment, ACR, monitoring, Container
+Apps environment/apps, identities, PostgreSQL, and evaluation storage. Reuse
+is explicitly non-mutating. The profile/bootstrap scripts derive globally
+scoped resource names from the selected subscription/resource group and
+`NAME_PREFIX`, then hydrate the AZD environment from deployed outputs.
+
+**Root cause / learning.** The old operational scripts assumed one pre-existing
+environment and the destructive PostgreSQL recovery helper was tied to its
+original subscription and server. That made a fresh subscription require
+manual source changes. The recovery helper now reads the selected AZD
+environment and still requires a server-specific `REBUILD-<server>` token.
+
+**Validation.** Deployment-profile contract, PostgreSQL credential tests,
+bootstrap-contract test, Bicep compilation, shell syntax checks, package
+validation, bootstrap preview, explicit reuse preview, policy review, and
+static RBAC review pass. The target resource group exists; no lane resources,
+model deployment, role assignment, or application has been deployed there.
+
+**Delivery policy.** Validated bootstrap or release workflow invocation is the
+execution trigger. No additional manual approval checkpoint is required;
+destructive PostgreSQL rebuild remains token-protected.
 
 ## 2026-08-06 - Direct-executor master-workflow cutover
 
@@ -110,20 +137,17 @@ authentication, public network setting, Azure-services firewall rule, and
 Central US location, so it works whether the server exists or has just been
 deleted.
 
-The versioned `rebuild_postgres_server.sh` is intentionally hard-coded to
-subscription `4f18d577-3506-4a11-85e5-a83b14727a84`, resource group
-`rg-underwriting-readiness-0731`, and server
-`azpgwhcedyxchnbtmpub`. It refuses every confirmation value except
-`REBUILD-azpgwhcedyxchnbtmpub`, requires the secure local
-`POSTGRES_ADMIN_PASSWORD` before deletion, confirms the active subscription,
-deletes only that named server, waits for the deletion operation, and invokes
-the ordinary `foundry-provision` target with the captured server name,
-North Central US location, and `underwriting` database forced into the
-bootstrap environment. Bootstrap does not query PostgreSQL, so this works
-while the server is absent. It is retry-safe after a failed provision because
-an already-absent fixed server proceeds to Bicep recreation; it never accepts
-caller-controlled Azure target identifiers. The runtime
-least-privilege credential remains a separate post-provision action.
+The original version was hard-coded to one subscription, resource group, and
+server. It has been superseded by a selected-AZD-environment contract:
+subscription, resource group, server, location, and database are read from the
+active environment, and the required token is derived as
+`REBUILD-<server-name>`. Before deletion, the script verifies the active
+subscription and, when the server exists, reads its live location and refuses
+to continue unless it matches the selected environment's location. It then
+waits for deletion and invokes the ordinary `foundry-provision` target.
+Bootstrap does not query PostgreSQL, so an already-absent selected server can
+be recreated safely. The runtime least-privilege credential remains a separate
+post-provision action.
 
 **Validation.** Source inspection recorded the live server configuration
 before implementation. Planned validation is Bicep compilation, Bash syntax

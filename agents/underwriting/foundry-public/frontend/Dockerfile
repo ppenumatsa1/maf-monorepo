@@ -6,14 +6,16 @@ COPY package*.json .npmrc ./
 RUN npm ci --include=dev --no-audit --no-fund
 
 COPY . .
-
-ARG VITE_API_BASE_URL=http://localhost:8000
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-
 RUN npm run build
 
 FROM nginx:1.27-alpine
 
+RUN apk add --no-cache gettext
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf.template /etc/nginx/templates/underwriting.conf.template
+COPY docker-entrypoint.sh /usr/local/bin/underwriting-entrypoint
+RUN chmod 0755 /usr/local/bin/underwriting-entrypoint
 
 EXPOSE 80
+
+ENTRYPOINT ["/usr/local/bin/underwriting-entrypoint"]

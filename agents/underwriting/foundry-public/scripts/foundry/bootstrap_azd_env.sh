@@ -25,10 +25,27 @@ if [[ -n "$azd_environment" ]]; then
 fi
 
 get_env_value() {
-  (
+  local value
+  if ! value="$(
     cd "$FOUNDRY_DIR"
-    AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" --no-prompt 2>/dev/null || true
-  )
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" --no-prompt 2>/dev/null
+  )"; then
+    return 0
+  fi
+  printf '%s' "$value"
+}
+
+set_if_missing() {
+  local key="$1"
+  local value="$2"
+  local existing
+  existing="$(get_env_value "$key")"
+  if [[ -z "$existing" && -n "$value" ]]; then
+    (
+      cd "$FOUNDRY_DIR"
+      AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set "$key" "$value" --no-prompt >/dev/null
+    )
+  fi
 }
 
 required_env_value() {
@@ -41,6 +58,11 @@ required_env_value() {
   fi
   printf '%s' "$value"
 }
+
+if [[ "$(get_env_value INFRASTRUCTURE_MODE)" == "bootstrap" && "${FOUNDRY_BOOTSTRAP_HYDRATE:-0}" != "1" ]]; then
+  echo "Bootstrap parameters are selected; infrastructure outputs will be hydrated after provisioning."
+  exit 0
+fi
 
 subscription_id="$(required_env_value AZURE_SUBSCRIPTION_ID)"
 resource_group="$(required_env_value AZURE_RESOURCE_GROUP)"
@@ -57,6 +79,22 @@ app_insights="$(required_env_value APPLICATION_INSIGHTS_NAME)"
 log_analytics="$(required_env_value LOG_ANALYTICS_WORKSPACE_NAME)"
 hosted_agent="$(required_env_value HOSTED_AGENT_NAME)"
 
+set_if_missing INFRASTRUCTURE_MODE reuse
+set_if_missing NAME_PREFIX underwriting
+set_if_missing FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$foundry_account"
+set_if_missing FOUNDRY_MODEL_FORMAT OpenAI
+set_if_missing FOUNDRY_MODEL_NAME gpt-4.1-mini
+set_if_missing FOUNDRY_MODEL_VERSION 2025-04-14
+set_if_missing FOUNDRY_MODEL_SKU_NAME GlobalStandard
+set_if_missing FOUNDRY_MODEL_CAPACITY 2500
+set_if_missing FOUNDRY_RAI_POLICY_NAME Microsoft.Default
+set_if_missing FOUNDRY_RUNTIME_CONNECTION_NAME underwritingruntimesecrets
+set_if_missing PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME reuse-placeholder
+set_if_missing BACKEND_IMAGE_REPOSITORY underwriting-public-backend
+set_if_missing FRONTEND_IMAGE_REPOSITORY underwriting-public-frontend
+set_if_missing EVALUATION_STORAGE_ACCOUNT_NAME reuse-placeholder
+set_if_missing BOOTSTRAP_RUNTIME_DATABASE_URL reuse-placeholder
+
 az account set --subscription "$subscription_id"
 azd auth login --check-status >/dev/null
 location="$(az group show --name "$resource_group" --query location -o tsv)"
@@ -64,14 +102,18 @@ if [[ "$location" != "$target_location" ]]; then
   echo "Selected AZD environment location does not match resource group location." >&2
   exit 1
 fi
-postgres_location="$(
-  az postgres flexible-server show \
-    --subscription "$subscription_id" \
-    --resource-group "$resource_group" \
-    --name "$postgres" \
-    --query location \
-    --output tsv
-)"
+if [[ "${POSTGRES_REBUILD:-0}" == "1" ]]; then
+  postgres_location="$(required_env_value POSTGRES_SERVER_LOCATION)"
+else
+  postgres_location="$(
+    az postgres flexible-server show \
+      --subscription "$subscription_id" \
+      --resource-group "$resource_group" \
+      --name "$postgres" \
+      --query location \
+      --output tsv
+  )"
+fi
 operator_ip="$(get_env_value POSTGRES_OPERATOR_IP)"
 if [[ -z "$operator_ip" ]]; then
   operator_ip="$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org)"
@@ -96,8 +138,11 @@ appinsights_resource_id="$(az monitor app-insights component show --resource-gro
   set_value AZURE_SUBSCRIPTION_ID "$subscription_id"
   set_value AZURE_RESOURCE_GROUP "$resource_group"
   set_value AZURE_LOCATION "$location"
+  set_value INFRASTRUCTURE_MODE reuse
   set_value FOUNDRY_ACCOUNT_NAME "$foundry_account"
   set_value FOUNDRY_PROJECT_NAME "$foundry_project"
+  set_value FOUNDRY_RUNTIME_CONNECTION_NAME "$(required_env_value FOUNDRY_RUNTIME_CONNECTION_NAME)"
+  set_value FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$foundry_account"
   set_value AZURE_AI_PROJECT_ENDPOINT "https://${foundry_account}.services.ai.azure.com/api/projects/${foundry_project}"
   set_value FOUNDRY_PROJECT_ENDPOINT "https://${foundry_account}.services.ai.azure.com/api/projects/${foundry_project}"
   set_value FOUNDRY_PROJECTS_ENDPOINT "https://${foundry_account}.services.ai.azure.com/api/projects/${foundry_project}"
@@ -111,9 +156,11 @@ appinsights_resource_id="$(az monitor app-insights component show --resource-gro
   set_value POSTGRES_RUNTIME_USERNAME "$(required_env_value POSTGRES_RUNTIME_USERNAME)"
   set_value POSTGRES_ADMIN_USERNAME "$(required_env_value POSTGRES_ADMIN_USERNAME)"
   set_value DB_AUTH_MODE "password"
+  set_value DB_SCHEMA_MANAGED_EXTERNALLY "true"
   set_value CONTAINER_APPS_ENVIRONMENT_NAME "$environment"
   set_value BACKEND_CONTAINER_APP_NAME "$backend"
   set_value PUBLIC_BACKEND_MANAGED_IDENTITY_NAME "$backend_identity"
+  set_value PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME "$(get_env_value PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME)"
   set_value FRONTEND_CONTAINER_APP_NAME "$frontend"
   set_value APPLICATION_INSIGHTS_NAME "$app_insights"
   set_value LOG_ANALYTICS_WORKSPACE_NAME "$log_analytics"

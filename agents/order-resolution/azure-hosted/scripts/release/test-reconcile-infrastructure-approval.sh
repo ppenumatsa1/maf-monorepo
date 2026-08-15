@@ -5,10 +5,10 @@ umask 077
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 TEST_DIR="$ROOT_DIR/.artifacts/reconcile-owner-test-$$-$RANDOM"
 FAKE_BIN="$TEST_DIR/bin"
-SUBSCRIPTION_ID="11111111-1111-1111-1111-111111111111"
+SUBSCRIPTION_ID="7df95e88-701c-4693-af77-3159f83b558d"
 POSTGRES_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres"
 POSTGRES_DATABASE_ID="$POSTGRES_ID/databases/maf_workflow"
-SUCCESS_RUN_ID="owner-confirmation-success-$$"
+SUCCESS_RUN_ID="direct-safe-apply-success-$$"
 
 cleanup() {
   rm -rf "$TEST_DIR" "$ROOT_DIR/.artifacts/release/$SUCCESS_RUN_ID"
@@ -20,12 +20,35 @@ cat >"$FAKE_BIN/azd" <<'EOF'
 #!/bin/bash
 set -euo pipefail
 [[ "$1 ${2:-}" == "env get-value" ]]
+if [[ "${FAKE_MISSING_AZD_VALUE:-}" == "$3" ]]; then
+  exit 0
+fi
 case "$3" in
-  AZURE_SUBSCRIPTION_ID) printf '%s\n' "11111111-1111-1111-1111-111111111111" ;;
+  AZURE_SUBSCRIPTION_ID) printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d" ;;
   AZURE_RESOURCE_GROUP) printf '%s\n' "rg-maf-ora-azure" ;;
   AZURE_LOCATION) printf '%s\n' "northcentralus" ;;
   AZURE_POSTGRES_HOST) printf '%s\n' "test-postgres.postgres.database.azure.com" ;;
   AZURE_POSTGRES_DATABASE) printf '%s\n' "maf_workflow" ;;
+  FOUNDRY_PROJECT_NAME) printf '%s\n' "order-resolution" ;;
+  FOUNDRY_CHAT_DEPLOYMENT_NAME) printf '%s\n' "gpt-4.1-mini" ;;
+  FOUNDRY_CHAT_MODEL_FORMAT) printf '%s\n' "OpenAI" ;;
+  FOUNDRY_CHAT_MODEL_NAME) printf '%s\n' "gpt-4.1-mini" ;;
+  FOUNDRY_CHAT_MODEL_VERSION) printf '%s\n' "2025-04-14" ;;
+  FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME) printf '%s\n' "Standard" ;;
+  FOUNDRY_CHAT_DEPLOYMENT_CAPACITY) printf '%s\n' "50" ;;
+  FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME) printf '%s\n' "text-embedding-3-small" ;;
+  FOUNDRY_EMBEDDINGS_MODEL_FORMAT) printf '%s\n' "OpenAI" ;;
+  FOUNDRY_EMBEDDINGS_MODEL_NAME) printf '%s\n' "text-embedding-3-small" ;;
+  FOUNDRY_EMBEDDINGS_MODEL_VERSION) printf '%s\n' "1" ;;
+  FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME) printf '%s\n' "DataZoneStandard" ;;
+  FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY) printf '%s\n' "1" ;;
+  FOUNDRY_EVALUATOR_DEPLOYMENT_NAME) printf '%s\n' "gpt-4.1-mini-evaluator" ;;
+  FOUNDRY_EVALUATOR_MODEL_FORMAT) printf '%s\n' "OpenAI" ;;
+  FOUNDRY_EVALUATOR_MODEL_NAME) printf '%s\n' "gpt-4.1-mini" ;;
+  FOUNDRY_EVALUATOR_MODEL_VERSION) printf '%s\n' "2025-04-14" ;;
+  FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME) printf '%s\n' "Standard" ;;
+  FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY) printf '%s\n' "50" ;;
+  FOUNDRY_RAI_POLICY_NAME) printf '%s\n' "Microsoft.Default" ;;
   *) echo "unexpected azd output: $3" >&2; exit 99 ;;
 esac
 EOF
@@ -33,12 +56,25 @@ EOF
 cat >"$FAKE_BIN/az" <<'EOF'
 #!/bin/bash
 set -euo pipefail
+printf '%q ' "$@" >>"$FAKE_AZ_LOG"
+printf '\n' >>"$FAKE_AZ_LOG"
 
 case "$1 ${2:-} ${3:-}" in
-  "account show --subscription") printf '%s\n' "11111111-1111-1111-1111-111111111111" ;;
-  "group show --name") printf '%s\n' "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-maf-ora-azure" ;;
+  "account show --subscription") printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d" ;;
+  "group show --name") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure" ;;
   "postgres flexible-server list") printf '%s\n' "1" ;;
-  "postgres flexible-server show") printf '%s\n' "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres" ;;
+  "postgres flexible-server show") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres" ;;
+  "postgres flexible-server db") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres/databases/maf_workflow" ;;
+  "containerapp list --resource-group")
+    if [[ "$*" == *"backend"* ]]; then printf '%s\n' "maf-backend-test"
+    else printf '%s\n' "maf-frontend-test"
+    fi
+    ;;
+  "containerapp show --name")
+    if [[ "$*" == *"maf-backend-test"* ]]; then printf '%s\n' "example.azurecr.io/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    else printf '%s\n' "example.azurecr.io/frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    fi
+    ;;
   "deployment sub what-if") /bin/cat "$FAKE_WHAT_IF_RESPONSE" ;;
   "deployment sub create") : >"$FAKE_APPLY_SENTINEL" ;;
   *) echo "unexpected az invocation: $*" >&2; exit 99 ;;
@@ -59,33 +95,23 @@ EOF
 chmod 700 "$FAKE_BIN"/*
 
 compiled_template="$TEST_DIR/compiled-template.json"
-parameters_file="$TEST_DIR/parameters.json"
 safe_what_if="$TEST_DIR/what-if-safe.json"
 postgres_mutation_what_if="$TEST_DIR/what-if-postgres-mutation.json"
 apply_sentinel="$TEST_DIR/apply-reached"
+az_log="$TEST_DIR/az.log"
 
 printf '%s\n' '{"fixture":"compiled-template"}' >"$compiled_template"
-printf '%s\n' '{"parameters":{"fixture":"owner-confirmed"}}' >"$parameters_file"
 cat >"$safe_what_if" <<EOF
-{"changes":[{"resourceId":"$POSTGRES_ID","changeType":"NoChange"},{"resourceId":"$POSTGRES_DATABASE_ID","changeType":"NoChange"}]}
+{"changes":[{"resourceId":"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-maf-ora-azure/providers/Microsoft.Insights/components/test","changeType":"NoChange"}]}
 EOF
 cat >"$postgres_mutation_what_if" <<EOF
 {"changes":[{"resourceId":"$POSTGRES_ID","changeType":"Modify"},{"resourceId":"$POSTGRES_DATABASE_ID","changeType":"NoChange"}]}
 EOF
 
-template_sha256="$(sha256sum "$compiled_template" | awk '{print $1}')"
-parameters_sha256="$(sha256sum "$parameters_file" | awk '{print $1}')"
-template_parameters_sha256="$(
-  printf '%s\n%s\n' "$template_sha256" "$parameters_sha256" | sha256sum | awk '{print $1}'
-)"
-preview_sha256="$(sha256sum "$safe_what_if" | awk '{print $1}')"
-
 run_apply() {
   local release_run_id="$1"
-  local approved="${2-true}"
-  local owner_reference="${3-owner-change-20260807}"
-  local supplied_preview_sha="${4-$preview_sha256}"
-  local what_if_file="${5-$safe_what_if}"
+  local what_if_file="${2-$safe_what_if}"
+  local missing_azd_value="${3-}"
 
   /usr/bin/env -u BASH_ENV -u ENV \
     PATH="$FAKE_BIN" \
@@ -94,26 +120,30 @@ run_apply() {
     RELEASE_RUN_ID="$release_run_id" \
     INFRA_RECONCILIATION_TEST_HARNESS="credential-free-reconciliation-mock-v1" \
     INFRA_RECONCILIATION_TEST_COMMAND_ROOT="$FAKE_BIN" \
-    INFRA_RECONCILIATION_PARAMETERS_FILE="$parameters_file" \
-    INFRA_RECONCILIATION_REFERENCE="$owner_reference" \
-    INFRA_RECONCILIATION_APPROVED="$approved" \
-    INFRA_RECONCILIATION_PREVIEW_SHA256="$supplied_preview_sha" \
-    INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256="$template_parameters_sha256" \
     FAKE_COMPILED_TEMPLATE="$compiled_template" \
     FAKE_WHAT_IF_RESPONSE="$what_if_file" \
     FAKE_APPLY_SENTINEL="$apply_sentinel" \
+    FAKE_AZ_LOG="$az_log" \
+    FAKE_MISSING_AZD_VALUE="$missing_azd_value" \
     "$ROOT_DIR/scripts/release/reconcile-infrastructure.sh" --apply
 }
 
 success_output="$(run_apply "$SUCCESS_RUN_ID")"
 [[ -f "$apply_sentinel" ]] || {
-  echo "Credential-free owner confirmation success path did not reach the Azure deployment create boundary." >&2
+  echo "Credential-free direct safe apply did not reach the Azure deployment create boundary." >&2
   exit 1
 }
-[[ "$success_output" == *"Owner-confirmed infrastructure reconciliation completed while preserving PostgreSQL"* ]] || {
-  echo "Credential-free owner confirmation success path did not complete reconciliation guards." >&2
+[[ "$success_output" == *"Infrastructure reconciliation completed while preserving PostgreSQL."* ]] || {
+  echo "Credential-free direct safe apply did not complete reconciliation guards." >&2
   exit 1
 }
+grep -Fq "foundryChatDeploymentSkuName=Standard" "$az_log"
+grep -Fq "foundryEmbeddingsDeploymentSkuName=DataZoneStandard" "$az_log"
+grep -Fq "foundryEvaluatorDeploymentSkuName=Standard" "$az_log"
+if grep -Eq "mcp(ApiKey|BearerToken|ServerUrl)" "$az_log"; then
+  echo "Steady-state reconciliation unexpectedly passed application MCP configuration." >&2
+  exit 1
+fi
 
 expect_failure() {
   local description="$1"
@@ -132,20 +162,18 @@ expect_failure() {
 }
 
 expect_failure \
-  "missing owner confirmation" \
-  "requires INFRA_RECONCILIATION_APPROVED=true" \
-  run_apply "missing-confirmation-$$" false
-expect_failure \
-  "missing owner reference" \
-  "must be a non-secret owner change reference" \
-  run_apply "missing-reference-$$" true ""
-expect_failure \
-  "mismatched preview digest" \
-  "does not match independently computed what-if" \
-  run_apply "mismatched-preview-$$" true "owner-change-20260807" "$(printf '0%.0s' {1..64})"
-expect_failure \
   "PostgreSQL mutation" \
-  "Azure what-if includes a PostgreSQL resource mutation" \
-  run_apply "postgres-mutation-$$" true "owner-change-20260807" "$preview_sha256" "$postgres_mutation_what_if"
+  "steadyState mode must exclude it" \
+  run_apply "postgres-mutation-$$" "$postgres_mutation_what_if"
 
-echo "Credential-free owner-confirmation reconciliation guards passed; fake Azure apply was reached only after every guard."
+rm -f "$apply_sentinel"
+expect_failure \
+  "missing stateful Foundry value" \
+  "missing required steady-state value: FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME" \
+  run_apply "missing-foundry-value-$$" "$safe_what_if" "FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME"
+[[ ! -f "$apply_sentinel" ]] || {
+  echo "Missing stateful Foundry configuration reached the Azure apply boundary." >&2
+  exit 1
+}
+
+echo "Credential-free direct reconciliation guards passed; fake Azure apply was reached only after a fresh safe what-if."

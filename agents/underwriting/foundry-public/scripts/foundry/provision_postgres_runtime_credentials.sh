@@ -141,8 +141,8 @@ firewall_start="$(
   az postgres flexible-server firewall-rule show \
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
-    --name "$server_name" \
-    --rule-name allow-all-temporary \
+    --server-name "$server_name" \
+    --name allow-all-temporary \
     --query startIpAddress \
     --output tsv
 )"
@@ -150,8 +150,8 @@ firewall_end="$(
   az postgres flexible-server firewall-rule show \
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
-    --name "$server_name" \
-    --rule-name allow-all-temporary \
+    --server-name "$server_name" \
+    --name allow-all-temporary \
     --query endIpAddress \
     --output tsv
 )"
@@ -164,7 +164,7 @@ if ! az postgres flexible-server db show \
   --subscription "$subscription_id" \
   --resource-group "$resource_group" \
   --server-name "$server_name" \
-  --database-name "$database_name" \
+  --name "$database_name" \
   --output none >/dev/null 2>&1; then
   echo "PostgreSQL runtime database is absent; run make foundry-provision first." >&2
   exit 1

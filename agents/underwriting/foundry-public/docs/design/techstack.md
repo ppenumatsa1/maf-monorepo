@@ -24,7 +24,9 @@
 
 - AG-UI protocol endpoint: `POST /api/v1/underwriting/ag-ui`
 - Backend emits AG-UI-compatible event stream envelopes for underwriting run lifecycle updates.
-- CopilotKit uses the public adapter's REST runtime discovery and assistant route. It receives a safe selected-run projection only.
+- CopilotKit uses the internal backend adapter's REST runtime discovery and
+  assistant route through the frontend's same-origin proxy. It receives a safe
+  selected-run projection only.
 
 ## Testing and validation
 
@@ -45,10 +47,14 @@
 
 - Azure AI Foundry hosted Responses entrypoint that executes the MAF workflow
 - Azure Container Apps for backend/frontend runtime hosting
-- Azure Database for PostgreSQL over TLS with a dedicated least-privilege password credential injected only into the hosted runtime
+- Azure Database for PostgreSQL over TLS with one dedicated least-privilege
+  runtime credential delivered to the backend through an ACA secret and to the
+  hosted agent through the project `CustomKeys` connection
 - Application Insights telemetry via connection-string configuration
 
-The public backend relays hosted start/resume requests and reads durable projections. The Foundry hosted agent is the production MAF executor.
+The internal backend adapter relays hosted start/resume requests and reads
+durable projections behind the external frontend's same-origin proxy. The
+Foundry hosted agent is the production MAF executor.
 
 ## Release governance surfaces
 

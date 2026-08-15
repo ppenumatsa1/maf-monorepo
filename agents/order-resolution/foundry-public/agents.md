@@ -8,11 +8,21 @@ This file describes expected behavior for coding agents working in this reposito
   `SequentialBuilder` MAF SDK workflow path (single primary workflow story).
 - Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol,
   packaged by `backend/Dockerfile.hosted`).
-- Public Foundry deployment configuration targets
-  `rg-maf-ora-foundry-public-dev2`. Treat repository configuration as
+- Public Foundry deployment configuration targets subscription
+  `7df95e88-701c-4693-af77-3159f83b558d`, resource group
+  `rg-maf-ora-foundry-public`, and `eastus2`. Treat repository configuration as
   implementation intent, not evidence of a currently deployed endpoint. GitHub
   Actions remains credential-free CI; authenticated Azure execution is local via
-  `make foundry-release`.
+  `make foundry-release`. Routine release is hard `app_only`, model/quota
+  preflight is read-only, release images use immutable digests, hosted-agent
+  RBAC is limited to account-scoped `Cognitive Services OpenAI User`, and
+  `make foundry-verify`/`make foundry-evidence` produce the live secret-free
+  deployment contract. The canonical stage and command mapping is
+  `docs/design/deployment-flow.md`.
+- Hosted database variables resolve through the Order-owned
+  `orderresolutionruntimesecrets` project `CustomKeys` connection. Hosted
+  definitions and GET metadata contain only the literal connection placeholder,
+  never the resolved runtime URL.
 - Frontend: React + Vite, consumes stable SSE workflow events and can show
   optional additive AG-UI selected-thread updates. Its selected-thread assistant
   uses CopilotKit (`@copilotkit/react-core`), not the GitHub Copilot SDK.
@@ -26,6 +36,9 @@ This file describes expected behavior for coding agents working in this reposito
   checkpoint-keyed `function_call_output`.
 - Durable HITL: Postgres-backed checkpoint storage via repository-pattern
   adapters preserves checkpoint-keyed pause/resume.
+- PostgreSQL schema DDL is administrator-owned. Production runtimes set
+  `DB_SCHEMA_MANAGED_EXTERNALLY=true` and the runtime credential remains
+  limited to required DML and sequence usage.
 - Event streaming: legacy SSE remains the stable contract; additive rich events
   and selected-thread AG-UI projections do not replace it. The `/rich` envelope
   remains an existing native-event contract, not a CopilotKit assistant surface.
@@ -75,6 +88,7 @@ This file describes expected behavior for coding agents working in this reposito
 
 - low-risk no-HITL flow
 - high-risk HITL flow and resume flow
+- damaged-item HITL flow and resume flow
 
 ## Required Verification Before Completing Work
 
@@ -85,6 +99,8 @@ Run and report:
 - `make eval-foundry` (report-only for hosted/runtime changes)
 - `make test-e2e`
 - `./scripts/skills/design-review-skill.sh` (consolidated deterministic review/test gate)
+- For deployment/IaC changes: `make test-deployment-profile`,
+  `make test-scripts`, `make foundry-iac-build`, and `make foundry-package`
 
 If a suite cannot run because of missing runtime dependencies (for example browser binaries), report the blocker and the exact command needed to unblock.
 
@@ -105,7 +121,8 @@ Use focused skills instead of one broad agent pass:
 
 Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full
 validation. Automatic release deployment is always app-only; provisioning
-requires explicit approved reconciliation with a non-secret reference.
+is an explicit operator command for bootstrap creation or non-mutating reuse
+from the selected secret-free profile.
 Release images must retain
 `PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`, the approved
 CFS package feed.
@@ -161,4 +178,8 @@ When architecture or execution policies change, update these instruction files i
 
 - `.github/copilot-instructions.md`
 - `agents.md`
+- `README.md`
 - `docs/design/engineering-operating-model.md`
+- `docs/design/deployment-flow.md`
+- `infra/foundry-hosted/README.md`
+- `scripts/README.md`

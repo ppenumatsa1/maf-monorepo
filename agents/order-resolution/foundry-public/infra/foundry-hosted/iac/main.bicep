@@ -1,433 +1,778 @@
 targetScope = 'resourceGroup'
 
-@description('Deployment location')
+@allowed([
+  'bootstrap'
+  'reuse'
+])
+@description('bootstrap creates the complete lane. reuse references an already-created lane and creates no resources or role assignments.')
+param infrastructureMode string = 'bootstrap'
+
+@minLength(3)
+@maxLength(20)
+@description('Alphanumeric prefix used to derive deterministic bootstrap resource names.')
+param namePrefix string
+
+@description('Location for all public order-resolution resources.')
 param location string = resourceGroup().location
 
-@description('Public Foundry project name')
-param foundryProjectName string = 'order-resolution-public-managed-dev2'
+@description('Tags applied to resources created in bootstrap mode.')
+param tags object = {}
 
-@description('Hosted agent name used to compose the Responses endpoint')
+@description('Foundry account name.')
+param foundryAccountName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}ai', 24)
+
+@description('Foundry project name.')
+param foundryProjectName string = 'order-resolution'
+
+@description('Foundry custom subdomain.')
+param foundryCustomSubDomainName string = foundryAccountName
+
+@description('Hosted agent name used to compose the Responses endpoint.')
 param hostedAgentName string = 'order-resolution-hosted'
 
-@description('Public Foundry account name')
-param foundryAccountName string = 'maffndaibfscpfhjr7sp4'
+@description('Foundry chat deployment name.')
+param foundryChatDeploymentName string = 'order-resolution-gpt-4-1-mini'
 
-@description('Public Azure Container Registry name')
-param containerRegistryName string = 'maffndacrbfscpfhjr7sp4'
+@description('Foundry chat model format.')
+param foundryChatModelFormat string = 'OpenAI'
 
-@description('Public Container Apps environment name')
-param containerAppsEnvironmentName string = 'ora-public-dev2-aca'
+@description('Foundry chat model name.')
+param foundryChatModelName string = 'gpt-4.1-mini'
 
-@description('Public internal backend Container App name')
-param backendContainerAppName string = 'ora-public-dev2-backend'
+@description('Foundry chat model version.')
+param foundryChatModelVersion string = '2025-04-14'
 
-@description('Public external frontend Container App name')
-param frontendContainerAppName string = 'ora-public-dev2-frontend'
+@description('Foundry chat deployment SKU.')
+@allowed([
+  'Standard'
+  'DataZoneStandard'
+  'GlobalStandard'
+])
+param foundryChatModelSkuName string = 'Standard'
 
-@description('Backend bootstrap or azd-published container image')
-param backendImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'
+@minValue(1)
+@description('Foundry chat deployment capacity in thousands of TPM.')
+param foundryChatModelCapacity int = 2500
 
-@description('Frontend bootstrap or azd-published container image')
-param frontendImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'
+@description('Foundry embeddings deployment name.')
+param foundryEmbeddingsDeploymentName string = 'order-resolution-text-embedding-3-small'
 
-@description('Application Insights component name')
-param applicationInsightsName string = 'maffnd-mon-bfscpfhjr7sp4-appi'
+@description('Foundry embeddings model version.')
+param foundryEmbeddingsModelVersion string = '1'
 
-@description('Existing Foundry chat deployment name')
-param foundryChatDeploymentName string = 'gpt-4o-mini'
+@description('Foundry embeddings deployment capacity in thousands of TPM.')
+param foundryEmbeddingsModelCapacity int = 120
 
-@description('Existing Foundry embeddings deployment name')
-param foundryEmbeddingsDeploymentName string = 'text-embedding-3-small'
+@description('Foundry evaluator deployment name.')
+param foundryEvaluationDeploymentName string = 'order-resolution-gpt-4-1-mini-evaluation'
 
-@description('Existing Foundry evaluator deployment name')
-param foundryEvaluationDeploymentName string = 'gpt-4o-mini-evaluation'
+@description('Foundry evaluator deployment capacity in thousands of TPM.')
+param foundryEvaluationModelCapacity int = 250
+
+@description('Responsible AI policy used by Foundry model deployments.')
+param foundryRaiPolicyName string = 'Microsoft.Default'
+
+@description('Azure Container Registry name.')
+param containerRegistryName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}acr', 50)
+
+@description('Log Analytics workspace name.')
+param logAnalyticsWorkspaceName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-log', 63)
+
+@description('Application Insights component name.')
+param applicationInsightsName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-ai', 64)
+
+@description('Container Apps environment name.')
+param containerAppsEnvironmentName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-cae', 32)
+
+@description('Internal backend Container App name.')
+param backendContainerAppName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-backend', 32)
+
+@description('External frontend Container App name.')
+param frontendContainerAppName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-frontend', 32)
+
+@description('User-assigned identity attached to the backend Container App.')
+param publicBackendManagedIdentityName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-backend-mi', 128)
+
+@description('User-assigned identity attached to the frontend Container App.')
+param publicFrontendManagedIdentityName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-frontend-mi', 128)
+
+@description('ACR repository written by the backend release.')
+param backendImageRepository string = 'order-resolution-public-backend'
+
+@description('ACR repository written by the frontend release.')
+param frontendImageRepository string = 'order-resolution-public-frontend'
+
+@description('Temporary public image used until the first backend release.')
+param bootstrapBackendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+@description('Temporary public image used until the first frontend release.')
+param bootstrapFrontendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+@description('PostgreSQL Flexible Server name.')
+param postgresServerName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}pg', 63)
+
+@description('PostgreSQL Flexible Server location.')
+param postgresServerLocation string = location
 
 @secure()
-@description('TLS-enabled connection string for the existing workflow PostgreSQL database')
-param runtimeDatabaseUrl string = ''
+@description('PostgreSQL administrator password required only for bootstrap.')
+param postgresAdministratorPassword string
 
+@description('PostgreSQL administrator login.')
+param postgresAdministratorLogin string = 'pgadmin'
+
+@description('Public IPv4 address permitted to perform schema and credential setup.')
+param postgresOperatorIp string
+
+@description('Database used by the order-resolution runtime.')
+param postgresDatabaseName string = 'order_resolution'
+
+@description('PostgreSQL major version.')
+param postgresVersion string = '17'
+
+@description('PostgreSQL compute SKU.')
+param postgresSkuName string = 'Standard_D2ds_v5'
+
+@description('PostgreSQL compute tier.')
+param postgresSkuTier string = 'GeneralPurpose'
+
+@description('PostgreSQL storage size in GiB.')
+param postgresStorageSizeGB int = 128
+
+@description('PostgreSQL backup retention days.')
+param postgresBackupRetentionDays int = 7
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+@description('PostgreSQL geo-redundant backup setting.')
+param postgresGeoRedundantBackup string = 'Disabled'
+
+@description('Dedicated storage account for Foundry evaluation artifacts.')
+param evaluationStorageAccountName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}eval', 24)
+
+@secure()
+@description('Initial runtime database placeholder replaced by the credential workflow before release.')
+param bootstrapRuntimeDatabaseUrl string = newGuid()
+
+var isBootstrap = infrastructureMode == 'bootstrap'
 var foundryProjectEndpoint = 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
 var foundryHostedResponsesUrl = '${foundryProjectEndpoint}/agents/${hostedAgentName}/endpoint/protocols/openai/responses?api-version=v1'
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
-  name: containerRegistryName
+resource foundryAccountBootstrap 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (isBootstrap) {
+  name: foundryAccountName
+  location: location
+  kind: 'AIServices'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    allowProjectManagement: true
+    customSubDomainName: foundryCustomSubDomainName
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: false
+  }
+  tags: tags
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+resource foundryProjectBootstrap 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: foundryProjectName
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    description: 'Public Foundry-hosted order-resolution workflow'
+  }
+}
+
+resource foundryChatDeploymentBootstrap 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: foundryChatDeploymentName
+  sku: {
+    name: foundryChatModelSkuName
+    capacity: foundryChatModelCapacity
+  }
+  properties: {
+    model: {
+      format: foundryChatModelFormat
+      name: foundryChatModelName
+      version: foundryChatModelVersion
+    }
+    raiPolicyName: foundryRaiPolicyName
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+}
+
+resource foundryEmbeddingsDeploymentBootstrap 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: foundryEmbeddingsDeploymentName
+  dependsOn: [
+    foundryChatDeploymentBootstrap
+  ]
+  sku: {
+    name: foundryChatModelSkuName
+    capacity: foundryEmbeddingsModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'text-embedding-3-small'
+      version: foundryEmbeddingsModelVersion
+    }
+    raiPolicyName: foundryRaiPolicyName
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+}
+
+resource foundryEvaluationDeploymentBootstrap 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: foundryEvaluationDeploymentName
+  dependsOn: [
+    foundryEmbeddingsDeploymentBootstrap
+  ]
+  sku: {
+    name: foundryChatModelSkuName
+    capacity: foundryEvaluationModelCapacity
+  }
+  properties: {
+    model: {
+      format: foundryChatModelFormat
+      name: foundryChatModelName
+      version: foundryChatModelVersion
+    }
+    raiPolicyName: foundryRaiPolicyName
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+}
+
+resource containerRegistryBootstrap 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (isBootstrap) {
+  name: containerRegistryName
+  location: location
+  sku: {
+    name: 'Basic'
+  }
+  properties: {
+    adminUserEnabled: false
+    publicNetworkAccess: 'Enabled'
+  }
+  tags: tags
+}
+
+resource logAnalyticsWorkspaceBootstrap 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (isBootstrap) {
+  name: logAnalyticsWorkspaceName
+  location: location
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+  }
+  tags: tags
+}
+
+resource applicationInsightsBootstrap 'Microsoft.Insights/components@2020-02-02' = if (isBootstrap) {
   name: applicationInsightsName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalyticsWorkspaceBootstrap.id
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
+  }
+  tags: tags
+}
+
+resource publicBackendManagedIdentityBootstrap 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (isBootstrap) {
+  name: publicBackendManagedIdentityName
+  location: location
+  tags: tags
+}
+
+resource publicFrontendManagedIdentityBootstrap 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (isBootstrap) {
+  name: publicFrontendManagedIdentityName
+  location: location
+  tags: tags
+}
+
+resource containerAppsEnvironmentBootstrap 'Microsoft.App/managedEnvironments@2024-03-01' = if (isBootstrap) {
+  name: containerAppsEnvironmentName
+  location: location
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalyticsWorkspaceBootstrap!.properties.customerId
+        sharedKey: listKeys(logAnalyticsWorkspaceBootstrap!.id, '2023-09-01').primarySharedKey
+      }
+    }
+  }
+  tags: tags
+}
+
+resource postgresServerBootstrap 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = if (isBootstrap) {
+  name: postgresServerName
+  location: postgresServerLocation
+  sku: {
+    name: postgresSkuName
+    tier: postgresSkuTier
+  }
+  properties: {
+    administratorLogin: postgresAdministratorLogin
+    administratorLoginPassword: postgresAdministratorPassword
+    version: postgresVersion
+    storage: {
+      storageSizeGB: postgresStorageSizeGB
+    }
+    backup: {
+      backupRetentionDays: postgresBackupRetentionDays
+      geoRedundantBackup: postgresGeoRedundantBackup
+    }
+    authConfig: {
+      activeDirectoryAuth: 'Enabled'
+      passwordAuth: 'Enabled'
+      tenantId: subscription().tenantId
+    }
+    network: {
+      publicNetworkAccess: 'Enabled'
+    }
+  }
+  tags: tags
+}
+
+resource postgresAzureServicesFirewallBootstrap 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = if (isBootstrap) {
+  parent: postgresServerBootstrap
+  name: 'allow-all-temporary'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
+resource postgresReleaseOperatorFirewallBootstrap 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = if (isBootstrap) {
+  parent: postgresServerBootstrap
+  name: 'allow-release-operator'
+  properties: {
+    startIpAddress: postgresOperatorIp
+    endIpAddress: postgresOperatorIp
+  }
+}
+
+resource postgresRuntimeDatabaseBootstrap 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = if (isBootstrap) {
+  parent: postgresServerBootstrap
+  name: postgresDatabaseName
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+}
+
+resource evaluationStorageAccountBootstrap 'Microsoft.Storage/storageAccounts@2024-01-01' = if (isBootstrap) {
+  name: evaluationStorageAccountName
+  location: location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    accessTier: 'Hot'
+    allowBlobPublicAccess: false
+    allowSharedKeyAccess: false
+    minimumTlsVersion: 'TLS1_2'
+    publicNetworkAccess: 'Enabled'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
+  }
+  tags: tags
 }
 
 resource acrPullRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
   name: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
-  scope: resourceGroup()
 }
 
-resource azureAIUserRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+resource acrRepositoryReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: 'b93aa761-3e63-49ed-ac28-beffa264f7ac'
+}
+
+resource logAnalyticsReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: '73c42c96-874c-492b-b04d-ab87d138a893'
+}
+
+resource cognitiveServicesOpenAIUserRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+}
+
+resource foundryUserRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
   name: '53ca6127-db72-4b80-b1b0-d745d6d5456d'
-  scope: resourceGroup()
 }
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
+resource storageBlobDataOwnerRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+}
+
+resource containerRegistryRoleScope 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: containerRegistryName
+}
+
+resource foundryAccountRoleScope 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
   name: foundryAccountName
 }
 
-resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' existing = {
-  parent: foundryAccount
-  name: foundryChatDeploymentName
-}
-
-resource foundryEmbeddingsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' existing = {
-  parent: foundryAccount
-  name: foundryEmbeddingsDeploymentName
-}
-
-resource foundryEvaluationDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' existing = {
-  parent: foundryAccount
-  name: foundryEvaluationDeploymentName
-}
-
-resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' existing = {
-  parent: foundryAccount
+resource foundryProjectRoleScope 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' existing = {
+  parent: foundryAccountRoleScope
   name: foundryProjectName
 }
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
-  name: containerAppsEnvironmentName
+resource applicationInsightsRoleScope 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: applicationInsightsName
 }
 
-resource containerAppsRegistryPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${containerAppsEnvironmentName}-acr-pull'
-  location: location
+resource logAnalyticsWorkspaceRoleScope 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+  name: logAnalyticsWorkspaceName
 }
 
-resource containerAppsRegistryPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, containerAppsRegistryPullIdentity.id, acrPullRole.id)
-  scope: containerRegistry
+resource evaluationStorageAccountRoleScope 'Microsoft.Storage/storageAccounts@2024-01-01' existing = {
+  name: evaluationStorageAccountName
+}
+
+resource backendAcrPullBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', containerRegistryRoleScope.id, publicBackendManagedIdentityBootstrap!.id, acrPullRole.id)
+  scope: containerRegistryRoleScope
   properties: {
     roleDefinitionId: acrPullRole.id
-    principalId: containerAppsRegistryPullIdentity.properties.principalId
+    principalId: publicBackendManagedIdentityBootstrap!.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-resource backendContainerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource frontendAcrPullBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', containerRegistryRoleScope.id, publicFrontendManagedIdentityBootstrap!.id, acrPullRole.id)
+  scope: containerRegistryRoleScope
+  properties: {
+    roleDefinitionId: acrPullRole.id
+    principalId: publicFrontendManagedIdentityBootstrap!.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectAcrPullBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', containerRegistryRoleScope.id, foundryProjectBootstrap!.id, acrPullRole.id)
+  scope: containerRegistryRoleScope
+  properties: {
+    roleDefinitionId: acrPullRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectAcrRepositoryReaderBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', containerRegistryRoleScope.id, foundryProjectBootstrap!.id, acrRepositoryReaderRole.id)
+  scope: containerRegistryRoleScope
+  properties: {
+    roleDefinitionId: acrRepositoryReaderRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectApplicationInsightsReaderBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid(applicationInsightsRoleScope.id, foundryProjectBootstrap!.id, logAnalyticsReaderRole.id)
+  scope: applicationInsightsRoleScope
+  properties: {
+    roleDefinitionId: logAnalyticsReaderRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectLogAnalyticsReaderBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', logAnalyticsWorkspaceRoleScope.id, foundryProjectBootstrap!.id, logAnalyticsReaderRole.id)
+  scope: logAnalyticsWorkspaceRoleScope
+  properties: {
+    roleDefinitionId: logAnalyticsReaderRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectOpenAIUserBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', foundryAccountRoleScope.id, foundryProjectBootstrap!.id, cognitiveServicesOpenAIUserRole.id)
+  scope: foundryAccountRoleScope
+  properties: {
+    roleDefinitionId: cognitiveServicesOpenAIUserRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource publicBackendFoundryUserBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', foundryProjectRoleScope.id, publicBackendManagedIdentityBootstrap!.id, foundryUserRole.id)
+  scope: foundryProjectRoleScope
+  properties: {
+    roleDefinitionId: foundryUserRole.id
+    principalId: publicBackendManagedIdentityBootstrap!.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryAccountEvaluationStorageAccessBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', evaluationStorageAccountRoleScope.id, foundryAccountBootstrap!.id, storageBlobDataOwnerRole.id)
+  scope: evaluationStorageAccountRoleScope
+  properties: {
+    roleDefinitionId: storageBlobDataOwnerRole.id
+    principalId: foundryAccountBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource foundryProjectEvaluationStorageAccessBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
+  name: guid('resource-scope-v2', evaluationStorageAccountRoleScope.id, foundryProjectBootstrap!.id, storageBlobDataOwnerRole.id)
+  scope: evaluationStorageAccountRoleScope
+  properties: {
+    roleDefinitionId: storageBlobDataOwnerRole.id
+    principalId: foundryProjectBootstrap!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource projectApplicationInsightsConnectionBootstrap 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = if (isBootstrap) {
+  parent: foundryProjectBootstrap
+  name: 'ApplicationInsights'
+  properties: {
+    category: 'AppInsights'
+    target: applicationInsightsBootstrap!.id
+    authType: 'ApiKey'
+    isSharedToAll: true
+    credentials: {
+      key: applicationInsightsBootstrap!.properties.ConnectionString
+    }
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: applicationInsightsBootstrap!.id
+    }
+  }
+  dependsOn: [
+    foundryProjectApplicationInsightsReaderBootstrap
+    foundryProjectLogAnalyticsReaderBootstrap
+  ]
+}
+
+resource evaluationStorageConnectionBootstrap 'Microsoft.CognitiveServices/accounts/connections@2025-04-01-preview' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: 'evaluation-artifacts'
+  properties: {
+    category: 'AzureStorageAccount'
+    target: evaluationStorageAccountBootstrap!.properties.primaryEndpoints.blob
+    authType: 'AAD'
+    isSharedToAll: true
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: evaluationStorageAccountBootstrap!.id
+      location: evaluationStorageAccountBootstrap!.location
+      purpose: 'foundry-evaluation-artifacts'
+    }
+  }
+  dependsOn: [
+    foundryAccountEvaluationStorageAccessBootstrap
+    foundryProjectEvaluationStorageAccessBootstrap
+  ]
+}
+
+resource runtimeStorageConnectionBootstrap 'Microsoft.CognitiveServices/accounts/connections@2025-04-01-preview' = if (isBootstrap) {
+  parent: foundryAccountBootstrap
+  name: 'runtime-storage'
+  properties: {
+    category: 'AzureStorageAccount'
+    target: evaluationStorageAccountBootstrap!.properties.primaryEndpoints.blob
+    authType: 'AAD'
+    isSharedToAll: false
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: evaluationStorageAccountBootstrap!.id
+      location: evaluationStorageAccountBootstrap!.location
+      purpose: 'foundry-runtime-artifacts'
+    }
+  }
+  dependsOn: [
+    foundryAccountEvaluationStorageAccessBootstrap
+    foundryProjectEvaluationStorageAccessBootstrap
+  ]
+}
+
+resource backendContainerAppBootstrap 'Microsoft.App/containerApps@2024-03-01' = if (isBootstrap) {
   name: backendContainerAppName
   location: location
-  tags: {
+  tags: union(tags, {
     'azd-service-name': 'backend'
-  }
+  })
   identity: {
-    type: 'SystemAssigned, UserAssigned'
+    type: 'UserAssigned'
     userAssignedIdentities: {
-      '${containerAppsRegistryPullIdentity.id}': {}
+      '${publicBackendManagedIdentityBootstrap!.id}': {}
     }
   }
   properties: {
-    managedEnvironmentId: containerAppsEnvironment.id
+    managedEnvironmentId: containerAppsEnvironmentBootstrap!.id
     configuration: {
       activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        allowInsecure: false
+        targetPort: 80
+        transport: 'auto'
+      }
       registries: [
         {
-          server: containerRegistry.properties.loginServer
-          identity: containerAppsRegistryPullIdentity.id
+          server: containerRegistryBootstrap!.properties.loginServer
+          identity: publicBackendManagedIdentityBootstrap!.id
         }
       ]
       secrets: [
         {
-          name: 'database-url'
-          value: runtimeDatabaseUrl
+          name: 'runtime-db-url'
+          value: bootstrapRuntimeDatabaseUrl
         }
         {
-          name: 'application-insights-connection-string'
-          value: applicationInsights.properties.ConnectionString
+          name: 'appinsights-connection-string'
+          value: applicationInsightsBootstrap!.properties.ConnectionString
         }
       ]
-      ingress: {
-        external: false
-        allowInsecure: false
-        targetPort: 8000
-        transport: 'http'
-        traffic: [
-          {
-            latestRevision: true
-            weight: 100
-          }
-        ]
-      }
     }
     template: {
       containers: [
         {
           name: 'backend'
-          image: backendImageName
+          image: bootstrapBackendImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
           }
           env: [
             {
-              name: 'APP_ENV'
-              value: 'aca-public'
-            }
-            {
-              name: 'STORE_PROVIDER'
-              value: 'postgres'
-            }
-            {
-              name: 'RUNTIME_TARGET'
-              value: 'responses_wrapper'
-            }
-            {
-              name: 'FOUNDRY_RESPONSES_ENDPOINT'
-              value: foundryHostedResponsesUrl
-            }
-            {
-              name: 'AZURE_TOKEN_CREDENTIALS'
-              value: 'prod'
-            }
-            {
-              name: 'FOUNDRY_PROJECTS_ENDPOINT'
-              value: foundryProjectEndpoint
-            }
-            {
-              name: 'FOUNDRY_MODEL_DEPLOYMENT_NAME'
-              value: foundryChatDeploymentName
-            }
-            {
-              name: 'FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME'
-              value: foundryEmbeddingsDeploymentName
-            }
-            {
-              name: 'ENABLE_TELEMETRY'
-              value: 'true'
-            }
-            {
-              name: 'ENABLE_INSTRUMENTATION'
-              value: 'true'
-            }
-            {
-              name: 'OTEL_SERVICE_NAME'
-              value: 'maf-order-resolution-aca-backend'
-            }
-            {
-              name: 'OTEL_SERVICE_NAMESPACE'
-              value: 'maf-order-resolution'
-            }
-            {
-              name: 'OTEL_RECORD_CONTENT'
-              value: 'false'
-            }
-            {
               name: 'DATABASE_URL'
-              secretRef: 'database-url'
+              secretRef: 'runtime-db-url'
+            }
+            {
+              name: 'RUNTIME_DATABASE_URL'
+              secretRef: 'runtime-db-url'
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              secretRef: 'application-insights-connection-string'
-            }
-            {
-              name: 'APPINSIGHTS_CONNECTION_STRING'
-              secretRef: 'application-insights-connection-string'
-            }
-          ]
-          probes: [
-            {
-              type: 'Startup'
-              httpGet: {
-                path: '/health'
-                port: 8000
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 5
-              timeoutSeconds: 3
-              failureThreshold: 24
-            }
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/health'
-                port: 8000
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 10
-              timeoutSeconds: 3
-              failureThreshold: 3
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/health'
-                port: 8000
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 5
-              timeoutSeconds: 3
-              failureThreshold: 6
+              secretRef: 'appinsights-connection-string'
             }
           ]
         }
       ]
       scale: {
-        // The public bootstrap image does not implement the application health contract.
-        // HTTP ingress activates the real revision after `azd deploy` replaces it.
-        minReplicas: 0
+        minReplicas: 1
         maxReplicas: 2
       }
     }
   }
-  dependsOn: [
-    containerAppsRegistryPullRoleAssignment
-  ]
 }
 
-resource frontendContainerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource frontendContainerAppBootstrap 'Microsoft.App/containerApps@2024-03-01' = if (isBootstrap) {
   name: frontendContainerAppName
   location: location
-  tags: {
+  tags: union(tags, {
     'azd-service-name': 'frontend'
-  }
+  })
   identity: {
-    type: 'SystemAssigned, UserAssigned'
+    type: 'UserAssigned'
     userAssignedIdentities: {
-      '${containerAppsRegistryPullIdentity.id}': {}
+      '${publicFrontendManagedIdentityBootstrap!.id}': {}
     }
   }
   properties: {
-    managedEnvironmentId: containerAppsEnvironment.id
+    managedEnvironmentId: containerAppsEnvironmentBootstrap!.id
     configuration: {
       activeRevisionsMode: 'Single'
-      registries: [
-        {
-          server: containerRegistry.properties.loginServer
-          identity: containerAppsRegistryPullIdentity.id
-        }
-      ]
       ingress: {
         external: true
         allowInsecure: false
-        targetPort: 5173
-        transport: 'http'
-        traffic: [
-          {
-            latestRevision: true
-            weight: 100
-          }
-        ]
+        targetPort: 80
+        transport: 'auto'
       }
+      registries: [
+        {
+          server: containerRegistryBootstrap!.properties.loginServer
+          identity: publicFrontendManagedIdentityBootstrap!.id
+        }
+      ]
     }
     template: {
       containers: [
         {
           name: 'frontend'
-          image: frontendImageName
+          image: bootstrapFrontendImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
-          env: [
-            {
-              name: 'API_BASE'
-              value: ''
-            }
-            {
-              name: 'NGINX_API_UPSTREAM'
-              value: 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
-            }
-          ]
-          probes: [
-            {
-              type: 'Startup'
-              httpGet: {
-                path: '/health'
-                port: 5173
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 5
-              timeoutSeconds: 3
-              failureThreshold: 24
-            }
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/health'
-                port: 5173
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 10
-              timeoutSeconds: 3
-              failureThreshold: 3
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/health'
-                port: 5173
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 5
-              timeoutSeconds: 3
-              failureThreshold: 6
-            }
-          ]
         }
       ]
       scale: {
-        // The public bootstrap image does not implement the application health contract.
-        // HTTP ingress activates the real revision after `azd deploy` replaces it.
-        minReplicas: 0
+        minReplicas: 1
         maxReplicas: 2
       }
     }
   }
-  dependsOn: [
-    containerAppsRegistryPullRoleAssignment
-  ]
 }
 
-resource backendContainerAppAzureAIUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(foundryProject.id, backendContainerApp.id, azureAIUserRole.id)
-  scope: foundryProject
-  properties: {
-    roleDefinitionId: azureAIUserRole.id
-    principalId: backendContainerApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+var foundryAccountId = resourceId('Microsoft.CognitiveServices/accounts', foundryAccountName)
+var foundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/projects', foundryAccountName, foundryProjectName)
+var containerRegistryId = resourceId('Microsoft.ContainerRegistry/registries', containerRegistryName)
+var applicationInsightsId = resourceId('Microsoft.Insights/components', applicationInsightsName)
+var logAnalyticsWorkspaceId = resourceId('Microsoft.OperationalInsights/workspaces', logAnalyticsWorkspaceName)
+var containerAppsEnvironmentId = resourceId('Microsoft.App/managedEnvironments', containerAppsEnvironmentName)
+var backendContainerAppId = resourceId('Microsoft.App/containerApps', backendContainerAppName)
+var frontendContainerAppId = resourceId('Microsoft.App/containerApps', frontendContainerAppName)
+var postgresServerId = resourceId('Microsoft.DBforPostgreSQL/flexibleServers', postgresServerName)
 
-output foundryAccountName string = foundryAccount.name
-output foundryProjectName string = foundryProject.name
-output foundryProjectEndpoint string = foundryProjectEndpoint
-output FOUNDRY_PROJECTS_ENDPOINT string = foundryProjectEndpoint
-output FOUNDRY_PROJECT_ENDPOINT string = foundryProjectEndpoint
-output FOUNDRY_PROJECT_ID string = foundryProject.id
 output AZURE_AI_PROJECT_ENDPOINT string = foundryProjectEndpoint
-output AZURE_AI_PROJECT_ID string = foundryProject.id
-output foundryHostedResponsesUrl string = foundryHostedResponsesUrl
-output FOUNDRY_MODEL_DEPLOYMENT_NAME string = foundryChatDeployment.name
-output FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME string = foundryEmbeddingsDeployment.name
-output FOUNDRY_EVAL_MODEL string = foundryEvaluationDeployment.name
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.name
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
-output APPINSIGHTS_RESOURCE_ID string = applicationInsights.id
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerAppsEnvironment.name
-output SERVICE_BACKEND_NAME string = backendContainerApp.name
-output SERVICE_BACKEND_IMAGE_NAME string = backendImageName
-output SERVICE_BACKEND_URI string = 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
-output SERVICE_BACKEND_ENDPOINTS array = [
-  'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
-]
-output SERVICE_BACKEND_IDENTITY_PRINCIPAL_ID string = backendContainerApp.identity.principalId
-output SERVICE_FRONTEND_NAME string = frontendContainerApp.name
-output SERVICE_FRONTEND_IMAGE_NAME string = frontendImageName
-output SERVICE_FRONTEND_URI string = 'https://${frontendContainerApp.properties.configuration.ingress.fqdn}'
-output SERVICE_FRONTEND_ENDPOINTS array = [
-  'https://${frontendContainerApp.properties.configuration.ingress.fqdn}'
-]
-output SERVICE_FRONTEND_IDENTITY_PRINCIPAL_ID string = frontendContainerApp.identity.principalId
-output API_BASE_URL string = 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
-output WEB_URL string = 'https://${frontendContainerApp.properties.configuration.ingress.fqdn}'
-output requiredBackendSettings array = [
-  'FOUNDRY_PROJECTS_ENDPOINT=${foundryProjectEndpoint}'
-]
-output nextStep string = 'Run the local public release script, then verify hosted Responses conversations and Application Insights telemetry.'
+output AZURE_AI_PROJECT_ID string = foundryProjectId
+output FOUNDRY_PROJECT_ENDPOINT string = foundryProjectEndpoint
+output FOUNDRY_PROJECTS_ENDPOINT string = foundryProjectEndpoint
+output FOUNDRY_ACCOUNT_NAME string = foundryAccountName
+output FOUNDRY_PROJECT_NAME string = foundryProjectName
+output FOUNDRY_HOSTED_RESPONSES_URL string = foundryHostedResponsesUrl
+output FOUNDRY_MODEL_DEPLOYMENT_NAME string = foundryChatDeploymentName
+output FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME string = foundryEmbeddingsDeploymentName
+output FOUNDRY_EVAL_MODEL string = foundryEvaluationDeploymentName
+output HOSTED_AGENT_NAME string = hostedAgentName
+output AZURE_OPENAI_ENDPOINT string = reference(foundryAccountId, '2025-06-01').endpoint
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistryName
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = reference(containerRegistryId, '2023-07-01').loginServer
+output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsightsId
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = reference(applicationInsightsId, '2020-02-02').ConnectionString
+output LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspaceId
+output AZURE_POSTGRES_SERVER_FQDN string = reference(postgresServerId, '2023-06-01-preview').fullyQualifiedDomainName
+output POSTGRES_SERVER_NAME string = postgresServerName
+output POSTGRES_SERVER_LOCATION string = postgresServerLocation
+output POSTGRES_DATABASE string = postgresDatabaseName
+output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppsEnvironmentId
+output CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppsEnvironmentName
+output BACKEND_CONTAINER_APP_ID string = backendContainerAppId
+output BACKEND_CONTAINER_APP_NAME string = backendContainerAppName
+output FRONTEND_CONTAINER_APP_ID string = frontendContainerAppId
+output FRONTEND_CONTAINER_APP_NAME string = frontendContainerAppName
+output PUBLIC_BACKEND_MANAGED_IDENTITY_NAME string = publicBackendManagedIdentityName
+output PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME string = publicFrontendManagedIdentityName
+output BACKEND_IMAGE_REPOSITORY string = backendImageRepository
+output FRONTEND_IMAGE_REPOSITORY string = frontendImageRepository
+output API_BASE_URL string = 'https://${reference(backendContainerAppId, '2024-03-01').configuration.ingress.fqdn}'
+output WEB_URL string = 'https://${reference(frontendContainerAppId, '2024-03-01').configuration.ingress.fqdn}'

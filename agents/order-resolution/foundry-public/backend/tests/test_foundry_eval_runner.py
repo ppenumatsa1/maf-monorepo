@@ -12,7 +12,7 @@ from evals.foundry_eval_runner import (
 )
 
 
-def test_load_hosted_e2e_evidence_requires_low_risk_and_approved_conversations(
+def test_load_hosted_e2e_evidence_requires_all_release_conversations(
     tmp_path: Path,
 ) -> None:
     evidence = tmp_path / "hosted-e2e-evidence.json"
@@ -21,18 +21,19 @@ def test_load_hosted_e2e_evidence_requires_low_risk_and_approved_conversations(
             {
                 "generated_at": "2026-07-20T14:00:00Z",
                 "started_at": "2026-07-20T13:45:00Z",
-                "low_risk_thread_id": "conv-low",
-                "approved_thread_id": "conv-approved",
+                "release_id": "release-1",
+                "conversation_ids": ["conv-low", "conv-approved", "conv-damaged"],
             }
         ),
         encoding="utf-8",
     )
 
-    started_at, generated_at, conversation_ids = _load_hosted_e2e_evidence(evidence)
+    started_at, generated_at, conversation_ids, release_id = _load_hosted_e2e_evidence(evidence)
 
     assert started_at == datetime(2026, 7, 20, 13, 45, tzinfo=timezone.utc)
     assert generated_at == datetime(2026, 7, 20, 14, 0, tzinfo=timezone.utc)
-    assert conversation_ids == ["conv-low", "conv-approved"]
+    assert conversation_ids == ["conv-low", "conv-approved", "conv-damaged"]
+    assert release_id == "release-1"
 
 
 def test_load_hosted_e2e_evidence_rejects_missing_conversation(tmp_path: Path) -> None:
@@ -42,13 +43,15 @@ def test_load_hosted_e2e_evidence_rejects_missing_conversation(tmp_path: Path) -
             {
                 "generated_at": "2026-07-20T14:00:00Z",
                 "started_at": "2026-07-20T13:45:00Z",
+                "release_id": "release-1",
                 "low_risk_thread_id": "conv-low",
+                "approved_thread_id": "conv-approved",
             }
         ),
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="two conversation IDs"):
+    with pytest.raises(ValueError, match="three conversation IDs"):
         _load_hosted_e2e_evidence(evidence)
 
 

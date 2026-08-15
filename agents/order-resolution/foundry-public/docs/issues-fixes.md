@@ -5,5 +5,8 @@ The canonical Order Resolution public-lane ledger is
 dated release evidence, including the v15 smoke, hosted E2E, evaluation, and
 telemetry gates, plus issues and remediation decisions.
 
+The 2026-08-14 entry records the approved portable bootstrap/non-mutating reuse
+conversion and its local-only validation. It makes no Azure deployment claim.
+
 Do not duplicate release claims here or infer deployed status from repository
 configuration. Add deployment-impacting evidence to the canonical ledger.

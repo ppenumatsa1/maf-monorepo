@@ -42,5 +42,22 @@ infra/foundry-hosted/iac/modules/*.json
 infra/foundry-hosted/agent
 backend/tmp-foundry-sample/
 
-# Local release timing and evidence reports; the delivery ledger retains the reviewed proof.
+# Legacy release evidence remains ignored pending cutover.
 deployment-report/
+.artifacts/release/
+
+# Release v1 retains the contract and sanitized authority/provenance records only.
+!.artifacts/
+!.artifacts/releases/
+.artifacts/releases/*
+!.artifacts/releases/_contract/
+!.artifacts/releases/_contract/release-v1.schema.json
+!.artifacts/releases/*/
+.artifacts/releases/*/*
+!.artifacts/releases/*/release.json
+!.artifacts/releases/*/history.json
+!.artifacts/releases/*/provenance.json
+.artifacts/releases/*/evidence/
+.artifacts/releases/*/logs/
+.artifacts/releases/*/tmp/
+!.artifacts/releases/_contract/release-v1.schema.json

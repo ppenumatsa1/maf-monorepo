@@ -31,7 +31,9 @@ project_name="$(get_env_value FOUNDRY_PROJECT_NAME)"
 set_if_missing FOUNDRY_PROJECTS_ENDPOINT "$project_endpoint"
 set_if_missing FOUNDRY_PROJECT_ENDPOINT "$project_endpoint"
 set_if_missing FOUNDRY_HOSTED_AGENT_NAME "$hosted_agent_name"
+set_if_missing FOUNDRY_RUNTIME_CONNECTION_NAME underwritingruntimesecrets
 set_if_missing APPINSIGHTS_CONNECTION_STRING "$(get_env_value APPLICATIONINSIGHTS_CONNECTION_STRING)"
+set_if_missing DB_SCHEMA_MANAGED_EXTERNALLY true
 
 responses_endpoint="$(get_env_value AGENT_UNDERWRITING_HOSTED_RESPONSES_ENDPOINT)"
 agent_name_recorded="$(get_env_value AGENT_UNDERWRITING_HOSTED_NAME)"

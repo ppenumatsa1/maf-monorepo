@@ -18,7 +18,9 @@ Use it to separate **architecture intent** from **verified execution evidence**.
 Every hosted release entry should confirm the following:
 
 1. Browser traffic stays same-origin through the public UI/API boundary.
-2. The public adapter starts or resumes the hosted Responses workflow; it does not run a second production orchestration path.
+2. The internal backend adapter starts or resumes the hosted Responses workflow
+   behind the external frontend proxy; it does not run a second production
+   orchestration path.
 3. PostgreSQL remains the durable store for `maf_checkpoints`, run history, state, events, and results.
 4. AG-UI and CopilotKit surfaces read or explain allowlisted durable projections only.
 5. Retry/idempotency and crash/resume behavior still correlate on one `workflow_run_id`.
@@ -74,6 +76,90 @@ Use one section per meaningful operational change.
 ## Documentation-only alignment note
 
 This file may also capture documentation-only operating-model updates. Those entries should explicitly say that no hosted release completion is being claimed.
+
+## 2026-08-15 - Deployment documentation synchronized
+
+**Change**
+
+- Aligned the deployment flow, README, agent instructions, Copilot
+  instructions, deployment profile guide, Azure plan, architecture contracts,
+  and deployment skill with the implemented external-frontend/internal-backend
+  topology.
+- Documented the actual release order: shared readiness and project
+  `CustomKeys` connection convergence, packaging, hosted-agent deployment and
+  metadata/RBAC persistence, parallel internal-backend/external-frontend
+  deployment, smoke, recovery E2E, telemetry/evaluation, then exact deployment
+  verification and aggregate evidence.
+- Replaced outdated "public adapter" and hosted-only database-secret wording
+  with the current internal backend adapter plus separate ACA-secret and
+  Foundry-connection delivery mechanisms.
+
+**Local validation**
+
+- Deployment-profile and script contracts passed.
+- Full backend/frontend/E2E validation passed.
+- Bicep builds, three-service AZD packaging, shell syntax for 24 scripts, and
+  scoped diff checks passed.
+
+**Hosted validation**
+
+- Not run for this documentation-only alignment.
+
+No hosted release completion, evaluation run, telemetry window, or ingress
+migration is claimed by this entry.
+
+## 2026-08-14 - Environment-independent bootstrap IaC validation
+
+**Change**
+
+- Validated explicit `bootstrap` and non-mutating `reuse` modes for the public
+  lane against isolated and existing Azure environments.
+- Corrected bootstrap naming to reserve capacity for the strictest resource
+  limits after the preview rejected an overlength Container App and Storage
+  account name.
+- Corrected AZD missing-value handling and reuse-mode `NAME_PREFIX`
+  compatibility before Azure preview.
+
+**Azure validation**
+
+- Created the empty `rg-maf-underwriting` resource group in
+  subscription `7df95e88-701c-4693-af77-3159f83b558d`, `eastus2`.
+- Bootstrap preview passed and proposes 12 resources: Foundry account/project
+  and model, ACR, PostgreSQL, monitoring, Container Apps environment/apps,
+  identities, and evaluation storage. It applied no changes.
+- Reuse preview passed for the existing environment and skipped all resources.
+- Tenant-authenticated `azd package --no-prompt` passed. It created only a
+  local image tag; no image or Azure resource was pushed or deployed.
+
+**Release status**
+
+- Validation evidence only. No Azure infrastructure deployment, app
+  deployment, smoke test, E2E, evaluation, or telemetry result is claimed.
+- Validated bootstrap or release workflow invocation is the execution trigger;
+  no additional manual approval checkpoint is required.
+
+## Environment-independent bootstrap IaC (no Azure deployment evidence)
+
+**Change**
+
+- Added explicit `bootstrap` and non-mutating `reuse` IaC modes for the public
+  lane, including parameterized Foundry/model, ACR, monitoring, Container
+  Apps, identities, PostgreSQL, and evaluation storage.
+- Added a non-secret bootstrap profile and deterministic,
+  subscription/resource-group-qualified resource naming.
+- Replaced the fixed-subscription PostgreSQL rebuild helper with selected-AZD
+  environment inputs and a server-specific confirmation token.
+
+**Local validation**
+
+- Deployment-profile contract, PostgreSQL credential tests, bootstrap-contract
+  test, Bicep compilation, shell syntax checks, and `git diff --check` pass.
+
+**Deferrals**
+
+- Superseded by the 2026-08-14 validation entry. No Azure preview, resource
+  creation, deployment, smoke test, E2E, evaluation, or telemetry result was
+  claimed by this earlier static-only record.
 
 ## 2026-08-06 - Direct-executor master-workflow cutover (release evidence pending)
 
@@ -556,3 +642,173 @@ checked-in `.npmrc` requires TLS validation and sets
 bypass the approved feed. The Docker build copies this policy before
 `npm ci`. This is a package-acquisition policy change only; no deployment or
 release evidence was rerun.
+
+## 2026-08-14 - Deployment guidance reference access denied
+
+**Issue**
+
+- The deployment preflight could not read two installed Azure Deploy skill
+  reference files: the pre-deploy checklist and the AZD recipe guide. The
+  tooling returned `Permission denied and could not request permission from
+  user`.
+
+**Impact**
+
+- This is a local content-access restriction on installed skill documentation,
+  not an Azure authorization or resource failure.
+- No Azure CLI, AZD provisioning, deployment, database, network, RBAC, smoke,
+  E2E, evaluation, or telemetry command ran as a result. No target resource
+  changed.
+
+**Decision**
+
+- Continue only with the validated lane-local deployment plan, checked-in
+  release scripts, and explicit deployment authorization.
+- Reconcile the restricted skill-reference access separately; do not bypass
+  it by reading the denied files through another tool or by treating the
+  restriction as a successful pre-deployment check.
+
+## 2026-08-14 - New-subscription bootstrap retry after Foundry project location failure
+
+**Issue**
+
+- The first authorized bootstrap attempt created the Foundry account/model,
+  ACR, evaluation storage, monitoring, Container Apps environment/apps, and
+  PostgreSQL, but ARM rejected the child Foundry project with
+  `LocationRequired`.
+
+**Root cause and fix**
+
+- The `Microsoft.CognitiveServices/accounts/projects@2025-06-01` resource did
+  not explicitly set `location`, although its parent account did.
+- The child project now receives the same parameterized location as the parent,
+  and the bootstrap contract test asserts that property.
+- The next retry reached the project API but exposed a second missing parent
+  contract: project creation requires the `AIServices` account to set
+  `allowProjectManagement: true`. The account now declares that property, and
+  the same bootstrap contract test covers it.
+- The following reconciliation exposed that role assignments scoped directly
+  to conditional resource symbols compiled at resource-group scope. This
+  created duplicate `Log Analytics Reader` assignments and failed with
+  `RoleAssignmentExists`.
+- Role assignments now use unconditional existing-resource aliases for their
+  extension scopes. The contract test parses the generated ARM template and
+  requires all ten assignments to contain explicit resource scopes.
+- Because Azure role-assignment GUIDs cannot move between scopes, the corrected
+  resource-scoped assignments use a versioned deterministic GUID seed. The
+  superseded resource-group assignments are removed only after all replacement
+  assignments are live and verified.
+- Nine replacement assignments were created successfully. The Application
+  Insights reader had never been created at the incorrect scope and already
+  existed correctly under its original deterministic ID, so that one ID is
+  retained instead of creating a duplicate.
+- After resources, scoped RBAC, and the project connection reconciled, ARM
+  failed output evaluation because the 2025-06-01 account API exposes
+  `endpoint` at the response root rather than under `properties`. The
+  `AZURE_OPENAI_ENDPOINT` output now reads the actual API shape, with a
+  regression assertion in the bootstrap contract test.
+- The first runtime-credential attempt stopped before changing PostgreSQL
+  because its firewall lookup used unsupported Azure CLI `--rule-name`
+  syntax. It now uses the current `--server-name <server> --name <rule>`
+  contract, matching the readiness validator.
+- The next attempt incorrectly reported that the declaratively created
+  database was absent because `db show` used unsupported `--database-name`
+  syntax and suppressed the CLI diagnostic. Live enumeration confirmed the
+  `underwriting` database exists; the check now uses `--name`.
+- The first app release built and pushed all three images and activated hosted
+  agent version 1, but backend rollout stopped because the current Container
+  Apps CLI rejects `--target-port` on `az containerapp update`. Backend image
+  and environment updates now use `containerapp update`, followed by the
+  supported `containerapp ingress update --target-port 8000`.
+- Direct hosted smoke then passed, but deployed public E2E failed at the
+  adapter relay. The backend revision had no Foundry project endpoint, pinned
+  hosted-agent endpoint/version, or `AZURE_CLIENT_ID` for its user-assigned
+  identity. Backend deployment now injects those values from AZD outputs and
+  the live managed identity, while keeping credentials out of source.
+
+## 2026-08-14 - New-subscription E2E deployment completed
+
+**Target**
+
+- Subscription: `7df95e88-701c-4693-af77-3159f83b558d`
+- Resource group: `rg-maf-underwriting`
+- Region: East US 2
+- Foundry account/project: `mafunderwrit10edb2a8ai/underwriting`
+- Model deployment: `underwriting-gpt-4-1-mini`, `gpt-4.1-mini`
+  `2025-04-14`, Global Standard capacity 2500
+
+**Infrastructure and database**
+
+- Bootstrap provisioning completed for Foundry/model, ACR, evaluation storage,
+  Log Analytics, Application Insights, Container Apps environment/apps,
+  PostgreSQL, managed identities, the Foundry Application Insights connection,
+  and scoped role assignments.
+- Live RBAC verification found all ten IaC-required resource-scoped
+  assignments, one additional platform-managed OpenAI User assignment for the
+  hosted agent identity, and no residual assignment at resource-group scope.
+- PostgreSQL schema bootstrap and least-privilege runtime credential
+  provisioning passed. Readiness verified TLS, matching runtime URLs, Ready
+  server state, database existence, dual password/Entra authentication, the
+  Azure-services firewall rule, and the release-operator rule.
+
+**Deployment**
+
+- Backend revision `mafunderwrit10edb2a8-backend--0000002` is active,
+  provisioned, and healthy.
+- Frontend revision `mafunderwrit10edb2a8-frontend--0000002` is active,
+  provisioned, and healthy.
+- Hosted agent `underwriting-hosted` version 1 is active with the Responses
+  protocol.
+- Backend health passed at
+  `https://mafunderwrit10edb2a8-backend.salmoncoast-6af18381.eastus2.azurecontainerapps.io/health`.
+- Frontend availability passed at
+  `https://mafunderwrit10edb2a8-frontend.salmoncoast-6af18381.eastus2.azurecontainerapps.io`.
+
+**Validation evidence**
+
+- The release validation lane passed 43 backend tests, three PostgreSQL/script
+  tests, and local Playwright.
+- Hosted happy smoke passed for
+  `run-smoke-20260814203420-205557`, decision `APPROVED`.
+- Deployed E2E passed for
+  `run-hosted-happy-20260814204326-212165` and
+  `run-hosted-recover-20260814204326-212165`. Both completed with
+  `APPROVED`; deployed Playwright passed.
+- Report-only Foundry trace evaluation
+  `eval_92d28e20777343c3be0ed8e688e4d02b` /
+  `evalrun_2e89f0eb60164f6c997856eacdb92e24` completed with one passed,
+  zero failed, and zero errors.
+- Application Insights correlated 64 rows across both E2E workflow runs:
+  three requests, 61 dependencies, both hosted-invocation/workflow-span run
+  pairs, and zero exceptions.
+
+**Operational learnings**
+
+- A first evaluation submitted immediately after smoke found zero trace rows
+  and failed. Retrying after trace ingestion completed passed; no evaluator or
+  runtime fallback was introduced.
+- One backend redeploy attempt stopped before mutation because local DNS could
+  not resolve `management.azure.com`. The identical idempotent retry succeeded.
+- Native evaluation-suite generation remains deferred under the selected
+  acceptance policy because the organization blocks its public
+  evaluation-storage route. Report-only trace evaluation is the completed
+  release gate.
+- The first post-release preview showed that the selected environment still
+  declared `bootstrap`, which would reconcile released Container Apps back to
+  placeholder images and port 80. Successful bootstrap hydration now
+  transitions the AZD environment to explicit `reuse`, so future provision
+  previews create or modify no resources.
+- Built-in role definitions are now explicitly resolved at subscription scope
+  in Bicep, and the generated-template contract verifies every assignment uses
+  a subscription-scoped role definition.
+- The destructive PostgreSQL rebuild command now refuses to delete from a
+  `reuse` environment because that mode cannot guarantee declarative server
+  recreation. Its server token, live-location check, and other destructive
+  safeguards remain in force for bootstrap-mode recovery.
+
+**Safety**
+
+- The retry uses the same selected AZD environment and deterministic names, so
+  already-created resources are reconciled rather than duplicated.
+- No PostgreSQL rebuild, data deletion, credential provisioning, app release,
+  smoke, E2E, evaluation, or telemetry operation occurred before this fix.

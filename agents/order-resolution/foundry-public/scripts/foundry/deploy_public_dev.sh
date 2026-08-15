@@ -11,32 +11,137 @@ require_bin() {
 require_bin az
 require_bin azd
 require_bin make
+require_bin jq
+require_bin python3
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-FOUNDRY_AZD_ENV_NAME="${FOUNDRY_AZD_ENV_NAME:-foundry-public-dev2}"
-AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
-AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-rg-maf-ora-foundry-public-dev2}"
-AZURE_LOCATION="${AZURE_LOCATION:-eastus2}"
-FOUNDRY_ACCOUNT_NAME="${FOUNDRY_ACCOUNT_NAME:-maffndaibfscpfhjr7sp4}"
-FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_NAME:-order-resolution-public-managed-dev2}"
-FOUNDRY_HOSTED_AGENT_NAME="${FOUNDRY_HOSTED_AGENT_NAME:-order-resolution-hosted}"
-POSTGRES_SERVER_NAME="${POSTGRES_SERVER_NAME:-maffndpgbfscpfhjr7sp4cu}"
-RUNTIME_DATABASE_URL="${RUNTIME_DATABASE_URL:-${DATABASE_URL:-}}"
+shared_profile="$ROOT_DIR/../deployment/profiles/foundry-public.env"
+legacy_profile="$ROOT_DIR/deployment/profiles/foundry-public.env"
+if [[ -n "${FOUNDRY_DEPLOYMENT_PROFILE:-}" ]]; then
+  deployment_profile="$FOUNDRY_DEPLOYMENT_PROFILE"
+elif [[ -f "$shared_profile" ]]; then
+  deployment_profile="$shared_profile"
+else
+  deployment_profile="$legacy_profile"
+  echo "WARN: Using legacy lane-local deployment profile; migrate to $shared_profile." >&2
+fi
+if [[ "$deployment_profile" == "$legacy_profile" ]]; then
+  echo "WARN: $legacy_profile is legacy_pending_cutover; prefer $shared_profile." >&2
+fi
+[[ -f "$deployment_profile" && ! -L "$deployment_profile" ]] || {
+  echo "Deployment profile must be a regular non-symlink file: $deployment_profile" >&2
+  exit 1
+}
+
+FOUNDRY_AZD_ENV_NAME="${FOUNDRY_AZD_ENV_NAME:-${AZD_ENV_NAME:-}}"
 FOUNDRY_RELEASE_BASE_REF="${FOUNDRY_RELEASE_BASE_REF:-HEAD}"
 FOUNDRY_VALIDATION_MODE="${FOUNDRY_VALIDATION_MODE:-}"
-FOUNDRY_INFRA_RECONCILIATION_APPROVED="${FOUNDRY_INFRA_RECONCILIATION_APPROVED:-false}"
-FOUNDRY_INFRA_RECONCILIATION_REFERENCE="${FOUNDRY_INFRA_RECONCILIATION_REFERENCE:-}"
 
 if [[ -n "${FOUNDRY_DEPLOY_MODE:-}" ]]; then
   echo "FOUNDRY_DEPLOY_MODE is no longer supported; automatic releases are app_only." >&2
   exit 1
 fi
-if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
-  echo "AZURE_SUBSCRIPTION_ID is required."
-  exit 1
+
+export FOUNDRY_RELEASE_STARTED_AT="${FOUNDRY_RELEASE_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+export FOUNDRY_RELEASE_ID="${FOUNDRY_RELEASE_ID:-order-resolution-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+release_dir="$ROOT_DIR/.artifacts/releases/$FOUNDRY_RELEASE_ID"
+export FOUNDRY_RELEASE_LOG_DIR="$release_dir/logs"
+export FOUNDRY_RELEASE_CONTEXT_FILE="$release_dir/release.json"
+export FOUNDRY_MODEL_PREFLIGHT_EVIDENCE_FILE="$release_dir/evidence/model-preflight.json"
+export FOUNDRY_DEPLOYMENT_VERIFICATION_FILE="$release_dir/evidence/deployment-verification.json"
+export HOSTED_SMOKE_EVIDENCE_FILE="$release_dir/evidence/hosted-smoke.json"
+export FOUNDRY_E2E_EVIDENCE_FILE="$release_dir/evidence/hosted-e2e.json"
+export HOSTED_E2E_EVIDENCE_FILE="$FOUNDRY_E2E_EVIDENCE_FILE"
+export APPINSIGHTS_CONNECTION_EVIDENCE_FILE="$release_dir/evidence/appinsights-connection.json"
+export APPINSIGHTS_EVIDENCE_FILE="$release_dir/evidence/telemetry.json"
+export FOUNDRY_EVAL_EVIDENCE_FILE="$release_dir/evidence/evaluation.json"
+export PUBLIC_BACKEND_DEPLOYMENT_METADATA_FILE="$release_dir/evidence/backend-deployment.json"
+export PUBLIC_FRONTEND_DEPLOYMENT_METADATA_FILE="$release_dir/evidence/frontend-deployment.json"
+export HOSTED_AGENT_DEPLOYMENT_METADATA_FILE="$release_dir/evidence/hosted-agent-deployment.json"
+export FOUNDRY_RUNTIME_CONNECTION_METADATA_FILE="$release_dir/evidence/runtime-connection-deployment.json"
+
+release_initialized=0
+release_finalized=0
+release_stage=initialization
+timing() {
+  if [[ -n "${3:-}" ]]; then
+    python3 scripts/foundry/release_evidence.py timing \
+      --release-id "$FOUNDRY_RELEASE_ID" \
+      --stage "$1" \
+      --action "$2" \
+      --status "$3" \
+      >/dev/null
+  else
+    python3 scripts/foundry/release_evidence.py timing \
+      --release-id "$FOUNDRY_RELEASE_ID" \
+      --stage "$1" \
+      --action "$2" \
+      >/dev/null
+  fi
+}
+run_timed_stage() {
+  local stage="$1"
+  shift
+  timing "$stage" start
+  if "$@"; then
+    timing "$stage" end succeeded
+  else
+    local exit_code=$?
+    timing "$stage" end failed || true
+    return "$exit_code"
+  fi
+}
+finalize_failed_release() {
+  local exit_code=$?
+  if [[ "$exit_code" -ne 0 && "$release_initialized" -eq 1 && "$release_finalized" -eq 0 ]]; then
+    python3 scripts/foundry/release_evidence.py finalize \
+      --release-id "$FOUNDRY_RELEASE_ID" \
+      --status failed \
+      --failed-stage "$release_stage" \
+      --error "Release stage failed; inspect local logs outside the sanitized release record." \
+      >/dev/null 2>&1 || true
+  fi
+  return "$exit_code"
+}
+trap finalize_failed_release EXIT
+
+python3 scripts/foundry/release_evidence.py init \
+  --release-id "$FOUNDRY_RELEASE_ID" \
+  --started-at "$FOUNDRY_RELEASE_STARTED_AT" \
+  --profile "$deployment_profile" \
+  --executor local
+release_initialized=1
+
+release_stage=environment_selection
+if [[ -n "$FOUNDRY_AZD_ENV_NAME" ]]; then
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env select "$FOUNDRY_AZD_ENV_NAME" --cwd infra/foundry-hosted --no-prompt
 fi
+./scripts/foundry/ensure_foundry_azd_defaults.sh
+
+get_env() {
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env get-value "$1" --cwd infra/foundry-hosted --no-prompt 2>/dev/null || true
+}
+
+required_env() {
+  local name="$1"
+  local value
+  value="$(get_env "$name")"
+  if [[ -z "$value" ]]; then
+    echo "Missing selected AZD environment value: $name" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+AZURE_SUBSCRIPTION_ID="$(required_env AZURE_SUBSCRIPTION_ID)"
+AZURE_RESOURCE_GROUP="$(required_env AZURE_RESOURCE_GROUP)"
+AZURE_LOCATION="$(required_env AZURE_LOCATION)"
+POSTGRES_SERVER_NAME="$(required_env POSTGRES_SERVER_NAME)"
+RUNTIME_DATABASE_URL="$(required_env RUNTIME_DATABASE_URL)"
 if [[ -z "$RUNTIME_DATABASE_URL" ]]; then
   echo "RUNTIME_DATABASE_URL (or DATABASE_URL) is required."
   exit 1
@@ -54,36 +159,9 @@ if [[ ! -f backend/Dockerfile.hosted || ! -f backend/foundry/main.py ]]; then
   exit 1
 fi
 
-AZURE_TENANT_ID="${AZURE_TENANT_ID:-$(az account show --subscription "$AZURE_SUBSCRIPTION_ID" --query tenantId -o tsv)}"
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
 az account show --query id -o tsv | grep -qx "$AZURE_SUBSCRIPTION_ID"
-azd auth login --check-status >/dev/null
-
-echo "Selecting AZD environment: ${FOUNDRY_AZD_ENV_NAME}"
-(
-  cd infra/foundry-hosted
-  azd env select "$FOUNDRY_AZD_ENV_NAME" || azd env new "$FOUNDRY_AZD_ENV_NAME"
-  azd env set AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
-  azd env set AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
-  azd env set AZURE_LOCATION "$AZURE_LOCATION"
-  azd env set AZURE_TENANT_ID "$AZURE_TENANT_ID"
-  azd env set FOUNDRY_ACCOUNT_NAME "$FOUNDRY_ACCOUNT_NAME"
-  azd env set FOUNDRY_PROJECT_NAME "$FOUNDRY_PROJECT_NAME"
-  azd env set HOSTED_AGENT_NAME "$FOUNDRY_HOSTED_AGENT_NAME"
-  azd env set FOUNDRY_RUNTIME_DATABASE_URL "$RUNTIME_DATABASE_URL"
-  azd env set DATABASE_URL "$RUNTIME_DATABASE_URL"
-  azd env set RUNTIME_DATABASE_URL "$RUNTIME_DATABASE_URL"
-  azd env set POSTGRES_SERVER_NAME "$POSTGRES_SERVER_NAME"
-  azd env set APP_ENV "${APP_ENV:-foundry-public-dev2}"
-  azd env set STORE_PROVIDER "${STORE_PROVIDER:-postgres}"
-  azd env set ENABLE_TELEMETRY "${ENABLE_TELEMETRY:-true}"
-  azd env set ENABLE_INSTRUMENTATION "${ENABLE_INSTRUMENTATION:-true}"
-  azd env set OTEL_SERVICE_NAME "${OTEL_SERVICE_NAME:-maf-order-resolution-foundry-public}"
-  azd env set OTEL_SERVICE_NAMESPACE "${OTEL_SERVICE_NAMESPACE:-maf-order-resolution}"
-  azd env set OTEL_RECORD_CONTENT "${OTEL_RECORD_CONTENT:-false}"
-  azd env set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}"
-  azd env set FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT "${FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT:-true}"
-)
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd auth login --check-status >/dev/null
 
 wait_for_parallel_jobs() {
   local status=0
@@ -113,23 +191,6 @@ if [[ "$deploy_mode" != "app_only" ]]; then
   exit 1
 fi
 
-case "$FOUNDRY_INFRA_RECONCILIATION_APPROVED" in
-  false)
-    reconcile_infrastructure=false
-    ;;
-  true)
-    if [[ -z "$FOUNDRY_INFRA_RECONCILIATION_REFERENCE" ]]; then
-      echo "FOUNDRY_INFRA_RECONCILIATION_REFERENCE is required with approved infrastructure reconciliation." >&2
-      exit 1
-    fi
-    reconcile_infrastructure=true
-    ;;
-  *)
-    echo "FOUNDRY_INFRA_RECONCILIATION_APPROVED must be true or false." >&2
-    exit 1
-    ;;
-esac
-
 echo "Release router selected deploy_mode=${deploy_mode} validation_mode=${validation_mode} infrastructure_reconciliation=${infrastructure_reconciliation} reason=${reason} base_ref=${FOUNDRY_RELEASE_BASE_REF}"
 
 case "$validation_mode" in
@@ -146,39 +207,48 @@ case "$validation_mode" in
 esac
 
 (
-  # Local validation uses its isolated test database, never the production
-  # runtime connection required by the later deployment steps.
   unset RUNTIME_DATABASE_URL DATABASE_URL
   make "$validation_target"
 ) &
 validation_pid=$!
+release_stage=local_validation
 make foundry-iac-build &
 iac_pid=$!
 wait_for_parallel_jobs "$validation_pid" "$iac_pid"
 
-if [[ "$reconcile_infrastructure" == true ]]; then
-  echo "Running explicitly approved infrastructure reconciliation: ${FOUNDRY_INFRA_RECONCILIATION_REFERENCE}"
-  FOUNDRY_INFRA_RECONCILIATION_APPROVED=true \
-    FOUNDRY_INFRA_RECONCILIATION_REFERENCE="$FOUNDRY_INFRA_RECONCILIATION_REFERENCE" \
-    make foundry-provision
-fi
-
+release_stage=deployment
+timing app_only start
 make foundry-release-deploy
-make foundry-appinsights-connection
+release_stage=deployment_verification
+run_timed_stage verification make foundry-verify
 
-make foundry-smoke
-release_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-FOUNDRY_E2E_EVIDENCE_NOT_BEFORE="$release_started_at" make foundry-eval &
+release_stage=hosted_smoke
+run_timed_stage smoke make foundry-smoke
+FOUNDRY_E2E_EVIDENCE_NOT_BEFORE="$FOUNDRY_RELEASE_STARTED_AT" \
+  run_timed_stage evaluation make foundry-eval &
 evaluation_pid=$!
-if ! make foundry-hosted-e2e; then
+release_stage=hosted_e2e
+if ! run_timed_stage hosted_e2e make foundry-hosted-e2e; then
   echo "Hosted E2E failed; cancelling the pending trace evaluation." >&2
   kill "$evaluation_pid" 2>/dev/null || true
   wait "$evaluation_pid" || true
   exit 1
 fi
 
-make foundry-telemetry &
+release_stage=telemetry
+run_timed_stage telemetry make foundry-telemetry &
 telemetry_pid=$!
 wait_for_parallel_jobs "$evaluation_pid" "$telemetry_pid"
+telemetry_ended_at="$(jq -er '.extensions.release_timing.stages.telemetry.ended_at' "$FOUNDRY_RELEASE_CONTEXT_FILE")"
+python3 scripts/foundry/release_evidence.py timing \
+  --release-id "$FOUNDRY_RELEASE_ID" \
+  --stage app_only \
+  --action end \
+  --status succeeded \
+  --timestamp "$telemetry_ended_at" \
+  >/dev/null
+release_stage=release_evidence
+make foundry-evidence
+release_finalized=1
 
-echo "Order Resolution Foundry public release completed for AZD environment: ${FOUNDRY_AZD_ENV_NAME}"
+echo "Order Resolution Foundry public app-only release completed for ${AZURE_SUBSCRIPTION_ID}/${AZURE_RESOURCE_GROUP}."

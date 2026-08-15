@@ -20,7 +20,8 @@
 
 - Replaced the nested parent/child graph with one master workflow whose risk, credit, medical, and driving executors fan out/fan in in one superstep.
 - Kept the PostgreSQL durability boundary in `backend/foundry/main.py`, the hosted Responses entrypoint.
-- Converted the public API to a relay/read-model adapter and preserved AG-UI/history/CopilotKit contracts.
+- Converted the internal API to a relay/read-model adapter behind the external
+  frontend proxy and preserved AG-UI/history/CopilotKit contracts.
 - Kept retry/idempotency, crash/resume, and PostgreSQL checkpoints in the shared workflow rather than replacing them with hosted-lane shims.
 - Established the clean-cutover rule that deployed public traffic uses the hosted Responses lane while local execution mode remains validation-only.
 - Declared version-40 nested-graph checkpoints unsupported for resume after deployment. No compatibility workflow or fallback is provided.

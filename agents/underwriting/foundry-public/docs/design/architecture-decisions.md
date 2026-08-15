@@ -4,7 +4,7 @@
 
 This record captures the architecture decisions that define the Underwriting
 Foundry Public system. It distinguishes the original domain decisions from the
-2026-08-06 clean alignment to the Order Resolution engineering and release
+2026-08-06 clean alignment to the standardized engineering and release
 model.
 
 ## Initial Underwriting Decisions
@@ -65,12 +65,13 @@ the Foundry Responses protocol.
 **Why:** The hosted agent must execute the same MAF workflow and write the same
 durable data as the validated local application path.
 
-**Result:** The public API starts or resumes hosted work, while the hosted agent
-owns production workflow execution.
+**Result:** The internal API, reached only through the external frontend proxy,
+starts or resumes hosted work, while the hosted agent owns production workflow
+execution.
 
 ## 2026-08-06 Clean Alignment Decisions
 
-### ADR-006: Adopt the Order Resolution boundary model
+### ADR-006: Adopt the standardized clean-cutover boundary model
 
 **Decision:** Reorganize Underwriting around API routers and schemas,
 application modules, core composition, infrastructure adapters, and modular
@@ -78,7 +79,7 @@ MAF packages.
 
 **Why:** Explicit dependency boundaries improve testability, keep delivery
 concerns separate from domain behavior, and give Underwriting the same
-maintainable structure as Order Resolution.
+maintainable, independently runnable structure.
 
 **Result:** The supported topology is:
 
@@ -115,15 +116,17 @@ path. Both surfaces derive from the same workflow run and durable projections.
 
 ### ADR-009: Keep browser, API, hosted-agent, and data boundaries separate
 
-**Decision:** Use a public browser/UI boundary, a public FastAPI adapter, a
+**Decision:** Use a public browser/UI boundary, an internal FastAPI adapter, a
 Foundry hosted execution boundary, and PostgreSQL durable storage.
 
 **Why:** The browser must not receive Foundry or database credentials, and the
-public adapter must not create a second production workflow runtime.
+internal adapter must not create a second production workflow runtime.
 
-**Result:** Browser traffic is same-origin through the UI/API boundary; the API
-uses the hosted Responses path for start/resume and reads durable projections;
-only the hosted runtime receives its TLS PostgreSQL credential.
+**Result:** Browser traffic is same-origin through the external frontend proxy;
+the internal API uses the hosted Responses path for start/resume and reads
+durable projections. The backend receives its TLS PostgreSQL URL through an ACA
+secret, while the hosted agent resolves the same least-privilege credential
+through the project `CustomKeys` connection.
 
 ### ADR-010: Make releases evidence-driven and policy guarded
 

@@ -16,7 +16,8 @@ require_bin python3
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
-PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
+source "${ROOT_DIR}/scripts/foundry/private_profile.sh"
+PROFILE_FILE="$(private_profile_resolve "$ROOT_DIR")"
 PROFILE_LOADER="${ROOT_DIR}/../deployment/profile.sh"
 
 source "$PROFILE_LOADER"

@@ -22,10 +22,10 @@ class PostgresRuntimeCredentialTests(unittest.TestCase):
         )
 
         self.assertIn("NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT NOBYPASSRLS", sql)
-        self.assertIn("REASSIGN OWNED BY \"underwriting_runtime\" TO \"pgadmin\"", sql)
-        self.assertIn("DROP OWNED BY \"underwriting_runtime\"", sql)
+        self.assertIn('REASSIGN OWNED BY "underwriting_runtime" TO "pgadmin"', sql)
+        self.assertIn('DROP OWNED BY "underwriting_runtime"', sql)
         self.assertIn("REVOKE CREATE ON SCHEMA public FROM PUBLIC", sql)
-        self.assertIn("GRANT USAGE ON SCHEMA public TO \"underwriting_runtime\"", sql)
+        self.assertIn('GRANT USAGE ON SCHEMA public TO "underwriting_runtime"', sql)
         self.assertNotIn("GRANT USAGE, CREATE ON SCHEMA", sql)
         self.assertNotIn("GRANT CONNECT, CREATE", sql)
         self.assertNotIn("ON ALL TABLES IN SCHEMA public TO", sql)

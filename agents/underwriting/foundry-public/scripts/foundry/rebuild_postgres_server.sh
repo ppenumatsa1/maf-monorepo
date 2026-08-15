@@ -3,13 +3,6 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
-# Fixed Azure target; do not parameterize this destructive workflow.
-readonly SUBSCRIPTION_ID='4f18d577-3506-4a11-85e5-a83b14727a84'
-readonly RESOURCE_GROUP='rg-underwriting-readiness-0731'
-readonly SERVER_NAME='azpgwhcedyxchnbtmpub'
-readonly SERVER_LOCATION='northcentralus'
-readonly DATABASE_NAME='underwriting'
-readonly CONFIRMATION_TOKEN='REBUILD-azpgwhcedyxchnbtmpub'
 
 usage() {
   cat >&2 <<EOF
@@ -27,11 +20,39 @@ require_bin() {
   }
 }
 
-[[ "$#" -eq 1 && "$1" == "$CONFIRMATION_TOKEN" ]] || usage
-
 require_bin az
 require_bin azd
 require_bin make
+
+get_env_value() {
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env get-value "$1" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
+}
+
+required_env_value() {
+  local key="$1"
+  local value
+  value="$(get_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    echo "Missing selected AZD environment value: $key" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+SUBSCRIPTION_ID="$(required_env_value AZURE_SUBSCRIPTION_ID)"
+RESOURCE_GROUP="$(required_env_value AZURE_RESOURCE_GROUP)"
+SERVER_NAME="$(required_env_value POSTGRES_SERVER_NAME)"
+SERVER_LOCATION="$(required_env_value POSTGRES_SERVER_LOCATION)"
+DATABASE_NAME="$(required_env_value POSTGRES_DATABASE)"
+INFRASTRUCTURE_MODE="$(required_env_value INFRASTRUCTURE_MODE)"
+CONFIRMATION_TOKEN="REBUILD-${SERVER_NAME}"
+
+[[ "$#" -eq 1 && "$1" == "$CONFIRMATION_TOKEN" ]] || usage
+if [[ "$INFRASTRUCTURE_MODE" != "bootstrap" ]]; then
+  echo "PostgreSQL rebuild requires a bootstrap-mode environment that guarantees declarative recreation; refusing to delete from '$INFRASTRUCTURE_MODE' mode." >&2
+  exit 1
+fi
 
 # A recreated server needs a new administrator password, not the unavailable
 # password of the deleted server. Persist it only in the local azd environment.
@@ -60,13 +81,13 @@ fi
 
 if ! az postgres flexible-server list-skus --location "$SERVER_LOCATION" --output json \
   | grep -Fq '"name": "Standard_D2ds_v5"'; then
-  echo "The captured Standard_D2ds_v5 SKU is unavailable in $SERVER_LOCATION; refusing to delete." >&2
+  echo "The selected Standard_D2ds_v5 SKU is unavailable in $SERVER_LOCATION; refusing to delete." >&2
   exit 1
 fi
 
-# Listing is intentionally scoped to the fixed resource group. This makes a
-# retry after a failed provision safe: an already-deleted server is recreated,
-# never substituted with a server selected by caller input.
+# Listing is intentionally scoped to the selected AZD environment. This makes
+# a retry after a failed provision safe: an already-deleted server is
+# recreated, never substituted with a server selected by caller input.
 existing_server="$(
   az postgres flexible-server list \
     --subscription "$SUBSCRIPTION_ID" \
@@ -76,6 +97,21 @@ existing_server="$(
 )"
 
 if [[ "$existing_server" == "$SERVER_NAME" ]]; then
+  actual_server_location="$(
+    az postgres flexible-server show \
+      --subscription "$SUBSCRIPTION_ID" \
+      --resource-group "$RESOURCE_GROUP" \
+      --name "$SERVER_NAME" \
+      --query location \
+      --output tsv
+  )"
+  configured_location="$(tr '[:upper:]' '[:lower:]' <<<"$SERVER_LOCATION" | tr -d '[:space:]')"
+  actual_location="$(tr '[:upper:]' '[:lower:]' <<<"$actual_server_location" | tr -d '[:space:]')"
+  if [[ "$actual_location" != "$configured_location" ]]; then
+    echo "Selected AZD PostgreSQL location '$SERVER_LOCATION' does not match the existing server location '$actual_server_location'; refusing to delete." >&2
+    exit 1
+  fi
+
   echo "Deleting PostgreSQL Flexible Server '$SERVER_NAME' in '$RESOURCE_GROUP'."
   az postgres flexible-server delete \
     --subscription "$SUBSCRIPTION_ID" \
@@ -95,11 +131,7 @@ else
 fi
 
 echo "Recreating '$SERVER_NAME' and database resources through Bicep."
-# Do not allow caller-provided environment values to turn the provision phase
-# into a different server or database after this script has deleted the fixed
-# target. Bicep contains the remaining captured creation settings.
-POSTGRES_SERVER_NAME="$SERVER_NAME" \
-POSTGRES_SERVER_LOCATION="$SERVER_LOCATION" \
-POSTGRES_DATABASE="$DATABASE_NAME" \
-POSTGRES_ADMIN_USERNAME='pgadmin' \
-  make -C "$ROOT_DIR" foundry-provision
+# The selected AZD environment remains the single source of truth. This flag
+# lets the hydration script preserve its PostgreSQL location while the server
+# is absent between deletion and Bicep recreation.
+POSTGRES_REBUILD=1 make -C "$ROOT_DIR" foundry-provision

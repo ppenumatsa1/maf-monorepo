@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -n "${RELEASE_ID:-}" ]]; then
+  . "$ROOT_DIR/scripts/foundry/release_paths.sh"
+  release_paths_configure "$ROOT_DIR"
+fi
 FOUNDRY_AZD_DIR="${FOUNDRY_AZD_DIR:-$ROOT_DIR/infra/foundry-hosted}"
 FOUNDRY_AZD_ENV_NAME="${FOUNDRY_AZD_ENV_NAME:-}"
 PYTHON="$ROOT_DIR/.venv/bin/python"

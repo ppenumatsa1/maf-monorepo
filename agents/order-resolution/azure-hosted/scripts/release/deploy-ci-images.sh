@@ -4,6 +4,10 @@ umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT_DIR"
+source "$ROOT_DIR/scripts/release/selected-target.sh"
+source "$ROOT_DIR/scripts/release/release-artifacts.sh"
+
+environment="${AZURE_ENV_NAME:-$APPROVED_AZURE_ENV_NAME}"
 
 require_value() {
   local name="$1"
@@ -17,6 +21,7 @@ require_value() {
 for name in \
   AZURE_SUBSCRIPTION_ID \
   AZURE_RESOURCE_GROUP \
+  AZURE_LOCATION \
   AZURE_CONTAINER_REGISTRY_ENDPOINT \
   BACKEND_IMAGE \
   FRONTEND_IMAGE \
@@ -25,24 +30,22 @@ do
   require_value "$name"
 done
 
-[[ "$AZURE_SUBSCRIPTION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || {
-  echo "AZURE_SUBSCRIPTION_ID is not a subscription ID." >&2
-  exit 1
-}
-[[ "$AZURE_RESOURCE_GROUP" == "rg-maf-ora-azure" ]] || {
-  echo "The CI app-release script is restricted to rg-maf-ora-azure." >&2
-  exit 1
-}
+require_selected_target \
+  "$environment" \
+  "$AZURE_SUBSCRIPTION_ID" \
+  "$AZURE_RESOURCE_GROUP" \
+  "$AZURE_LOCATION"
 [[ "$RELEASE_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || {
   echo "RELEASE_RUN_ID may contain only letters, digits, dots, underscores, and hyphens." >&2
   exit 1
 }
 
-resolved_subscription="$(az account show --subscription "$AZURE_SUBSCRIPTION_ID" --query id --output tsv)"
-[[ "$resolved_subscription" == "$AZURE_SUBSCRIPTION_ID" ]] || {
-  echo "Azure CLI cannot resolve the selected release subscription." >&2
-  exit 1
-}
+require_azure_cli_target "$AZURE_SUBSCRIPTION_ID"
+write_release_context \
+  "$environment" \
+  "$AZURE_SUBSCRIPTION_ID" \
+  "$AZURE_RESOURCE_GROUP" \
+  "$AZURE_LOCATION"
 
 registry_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.*}"
 [[ "$AZURE_CONTAINER_REGISTRY_ENDPOINT" == "$registry_name.azurecr.io" ]] || {
@@ -78,9 +81,10 @@ for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
   docker image inspect "$image" >/dev/null
 done
 
-az acr login --name "$registry_name" --subscription "$AZURE_SUBSCRIPTION_ID"
-docker push "$BACKEND_IMAGE"
-docker push "$FRONTEND_IMAGE"
+az acr login \
+  --name "$registry_name" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  >"$RELEASE_LOGS_DIR/acr-login.log" 2>&1
 
 digest_for_image() {
   local image="$1"
@@ -102,43 +106,100 @@ backend_repository="${BACKEND_IMAGE#"$AZURE_CONTAINER_REGISTRY_ENDPOINT/"}"
 backend_repository="${backend_repository%:*}"
 frontend_repository="${FRONTEND_IMAGE#"$AZURE_CONTAINER_REGISTRY_ENDPOINT/"}"
 frontend_repository="${frontend_repository%:*}"
-backend_digest="$(digest_for_image "$BACKEND_IMAGE")"
-frontend_digest="$(digest_for_image "$FRONTEND_IMAGE")"
 revision_suffix="ci-${RELEASE_RUN_ID//[^a-zA-Z0-9-]/-}"
+revision_suffix="${revision_suffix,,}"
 revision_suffix="${revision_suffix:0:64}"
 
-az containerapp update \
-  --name "$backend_app" \
-  --resource-group "$AZURE_RESOURCE_GROUP" \
-  --subscription "$AZURE_SUBSCRIPTION_ID" \
-  --image "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$backend_repository@$backend_digest" \
-  --revision-suffix "$revision_suffix" \
-  --only-show-errors
-az containerapp update \
-  --name "$frontend_app" \
-  --resource-group "$AZURE_RESOURCE_GROUP" \
-  --subscription "$AZURE_SUBSCRIPTION_ID" \
-  --image "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$frontend_repository@$frontend_digest" \
-  --revision-suffix "$revision_suffix" \
-  --only-show-errors
+deploy_image() {
+  local service_name="$1"
+  local app_name="$2"
+  local source_image="$3"
+  local repository="$4"
+  local deploy_log="$RELEASE_LOGS_DIR/$service_name.image-deploy.log"
+  local digest=""
 
-artifacts_dir="$ROOT_DIR/.artifacts/release/$RELEASE_RUN_ID"
-mkdir -p "$artifacts_dir"
-python3 - "$artifacts_dir/images.json" \
+  {
+    docker push "$source_image"
+    digest="$(digest_for_image "$source_image")"
+    az containerapp update \
+      --name "$app_name" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --subscription "$AZURE_SUBSCRIPTION_ID" \
+      --image "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$repository@$digest" \
+      --revision-suffix "$revision_suffix" \
+      --only-show-errors
+  } >"$deploy_log" 2>&1
+  printf '%s\n' "$digest"
+}
+
+backend_digest="$(deploy_image backend "$backend_app" "$BACKEND_IMAGE" "$backend_repository")"
+frontend_digest="$(deploy_image frontend "$frontend_app" "$FRONTEND_IMAGE" "$frontend_repository")"
+
+images_file="$(release_artifact_path images.json)"
+python3 - "$images_file" \
+  "$RELEASE_ID" \
+  "$RELEASE_STARTED_AT" \
+  "$environment" \
+  "$AZURE_SUBSCRIPTION_ID" \
+  "$AZURE_RESOURCE_GROUP" \
+  "$AZURE_LOCATION" \
   "$backend_app" \
   "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$backend_repository@$backend_digest" \
   "$frontend_app" \
   "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$frontend_repository@$frontend_digest" <<'PY'
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
-path, backend_app, backend_image, frontend_app, frontend_image = sys.argv[1:]
+(
+    path,
+    release_id,
+    release_started_at,
+    environment,
+    subscription_id,
+    resource_group,
+    location,
+    backend_app,
+    backend_image,
+    frontend_app,
+    frontend_image,
+) = sys.argv[1:]
 Path(path).write_text(
     json.dumps(
         {
-            "backend": {"container_app": backend_app, "image": backend_image},
-            "frontend": {"container_app": frontend_app, "image": frontend_image},
+            "schema_version": 1,
+            "contract": "azure-hosted-release/v1",
+            "lane": "azure-hosted",
+            "artifact_type": "images",
+            "status": "passed",
+            "release_id": release_id,
+            "release_started_at": release_started_at,
+            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "target": {
+                "azd_env_name": environment,
+                "subscription_id": subscription_id,
+                "resource_group": resource_group,
+                "location": location,
+            },
+            "backend": {
+                "container_app": backend_app,
+                "resource_id": (
+                    f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+                    f"/providers/Microsoft.App/containerApps/{backend_app}"
+                ),
+                "image": backend_image,
+                "image_digest": backend_image.split("@", 1)[1],
+            },
+            "frontend": {
+                "container_app": frontend_app,
+                "resource_id": (
+                    f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+                    f"/providers/Microsoft.App/containerApps/{frontend_app}"
+                ),
+                "image": frontend_image,
+                "image_digest": frontend_image.split("@", 1)[1],
+            },
         },
         indent=2,
         sort_keys=True,

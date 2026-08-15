@@ -60,6 +60,11 @@ def test_eval_config_references_existing_dataset_and_trace_evidence() -> None:
     assert config["dataset"]["local_uri"] == ".foundry/datasets/underwriting-smoke.jsonl"
     assert (root / config["dataset"]["local_uri"]).is_file()
     assert (root / config["foundry"]["trace_evaluation"]["evidence_file"]).is_file()
+    assert config["foundry"]["evaluators"] == [
+        "task_adherence",
+        "intent_resolution",
+        "relevance",
+    ]
 
 
 def test_smoke_dataset_uses_hosted_workflow_start_envelopes_for_happy_and_retry_paths() -> None:

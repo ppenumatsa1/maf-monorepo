@@ -18,6 +18,8 @@ scoped_files=(
   "$scripts_dir/ensure_backend_venv.sh"
   "$scripts_dir/verify_private_postgres_readiness.sh"
   "$scripts_dir/collect_private_release_evidence.sh"
+  "$scripts_dir/release_record.py"
+  "$scripts_dir/migrate_release_history.py"
   "$scripts_dir/validate_private_app_release.sh"
   "$scripts_dir/verify_private_app_images.sh"
 )
@@ -47,5 +49,8 @@ grep -Fq 'public network access disabled' "$scripts_dir/verify_private_postgres_
 grep -Fq 'postgres_runtime_credentials.py" verify' "$scripts_dir/verify_private_postgres_readiness.sh"
 grep -Fq 'HOSTED_AGENT_SKIP_BUILD=true' "$scripts_dir/deploy_private_app_release.sh"
 grep -Fq 'Reusing backend virtual environment' "$scripts_dir/ensure_backend_venv.sh"
+grep -Fq 'def release_root' "$scripts_dir/release_record.py"
+grep -Fq '"mode": "dry-run"' "$scripts_dir/migrate_release_history.py"
+grep -Fq 'PRIVATE_RELEASE_PREREQUISITES_PASSED=true' "$root_dir/Makefile"
 
 echo "Private release portability contract passed."

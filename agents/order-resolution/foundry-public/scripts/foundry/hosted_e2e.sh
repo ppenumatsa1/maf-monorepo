@@ -49,11 +49,11 @@ invoke_responses() {
   for attempt in $(seq 1 20); do
     set +e
     if [[ -n "$conversation_id" ]]; then
-      raw="$(azd ai agent invoke order-resolution-hosted "$message" --protocol responses --conversation-id "$conversation_id" --no-prompt 2>&1)"
+      raw="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$message" --protocol responses --conversation-id "$conversation_id" --no-prompt 2>&1)"
     elif [[ "$mode" == "new" ]]; then
-      raw="$(azd ai agent invoke order-resolution-hosted "$message" --protocol responses --new-conversation --new-session --no-prompt 2>&1)"
+      raw="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$message" --protocol responses --new-conversation --new-session --no-prompt 2>&1)"
     else
-      raw="$(azd ai agent invoke order-resolution-hosted "$message" --protocol responses --no-prompt 2>&1)"
+      raw="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$message" --protocol responses --no-prompt 2>&1)"
     fi
     rc=$?
     set -e
@@ -90,17 +90,18 @@ invoke_responses() {
 invoke_responses_payload() {
   local conversation_id="${1:-}"
   local payload_json="${2:-}"
-  local payload_file
-  payload_file="$(mktemp)"
+  local payload_dir="$ROOT_DIR/backend/.foundry/runtime"
+  local payload_file="$payload_dir/hosted-e2e-resume-${BASHPID}.json"
+  mkdir -p "$payload_dir"
   printf '%s\n' "$payload_json" >"$payload_file"
 
   local raw
   local rc
   set +e
   if [[ -n "$conversation_id" ]]; then
-    raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --conversation-id "$conversation_id" --input-file "$payload_file" --no-prompt 2>&1)"
+    raw="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted --protocol responses --conversation-id "$conversation_id" --input-file "$payload_file" --no-prompt 2>&1)"
   else
-    raw="$(azd ai agent invoke order-resolution-hosted --protocol responses --input-file "$payload_file" --no-prompt 2>&1)"
+    raw="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted --protocol responses --input-file "$payload_file" --no-prompt 2>&1)"
   fi
   rc=$?
   set -e
@@ -196,15 +197,85 @@ assert_json_field "$high_risk_resume" '.status == "completed"'
 assert_json_field "$high_risk_resume" '(.events // []) | map(.type) | index("hitl.response") != null'
 assert_json_field "$high_risk_resume" '(.events // []) | map(.type) | index("workflow.output") != null'
 
+damaged_start="$(invoke_responses "" "Order ORD-1001 arrived damaged and broken." "new")"
+assert_json_field "$damaged_start" '.status == "waiting_approval"'
+assert_json_field "$damaged_start" '(.events // []) | map(.type) | index("hitl.request") != null'
+DAMAGED_ITEM="$(extract_thread_id "$damaged_start")"
+if [[ -z "$DAMAGED_ITEM" || "$DAMAGED_ITEM" == "null" ]]; then
+  echo "Missing thread_id in damaged-item responses turn"
+  echo "$damaged_start"
+  exit 1
+fi
+
+DAMAGED_CHECKPOINT="$(echo "$damaged_start" | jq -r '(.pending_approvals // [])[0].checkpoint_id // empty')"
+if [[ -z "$DAMAGED_CHECKPOINT" ]]; then
+  echo "Missing checkpoint_id in damaged-item responses turn"
+  echo "$damaged_start"
+  exit 1
+fi
+damaged_resume_payload="$(jq -cn --arg input "Approve" --arg checkpoint "$DAMAGED_CHECKPOINT" '{input: $input, decision: "approve", checkpoint_id: $checkpoint}')"
+damaged_resume="$(invoke_responses_payload "$DAMAGED_ITEM" "$damaged_resume_payload")"
+assert_json_field "$damaged_resume" '.status == "completed"'
+assert_json_field "$damaged_resume" '(.events // []) | map(.type) | index("hitl.response") != null'
+assert_json_field "$damaged_resume" '(.events // []) | map(.type) | index("workflow.output") != null'
+
 evidence_file="${FOUNDRY_E2E_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-e2e-evidence.json}"
+release_id="${FOUNDRY_RELEASE_ID:-manual-hosted-e2e}"
+release_started_at="${FOUNDRY_RELEASE_STARTED_AT:-$STARTED_AT}"
 mkdir -p "$(dirname "$evidence_file")"
 jq -n \
+  --arg release_id "$release_id" \
+  --arg release_started_at "$release_started_at" \
   --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg started_at "$STARTED_AT" \
   --arg low_risk_thread_id "$C1" \
   --arg approved_thread_id "$HIGH_RISK" \
+  --arg damaged_item_thread_id "$DAMAGED_ITEM" \
   --arg base_id "$BASE_ID" \
-  '{generated_at: $generated_at, started_at: $started_at, base_id: $base_id, low_risk_thread_id: $low_risk_thread_id, approved_thread_id: $approved_thread_id}' \
+  '{
+    schema_version: 1,
+    evidence_type: "hosted_e2e",
+    status: "passed",
+    release_id: $release_id,
+    release_started_at: $release_started_at,
+    generated_at: $generated_at,
+    started_at: $started_at,
+    base_id: $base_id,
+    conversation_ids: [
+      $low_risk_thread_id,
+      $approved_thread_id,
+      $damaged_item_thread_id
+    ],
+    scenarios: [
+        {
+          name: "low_risk_no_hitl",
+          order_id: "ORD-1001",
+          conversation_id: $low_risk_thread_id,
+          expected_hitl: false,
+          terminal_status: "completed"
+        },
+        {
+          name: "high_risk_hitl_approval_resume",
+          order_id: "ORD-1009",
+          conversation_id: $approved_thread_id,
+          expected_hitl: true,
+          decision: "approve",
+          terminal_status: "completed"
+        },
+        {
+          name: "damaged_item_hitl_approval_resume",
+          order_id: "ORD-1001",
+          issue_type: "damaged_item",
+          conversation_id: $damaged_item_thread_id,
+          expected_hitl: true,
+          decision: "approve",
+          terminal_status: "completed"
+        }
+    ],
+    low_risk_thread_id: $low_risk_thread_id,
+    approved_thread_id: $approved_thread_id,
+    damaged_item_thread_id: $damaged_item_thread_id
+  }' \
   >"$evidence_file"
 
-echo "Foundry Responses hosted E2E passed for conversations: ${C1}, ${HIGH_RISK} (base=${BASE_ID})"
+echo "Foundry Responses hosted E2E passed for conversations: ${C1}, ${HIGH_RISK}, ${DAMAGED_ITEM} (base=${BASE_ID})"

@@ -3,6 +3,11 @@
 This is the shared, non-secret target contract for all three deployment lanes:
 Azure app-hosted, Foundry public, and Foundry private.
 
+This directory is the canonical profile authority. Azure and Foundry consumers
+must prefer `agents/order-resolution/deployment/profiles/*.env`. Lane-local
+profile tooling remains only as `legacy_pending_cutover` compatibility and
+must not become a second source of truth.
+
 Each profile defines only the values that identify a deployment target:
 
 - Azure subscription

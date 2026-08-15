@@ -10,16 +10,61 @@ require_bin() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
-PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/../deployment/profiles/foundry-private.env}"
-RESULTS_DIR="${ROOT_DIR}/backend/.foundry/results"
+source "${ROOT_DIR}/scripts/foundry/private_profile.sh"
+PROFILE_FILE="$(private_profile_resolve "$ROOT_DIR")"
+RELEASE_TOOL="${ROOT_DIR}/scripts/foundry/release_record.py"
+source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+resolve_args=()
+if [[ -n "${PRIVATE_RELEASE_ID:-}" ]]; then
+  resolve_args+=(--release-id "$PRIVATE_RELEASE_ID")
+fi
+RELEASE_DIR="$(
+  python3 "$RELEASE_TOOL" resolve \
+    --project-root "$ROOT_DIR" \
+    "${resolve_args[@]}" \
+    --commit "$source_commit" \
+    --profile "$PROFILE_FILE"
+)"
+PRIVATE_RELEASE_ID="$(basename "$RELEASE_DIR")"
+export PRIVATE_RELEASE_ID
+RESULTS_DIR="${RELEASE_DIR}/evidence"
 HOSTED_E2E_EVIDENCE_FILE="${FOUNDRY_E2E_EVIDENCE_FILE:-${RESULTS_DIR}/hosted-e2e-evidence.json}"
 TELEMETRY_RESULT_FILE="${TELEMETRY_RESULT_FILE:-${RESULTS_DIR}/telemetry-verification.json}"
 FOUNDRY_REPORT_FILE="${FOUNDRY_REPORT_FILE:-${RESULTS_DIR}/foundry-report.json}"
 RELEASE_EVIDENCE_REPORT_FILE="${PRIVATE_RELEASE_EVIDENCE_REPORT_FILE:-${RESULTS_DIR}/private-release-evidence.json}"
+export HOSTED_E2E_EVIDENCE_FILE TELEMETRY_RESULT_FILE FOUNDRY_REPORT_FILE
+FINAL_EVIDENCE_TIMING_RUNNING=false
+
+cleanup() {
+  local status=$?
+  if [[ "$status" -ne 0 && "$FINAL_EVIDENCE_TIMING_RUNNING" == true ]]; then
+    python3 "$RELEASE_TOOL" timing-end --project-root "$ROOT_DIR" \
+      --release-id "$PRIVATE_RELEASE_ID" --stage final_evidence --status failed || true
+  fi
+  return "$status"
+}
+trap cleanup EXIT
 
 require_bin az
 require_bin azd
 require_bin jq
+
+run_timed_stage() {
+  local stage="$1"
+  shift
+  python3 "$RELEASE_TOOL" timing-start --project-root "$ROOT_DIR" \
+    --release-id "$PRIVATE_RELEASE_ID" --stage "$stage"
+  local status=0
+  "$@" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    python3 "$RELEASE_TOOL" timing-end --project-root "$ROOT_DIR" \
+      --release-id "$PRIVATE_RELEASE_ID" --stage "$stage" --status succeeded
+  else
+    python3 "$RELEASE_TOOL" timing-end --project-root "$ROOT_DIR" \
+      --release-id "$PRIVATE_RELEASE_ID" --stage "$stage" --status failed
+  fi
+  return "$status"
+}
 
 source "${ROOT_DIR}/../deployment/profile.sh"
 deployment_profile_load "$PROFILE_FILE"
@@ -63,6 +108,7 @@ write_release_evidence_report() {
   completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   mkdir -p "$(dirname "$RELEASE_EVIDENCE_REPORT_FILE")"
   jq -n \
+    --arg release_id "$PRIVATE_RELEASE_ID" \
     --arg release_started_at "$release_started_at" \
     --arg generated_at "$completed_at" \
     --arg subscription_id "$AZURE_SUBSCRIPTION_ID" \
@@ -71,16 +117,17 @@ write_release_evidence_report() {
     --arg name_prefix "$NAME_PREFIX" \
     --arg hosted_agent_name "$hosted_agent_name" \
     --arg hosted_agent_version "$hosted_agent_version" \
-    --arg hosted_e2e_evidence_file "$HOSTED_E2E_EVIDENCE_FILE" \
+    --arg hosted_e2e_evidence_file "evidence/$(basename "$HOSTED_E2E_EVIDENCE_FILE")" \
     --arg hosted_e2e_started_at "$(jq -r '.started_at' "$HOSTED_E2E_EVIDENCE_FILE")" \
     --arg hosted_e2e_generated_at "$(jq -r '.generated_at' "$HOSTED_E2E_EVIDENCE_FILE")" \
-    --arg telemetry_result_file "$TELEMETRY_RESULT_FILE" \
+    --arg telemetry_result_file "evidence/$(basename "$TELEMETRY_RESULT_FILE")" \
     --arg telemetry_status "$(jq -r '.status' "$TELEMETRY_RESULT_FILE")" \
     --arg telemetry_generated_at "$(jq -r '.generated_at' "$TELEMETRY_RESULT_FILE")" \
-    --arg foundry_report_file "$FOUNDRY_REPORT_FILE" \
+    --arg foundry_report_file "evidence/$(basename "$FOUNDRY_REPORT_FILE")" \
     --arg foundry_evaluation_status "$(jq -r '.status' "$FOUNDRY_REPORT_FILE")" \
     '{
       release_started_at: $release_started_at,
+      release_id: $release_id,
       generated_at: $generated_at,
       target: {
         subscription_id: $subscription_id,
@@ -140,18 +187,34 @@ if [[ -z "$hosted_agent_name" || -z "$hosted_agent_version" ]]; then
 fi
 
 cd "$ROOT_DIR"
-release_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+release_started_at="$(jq -r '.started_at' "${RELEASE_DIR}/release.json")"
 FOUNDRY_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
-  ./scripts/github/foundry_hosted_e2e.sh
+  run_timed_stage hitl_e2e ./scripts/github/foundry_hosted_e2e.sh
 require_fresh_e2e_evidence "$release_started_at"
 APPLICATION_INSIGHTS_RESOURCE_ID="$application_insights_target" \
 FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}" \
 HOSTED_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
 TELEMETRY_RESULT_FILE="$TELEMETRY_RESULT_FILE" \
-./scripts/foundry/verify_telemetry.sh
+run_timed_stage telemetry ./scripts/foundry/verify_telemetry.sh
 FOUNDRY_EVAL_ENFORCE_PASS=true \
 FOUNDRY_EVAL_MAX_ERRORED=0 \
-make eval-foundry
+run_timed_stage evaluation make eval-foundry
+python3 "$RELEASE_TOOL" timing-start --project-root "$ROOT_DIR" \
+  --release-id "$PRIVATE_RELEASE_ID" --stage final_evidence
+FINAL_EVIDENCE_TIMING_RUNNING=true
 write_release_evidence_report
+python3 "$RELEASE_TOOL" gate --project-root "$ROOT_DIR" --release-id "$PRIVATE_RELEASE_ID" \
+  --gate hitl_e2e --status succeeded --artifact evidence/hosted-e2e-evidence.json
+python3 "$RELEASE_TOOL" gate --project-root "$ROOT_DIR" --release-id "$PRIVATE_RELEASE_ID" \
+  --gate telemetry --status succeeded --artifact evidence/telemetry-verification.json
+python3 "$RELEASE_TOOL" gate --project-root "$ROOT_DIR" --release-id "$PRIVATE_RELEASE_ID" \
+  --gate foundry_evaluation --status succeeded --artifact evidence/foundry-report.json
+python3 "$RELEASE_TOOL" gate --project-root "$ROOT_DIR" --release-id "$PRIVATE_RELEASE_ID" \
+  --gate release_evidence --status succeeded --artifact evidence/private-release-evidence.json
+python3 "$RELEASE_TOOL" timing-end --project-root "$ROOT_DIR" \
+  --release-id "$PRIVATE_RELEASE_ID" --stage final_evidence --status succeeded
+FINAL_EVIDENCE_TIMING_RUNNING=false
+python3 "$RELEASE_TOOL" finalize --project-root "$ROOT_DIR" --release-id "$PRIVATE_RELEASE_ID" \
+  --status succeeded
 
 echo "Private release evidence collection completed: ${RELEASE_EVIDENCE_REPORT_FILE}"

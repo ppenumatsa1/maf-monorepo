@@ -9,6 +9,7 @@ RUFF := $(VENV)/bin/ruff
 ENV_FILE := $(ROOT).env
 E2E_LOG_DIR := $(ROOT)backend/.tmp/e2e
 FOUNDRY_RUNTIME_SMOKE := ./infra/foundry-hosted/runtime/smoke-test.sh
+FOUNDRY_DEPLOYMENT_PROFILE ?= $(ROOT)deployment/profiles/foundry-public.env
 
 ifneq ("$(wildcard $(ENV_FILE))","")
 include $(ENV_FILE)
@@ -19,9 +20,11 @@ endif
 	backend-dev frontend-install frontend-dev \
 	test test-backend test-frontend test-scripts test-deployment-profile test-e2e \
 	lint lint-backend lint-frontend format format-check quality validate-quick validate-full \
-	foundry-profile-apply foundry-bootstrap foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
+	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
 	foundry-postgres-credentials foundry-postgres-readiness foundry-backend-deploy foundry-frontend-deploy \
-	foundry-backend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
+	foundry-release-readiness foundry-model-preflight foundry-runtime-connection foundry-rbac foundry-package \
+	foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
+	foundry-backend-internalize foundry-verify foundry-evidence \
 	foundry-up foundry-smoke foundry-hosted-e2e foundry-eval \
 	foundry-appinsights-connection foundry-telemetry foundry-release
 
@@ -57,25 +60,34 @@ help:
 >@printf "  make foundry-profile-apply FOUNDRY_DEPLOYMENT_PROFILE=/secure/path/profile.env\n"
 >@printf "                                     - Select an existing non-secret target profile\n"
 >@printf "  make foundry-bootstrap            - Refresh the local azd environment from the reused Azure resources\n"
->@printf "  make foundry-iac-build            - Compile resource-reuse Foundry Bicep\n"
->@printf "  make foundry-provision            - Apply approved PostgreSQL auth/firewall and Foundry connection IaC\n"
->@printf "  make foundry-postgres-rebuild CONFIRM=REBUILD-azpgwhcedyxchnbtmpub\n"
->@printf "                                     Delete and recreate the fixed PostgreSQL server\n"
+>@printf "  make foundry-bootstrap-env        - Populate a new environment's non-secret bootstrap parameters\n"
+>@printf "  make foundry-iac-build            - Compile bootstrap/reuse Foundry Bicep\n"
+>@printf "  make foundry-package              - Package backend, frontend, and hosted services with AZD\n"
+>@printf "  make foundry-provision            - Apply bootstrap PostgreSQL, Foundry, and connection IaC\n"
+>@printf "  make foundry-postgres-rebuild CONFIRM=REBUILD-<selected-postgres-server>\n"
+>@printf "                                     Delete and recreate the selected AZD PostgreSQL server\n"
 >@printf "  make foundry-postgres-schema      - Create or migrate the PostgreSQL schema with the administrator credential\n"
 >@printf "  make foundry-postgres-credentials - Provision or rotate the local-only PostgreSQL runtime credential\n"
+>@printf "  make foundry-runtime-connection   - Converge the project CustomKeys connection for the runtime URL\n"
 >@printf "  make foundry-postgres-readiness   - Verify PostgreSQL TLS, auth, firewall, and runtime credential readiness\n"
->@printf "  make foundry-backend-deploy       - Build and deploy the public backend wrapper\n"
+>@printf "  make foundry-model-preflight      - Verify configured model deployment, SKU, capacity, and regional quota\n"
+>@printf "  make foundry-release-readiness    - Run the single shared database/model readiness gate\n"
+>@printf "  make foundry-backend-deploy       - Build and deploy the internal backend adapter\n"
 >@printf "  make foundry-frontend-deploy      - Build and deploy the public operations console\n"
+>@printf "  make foundry-backend-internalize CONFIRM=INTERNALIZE-<backend-name>\n"
+>@printf "                                     - One-time, fail-closed public-to-internal backend migration\n"
 >@printf "  make foundry-app-deploy           - Verify shared readiness, then deploy public apps concurrently\n"
 >@printf "  make foundry-deploy               - Build and deploy the hosted underwriting agent\n"
->@printf "  make foundry-release-deploy       - Verify shared readiness, then deploy public apps and hosted agent concurrently\n"
+>@printf "  make foundry-release-deploy       - Readiness/package, hosted metadata, then parallel backend/frontend deploy\n"
 >@printf "  make foundry-up                   - Provision, deploy all release components concurrently, and verify App Insights connection\n"
 >@printf "  make foundry-smoke                - Run direct hosted-agent smoke and write trace-eval evidence\n"
 >@printf "  make foundry-hosted-e2e           - Run hosted API smoke plus deployed Playwright E2E\n"
 >@printf "  make foundry-eval                 - Run the report-only Foundry trace evaluation gate\n"
 >@printf "  make foundry-appinsights-connection - Verify the Foundry project App Insights connection\n"
 >@printf "  make foundry-telemetry            - Verify App Insights evidence for hosted E2E run IDs\n"
->@printf "  make foundry-release              - Route validation/deployment and run the public release sequence\n"
+>@printf "  make foundry-verify               - Verify deployed topology, images, hosted agent, telemetry connection, and DB mode\n"
+>@printf "  make foundry-evidence             - Aggregate secret-free release-window evidence\n"
+>@printf "  make foundry-release RELEASE_ID=<id> - Route validation/deployment and run the public release sequence\n"
 
 bootstrap: install frontend-install
 
@@ -146,6 +158,9 @@ test-frontend:
 
 test-scripts:
 >cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_postgres_runtime_credentials.py
+>cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_hosted_runtime_secret_contract.py scripts/foundry/tests/test_aggregate_release_evidence.py scripts/foundry/tests/test_release_authority.py
+>cd $(ROOT) && bash scripts/foundry/tests/test_runtime_secret_connection_contract.sh
+>cd $(ROOT) && bash scripts/foundry/tests/test_bootstrap_infrastructure_contract.sh
 
 test-deployment-profile:
 >cd $(ROOT) && bash deployment/tests/test-profile.sh
@@ -220,17 +235,25 @@ frontend-dev:
 foundry-bootstrap:
 >./scripts/foundry/bootstrap_azd_env.sh
 
+foundry-bootstrap-env:
+>./scripts/foundry/prepare_bootstrap_env.sh
+
 foundry-profile-apply:
->@test -n "$(FOUNDRY_DEPLOYMENT_PROFILE)" || { echo "FOUNDRY_DEPLOYMENT_PROFILE is required." >&2; exit 2; }
 >bash ./deployment/apply-azd-profile.sh "$(FOUNDRY_DEPLOYMENT_PROFILE)"
 
 foundry-iac-build:
 >az bicep build --file infra/foundry-hosted/iac/main.bicep
 
+foundry-package:
+>./scripts/foundry/sync_hosted_source.sh
+>cd infra/foundry-hosted && azd package --no-prompt
+
 foundry-provision:
+>./scripts/foundry/bootstrap_azd_env.sh
 >./scripts/foundry/ensure_foundry_azd_defaults.sh
 >$(MAKE) foundry-iac-build
 >cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
+>FOUNDRY_BOOTSTRAP_HYDRATE=1 ./scripts/foundry/bootstrap_azd_env.sh
 
 foundry-postgres-rebuild:
 >./scripts/foundry/rebuild_postgres_server.sh "$(CONFIRM)"
@@ -240,32 +263,55 @@ foundry-postgres-schema:
 
 foundry-postgres-credentials:
 >./scripts/foundry/provision_postgres_runtime_credentials.sh
+>$(MAKE) foundry-runtime-connection
 
 foundry-postgres-readiness:
 >./scripts/foundry/check_public_postgres_readiness.sh
 
-foundry-backend-deploy: foundry-postgres-readiness
+foundry-model-preflight:
+>./scripts/foundry/preflight_foundry_model.sh
+
+foundry-runtime-connection:
+>./scripts/foundry/converge_runtime_secret_connection.sh
+
+foundry-rbac:
+>./scripts/foundry/converge_hosted_agent_rbac.sh
+
+foundry-release-readiness:
+>$(MAKE) foundry-postgres-readiness
+>$(MAKE) foundry-model-preflight
+>$(MAKE) foundry-runtime-connection
+
+foundry-backend-deploy: foundry-release-readiness
 >$(MAKE) foundry-backend-deploy-ready
 
 foundry-backend-deploy-ready:
 >./scripts/foundry/deploy_public_backend.sh
 
-foundry-frontend-deploy:
+foundry-frontend-deploy: foundry-release-readiness
+>$(MAKE) foundry-frontend-deploy-ready
+
+foundry-frontend-deploy-ready:
 >./scripts/foundry/deploy_public_frontend.sh
 
 foundry-app-deploy:
->$(MAKE) foundry-postgres-readiness
->$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy
+>$(MAKE) foundry-release-readiness
+>$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready
 
-foundry-deploy: foundry-postgres-readiness
+foundry-deploy: foundry-release-readiness
 >$(MAKE) foundry-deploy-ready
 
 foundry-deploy-ready:
 >./scripts/foundry/deploy_hosted_container.sh
 
 foundry-release-deploy:
->$(MAKE) foundry-postgres-readiness
->$(MAKE) -j3 foundry-backend-deploy-ready foundry-frontend-deploy foundry-deploy-ready
+>$(MAKE) foundry-release-readiness
+>$(MAKE) foundry-package
+>$(MAKE) foundry-deploy-ready
+>$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready
+
+foundry-backend-internalize:
+>./scripts/foundry/internalize_backend_ingress.sh "$(CONFIRM)"
 
 foundry-up:
 >$(MAKE) foundry-provision
@@ -286,6 +332,15 @@ foundry-appinsights-connection:
 
 foundry-telemetry:
 >./scripts/foundry/verify_telemetry.sh
+
+foundry-verify:
+>./scripts/foundry/verify_foundry_release.sh
+
+foundry-evidence:
+>@runtime_database_url="$$(cd infra/foundry-hosted && azd env get-value RUNTIME_DATABASE_URL --no-prompt)"; \
+>  test -n "$$runtime_database_url" || { echo "RUNTIME_DATABASE_URL is required for evidence secret validation." >&2; exit 1; }; \
+>  DATABASE_URL="$$runtime_database_url" RUNTIME_DATABASE_URL="$$runtime_database_url" \
+>  $(PY) ./scripts/foundry/aggregate_release_evidence.py
 
 foundry-release:
 >AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_public_dev.sh

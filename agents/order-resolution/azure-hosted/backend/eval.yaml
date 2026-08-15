@@ -8,6 +8,7 @@ foundry:
   report_only: true
   report_case_ids:
     - ord-1001-low-risk-late
+    - ord-1004-damaged-approve
     - ord-1009-high-amount
   poll_interval: 5
   timeout: 900

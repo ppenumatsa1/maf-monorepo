@@ -457,8 +457,7 @@ def validate() -> None:
             "$(MAKE) foundry-postgres-bootstrap",
             "$(MAKE) foundry-postgres-readiness",
             "$(MAKE) foundry-project-connections",
-            "$(MAKE) foundry-app-deploy",
-            "$(MAKE) foundry-deploy",
+            "$(MAKE) foundry-app-only-release",
             "$(MAKE) foundry-evidence",
         ),
         "foundry-release Make target",
@@ -679,6 +678,23 @@ def validate() -> None:
         'FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}"',
     ):
         require(evidence_collection, value, "private release evidence collection")
+    for stage in ("hitl_e2e", "telemetry", "evaluation", "final_evidence"):
+        require(
+            evidence_collection,
+            stage,
+            "private release evidence timing instrumentation",
+        )
+    private_deploy = (
+        Path(PRIVATE_PREFIX) / "scripts/foundry/deploy_private_app_release.sh"
+    ).read_text()
+    for stage in (
+        "app_only",
+        "hosted_image_package",
+        "aca_deploy",
+        "verification_smoke",
+        "hosted_agent_activation",
+    ):
+        require(private_deploy, stage, "private app release timing instrumentation")
     hosted_agent = (Path(PRIVATE_PREFIX) / "backend/foundry/main.py").read_text()
     for value in (
         '"gen_ai.input.messages"',

@@ -1,91 +1,119 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-require_bin() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Missing required binary: $1"
-    exit 1
-  }
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
+
+get_env() {
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env get-value "$1" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
 }
 
-require_bin az
-require_bin jq
-
-SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-${AZURE_SUBSCRIPTION_ID:-}}"
-RESOURCE_GROUP="${RESOURCE_GROUP:-rg-maf-ora-foundry-public-dev2}"
-SERVER_NAME="${SERVER_NAME:-maffndpgbfscpfhjr7sp4cu}"
-DATABASE_URL="${DATABASE_URL:-}"
-
-if [[ -z "$SUBSCRIPTION_ID" ]]; then
-  echo "SUBSCRIPTION_ID or AZURE_SUBSCRIPTION_ID is required."
-  exit 1
-fi
-
-server_json="$(
-  az postgres flexible-server show \
-    --subscription "$SUBSCRIPTION_ID" \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$SERVER_NAME" \
-    --query '{name:name,state:state,fqdn:fullyQualifiedDomainName,location:location,publicNetworkAccess:network.publicNetworkAccess,sku:sku.name,tier:sku.tier,version:version,activeDirectoryAuth:authConfig.activeDirectoryAuth,passwordAuth:authConfig.passwordAuth}' \
-    -o json
-)"
-
-state="$(echo "$server_json" | jq -r '.state // ""')"
-fqdn="$(echo "$server_json" | jq -r '.fqdn // ""')"
-public_network_access="$(echo "$server_json" | jq -r '.publicNetworkAccess // ""')"
-
-echo "PostgreSQL server: $SERVER_NAME"
-echo "Resource group: $RESOURCE_GROUP"
-echo "State: ${state:-unknown}"
-echo "Public network access: ${public_network_access:-unknown}"
-echo "FQDN: ${fqdn:-unknown}"
-
-if [[ "${state,,}" != "ready" ]]; then
-  echo "Readiness check failed: server state is '${state}', expected 'Ready'."
-  exit 1
-fi
-
-if [[ "${public_network_access,,}" != "enabled" ]]; then
-  echo "Readiness check failed: public network access is '${public_network_access}', expected 'Enabled'."
-  exit 1
-fi
-
-firewall_json="$(
-  az postgres flexible-server firewall-rule list \
-    --subscription "$SUBSCRIPTION_ID" \
-    --resource-group "$RESOURCE_GROUP" \
-    --server-name "$SERVER_NAME" \
-    -o json
-)"
-
-allow_azure_services_count="$(echo "$firewall_json" | jq '[.[] | select(.startIpAddress=="0.0.0.0" and .endIpAddress=="0.0.0.0")] | length')"
-if [[ "$allow_azure_services_count" -lt 1 ]]; then
-  echo "Readiness check failed: expected at least one firewall rule allowing Azure services (0.0.0.0)."
-  exit 1
-fi
-echo "Firewall check: Azure-services rule present."
-
-if ! db_names="$(az postgres flexible-server db list --subscription "$SUBSCRIPTION_ID" --resource-group "$RESOURCE_GROUP" --server-name "$SERVER_NAME" --query '[].name' -o tsv 2>/dev/null)"; then
-  echo "Readiness check warning: unable to list databases right now."
-else
-  echo "Databases:"
-  if [[ -n "$db_names" ]]; then
-    echo "$db_names"
-  else
-    echo "(none listed)"
-  fi
-fi
-
-if [[ -n "$DATABASE_URL" ]]; then
-  if [[ "$DATABASE_URL" != *"sslmode=require"* ]]; then
-    echo "Readiness check failed: DATABASE_URL must include sslmode=require."
+required_env() {
+  local name="$1"
+  local value
+  value="$(get_env "$name")"
+  if [[ -z "$value" ]]; then
+    echo "Missing AZD environment value: $name" >&2
     exit 1
   fi
-  if [[ -n "$fqdn" && "$DATABASE_URL" != *"$fqdn"* ]]; then
-    echo "Readiness check failed: DATABASE_URL host does not match server FQDN."
+  printf '%s' "$value"
+}
+
+for command in az azd psql python3; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "Missing required binary: $command" >&2
     exit 1
-  fi
-  echo "DATABASE_URL check passed (TLS + host match)."
+  }
+done
+
+subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
+resource_group="$(required_env AZURE_RESOURCE_GROUP)"
+server_name="$(required_env POSTGRES_SERVER_NAME)"
+database_name="$(required_env POSTGRES_DATABASE)"
+runtime_username="$(required_env POSTGRES_RUNTIME_USERNAME)"
+hosted_password="$(required_env POSTGRES_HOSTED_PASSWORD)"
+operator_ip="$(required_env POSTGRES_OPERATOR_IP)"
+database_url="$(required_env DATABASE_URL)"
+runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
+db_auth_mode="$(required_env DB_AUTH_MODE)"
+
+[[ "$db_auth_mode" == "password" ]] || {
+  echo "DB_AUTH_MODE must be password." >&2
+  exit 1
+}
+[[ "$database_url" == "$runtime_database_url" ]] || {
+  echo "DATABASE_URL and RUNTIME_DATABASE_URL must match." >&2
+  exit 1
+}
+
+POSTGRES_SERVER_NAME="$server_name" \
+POSTGRES_DATABASE="$database_name" \
+POSTGRES_RUNTIME_USERNAME="$runtime_username" \
+POSTGRES_HOSTED_PASSWORD="$hosted_password" \
+RUNTIME_DATABASE_URL="$runtime_database_url" \
+python3 - <<'PY'
+import os
+import sys
+from hmac import compare_digest
+from urllib.parse import parse_qs, unquote, urlsplit
+
+parsed = urlsplit(os.environ["RUNTIME_DATABASE_URL"])
+if parsed.scheme != "postgresql+psycopg":
+    sys.exit("RUNTIME_DATABASE_URL must use postgresql+psycopg.")
+if parsed.hostname != f'{os.environ["POSTGRES_SERVER_NAME"]}.postgres.database.azure.com':
+    sys.exit("RUNTIME_DATABASE_URL host does not match PostgreSQL.")
+if parsed.port != 5432:
+    sys.exit("RUNTIME_DATABASE_URL must use port 5432.")
+if unquote(parsed.username or "") != os.environ["POSTGRES_RUNTIME_USERNAME"]:
+    sys.exit("RUNTIME_DATABASE_URL user does not match.")
+if not compare_digest(unquote(parsed.password or ""), os.environ["POSTGRES_HOSTED_PASSWORD"]):
+    sys.exit("RUNTIME_DATABASE_URL password does not match.")
+if unquote(parsed.path.lstrip("/")) != os.environ["POSTGRES_DATABASE"]:
+    sys.exit("RUNTIME_DATABASE_URL database does not match.")
+if parse_qs(parsed.query).get("sslmode") != ["require"]:
+    sys.exit("RUNTIME_DATABASE_URL must require TLS.")
+PY
+
+az account set --subscription "$subscription_id" >/dev/null
+server_json="$(az postgres flexible-server show --subscription "$subscription_id" --resource-group "$resource_group" --name "$server_name" --query '{state:state,network:network.publicNetworkAccess,password:authConfig.passwordAuth,entra:authConfig.activeDirectoryAuth}' -o json)"
+SERVER_JSON="$server_json" python3 - <<'PY'
+import json
+import os
+import sys
+
+server = json.loads(os.environ["SERVER_JSON"])
+if server != {"state": "Ready", "network": "Enabled", "password": "Enabled", "entra": "Enabled"}:
+    sys.exit("PostgreSQL server is not in the approved ready/dual-auth/public-network state.")
+PY
+
+for rule in allow-all-temporary allow-release-operator; do
+  start="$(az postgres flexible-server firewall-rule show --subscription "$subscription_id" --resource-group "$resource_group" --server-name "$server_name" --name "$rule" --query startIpAddress -o tsv)"
+  end="$(az postgres flexible-server firewall-rule show --subscription "$subscription_id" --resource-group "$resource_group" --server-name "$server_name" --name "$rule" --query endIpAddress -o tsv)"
+  expected="0.0.0.0"
+  [[ "$rule" == "allow-release-operator" ]] && expected="$operator_ip"
+  [[ "$start" == "$expected" && "$end" == "$expected" ]] || {
+    echo "PostgreSQL firewall rule $rule is not in the approved state." >&2
+    exit 1
+  }
+done
+
+az postgres flexible-server db show \
+  --subscription "$subscription_id" \
+  --resource-group "$resource_group" \
+  --server-name "$server_name" \
+  --name "$database_name" \
+  --output none >/dev/null
+
+if ! PGPASSWORD="$hosted_password" PGSSLMODE=require \
+  psql --host "${server_name}.postgres.database.azure.com" \
+    --username "$runtime_username" \
+    --dbname "$database_name" \
+    --set ON_ERROR_STOP=on \
+    --quiet \
+    --command 'SELECT 1 FROM public.workflow_runs LIMIT 1;' >/dev/null 2>&1; then
+  echo "PostgreSQL runtime credential could not read the canonical schema; output was withheld." >&2
+  exit 1
 fi
 
-echo "PostgreSQL readiness checks passed for public dev reuse."
+echo "PostgreSQL readiness passed: TLS runtime URL, least-privilege credential inputs, dual authentication, database, and scoped firewall rules are configured."

@@ -5,12 +5,16 @@ COMPOSE_ENV_FILE ?= $(if $(wildcard backend/.env),backend/.env,backend/.env.exam
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-foundry-config eval-all test-e2e manual-matrix \
 	test-e2e-selected-thread \
 	run-mock-mcp up down logs ps docker-test \
-	validate-quick validate-full clean \
-	foundry-bootstrap foundry-iac-build foundry-package foundry-up foundry-provision foundry-provision-ready \
+	validate-quick validate-full test-scripts test-deployment-profile clean \
+	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-package foundry-up foundry-provision foundry-provision-ready \
+	foundry-postgres-schema foundry-postgres-credentials \
 	foundry-postgres-readiness foundry-backend-deploy foundry-backend-deploy-ready \
 	foundry-frontend-deploy foundry-frontend-deploy-ready foundry-app-deploy \
 	foundry-deploy foundry-deploy-ready foundry-release-deploy foundry-smoke \
-	foundry-hosted-e2e foundry-appinsights-connection foundry-telemetry foundry-release
+	foundry-model-preflight foundry-runtime-connection foundry-runtime-connection-ready \
+	foundry-hosted-rbac foundry-hosted-e2e \
+	foundry-eval foundry-appinsights-connection foundry-telemetry \
+	foundry-verify foundry-evidence foundry-release foundry-release-migration-plan
 
 help:
 	@echo "Available targets:"
@@ -36,17 +40,29 @@ help:
 	@echo "  docker-test     - Run Playwright tests in Docker compose profile"
 	@echo "  validate-quick  - Fast redeploy validation (Playwright + smoke if API_URL set)"
 	@echo "  validate-full   - Full validation (test + eval + e2e + design-review)"
-	@echo "  foundry-bootstrap - Refresh local AZD defaults for the existing public target"
+	@echo "  test-scripts     - Run portable bootstrap and PostgreSQL helper contracts"
+	@echo "  test-deployment-profile - Validate secret-free target profiles"
+	@echo "  foundry-profile-apply FOUNDRY_DEPLOYMENT_PROFILE=/secure/path/profile.env"
+	@echo "                   - Select a secret-free bootstrap or reuse target"
+	@echo "  foundry-bootstrap - Hydrate local AZD outputs for an existing target"
+	@echo "  foundry-bootstrap-env - Populate deterministic bootstrap parameters"
 	@echo "  foundry-iac-build - Compile the public Foundry Bicep template"
 	@echo "  foundry-package - Freshly sync hosted source and validate AZD packaging"
-	@echo "  foundry-provision - Apply the approved full infrastructure route"
+	@echo "  foundry-provision - Apply bootstrap creation or non-mutating reuse"
+	@echo "  foundry-postgres-schema - Apply the canonical PostgreSQL schema"
+	@echo "  foundry-postgres-credentials - Provision/rotate the runtime credential"
 	@echo "  foundry-app-deploy - Verify readiness once, then deploy backend and frontend concurrently"
 	@echo "  foundry-deploy  - Verify readiness, package, and deploy the hosted agent"
 	@echo "  foundry-release-deploy - Package, verify readiness once, and deploy all runtime legs concurrently"
-	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
-	@echo "  foundry-hosted-e2e - Run hosted Responses low/high-risk and approval-resume checks"
+	@echo "  foundry-model-preflight - Read-only validation of the chat/embeddings/evaluator deployments and quota"
+	@echo "  foundry-runtime-connection - Verify PostgreSQL readiness and converge the project CustomKeys connection"
+	@echo "  foundry-hosted-rbac - Converge the hosted identity's account-scoped OpenAI User role"
+	@echo "  foundry-smoke   - Invoke hosted agent health check and write secret-free evidence"
+	@echo "  foundry-hosted-e2e - Run fresh low/high-risk and damaged-item HITL approval/resume checks"
 	@echo "  foundry-eval    - Run the report-only Foundry trace-evaluation gate"
 	@echo "  foundry-telemetry - Verify Application Insights after hosted E2E evidence exists"
+	@echo "  foundry-verify  - Verify exact active images, topology, proxy health, hosted version, RBAC, and DB parity"
+	@echo "  foundry-evidence - Aggregate the current release window into one secret-free JSON report"
 	@echo "  foundry-release - Run the authenticated, gated public release DAG"
 	@echo "  clean           - Remove caches and test artifacts"
 
@@ -86,6 +102,17 @@ test: lint test-backend
 
 test-backend: ensure-backend-env ensure-test-postgres
 	cd backend && . .venv/bin/activate && pytest -q
+
+test-scripts:
+	PYTHONPATH=backend:. backend/.venv/bin/pytest -q \
+		scripts/foundry/tests/test_postgres_runtime_credentials.py \
+		scripts/foundry/tests/test_hosted_deployment_contract.py \
+		scripts/foundry/tests/test_release_evidence.py
+	bash scripts/foundry/tests/test_bootstrap_infrastructure_contract.sh
+	bash scripts/foundry/tests/test_release_scripts_contract.sh
+
+test-deployment-profile:
+	bash deployment/tests/test-profile.sh
 
 eval-backend: ensure-backend-env ensure-test-postgres
 	cd backend && . .venv/bin/activate && python -m evals.eval_runner
@@ -212,38 +239,81 @@ validate-full:
 	./scripts/skills/design-review-skill.sh
 
 foundry-bootstrap:
-	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/bootstrap_azd_env.sh
+
+foundry-bootstrap-env:
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/prepare_bootstrap_env.sh
+
+foundry-profile-apply:
+	@set -euo pipefail; \
+	shared_profile="../deployment/profiles/foundry-public.env"; \
+	legacy_profile="deployment/profiles/foundry-public.env"; \
+	profile="$(FOUNDRY_DEPLOYMENT_PROFILE)"; \
+	if [[ -z "$$profile" && -f "$$shared_profile" ]]; then profile="$$shared_profile"; fi; \
+	if [[ -z "$$profile" ]]; then \
+		profile="$$legacy_profile"; \
+		echo "WARN: Using legacy_pending_cutover profile $$legacy_profile; prefer $$shared_profile." >&2; \
+	elif [[ "$$profile" == "$$legacy_profile" ]]; then \
+		echo "WARN: Using legacy_pending_cutover profile $$legacy_profile; prefer $$shared_profile." >&2; \
+	fi; \
+	bash ./deployment/apply-azd-profile.sh "$$profile"
 
 foundry-iac-build:
 	az bicep build --file infra/foundry-hosted/iac/main.bicep
+	az bicep build --file infra/foundry-hosted/iac/modules/foundry-project-runtime-secret-connection.bicep --stdout >/dev/null
 
 foundry-package:
-	./scripts/foundry/sync_hosted_source.sh
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt
+	@set -euo pipefail; \
+	timing_enabled=0; \
+	if [[ -n "$${FOUNDRY_RELEASE_ID:-}" ]]; then \
+		timing_enabled=1; \
+		python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage package_build --action start >/dev/null; \
+	fi; \
+	status=failed; \
+	trap 'if [[ "$$timing_enabled" -eq 1 ]]; then python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage package_build --action end --status "$$status" >/dev/null || true; fi' EXIT; \
+	./scripts/foundry/sync_hosted_source.sh; \
+	(cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt); \
+	status=succeeded
 
 foundry-provision:
-	@if [[ "$${FOUNDRY_INFRA_RECONCILIATION_APPROVED:-false}" != "true" || -z "$${FOUNDRY_INFRA_RECONCILIATION_REFERENCE:-}" ]]; then \
-		echo "Refusing provision: set FOUNDRY_INFRA_RECONCILIATION_APPROVED=true and a non-secret FOUNDRY_INFRA_RECONCILIATION_REFERENCE after review."; \
-		exit 2; \
-	fi
+	./scripts/foundry/bootstrap_azd_env.sh
 	$(MAKE) foundry-iac-build
 	$(MAKE) foundry-provision-ready
+	FOUNDRY_BOOTSTRAP_HYDRATE=1 ./scripts/foundry/bootstrap_azd_env.sh
 
 foundry-provision-ready:
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/ensure_foundry_azd_defaults.sh
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt $(if $(FOUNDRY_PROVISION_NO_STATE),--no-state,)
 
+foundry-postgres-schema:
+	./scripts/foundry/bootstrap_postgres_schema.sh
+
+foundry-postgres-credentials:
+	./scripts/foundry/provision_postgres_runtime_credentials.sh
+
 foundry-backend-deploy: foundry-postgres-readiness
 	$(MAKE) foundry-backend-deploy-ready
 
 foundry-backend-deploy-ready:
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy backend --no-prompt
+	@set -euo pipefail; \
+	timing_enabled=0; \
+	if [[ -n "$${FOUNDRY_RELEASE_ID:-}" ]]; then timing_enabled=1; python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage backend_deployment --action start >/dev/null; fi; \
+	status=failed; \
+	trap 'if [[ "$$timing_enabled" -eq 1 ]]; then python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage backend_deployment --action end --status "$$status" >/dev/null || true; fi' EXIT; \
+	./scripts/foundry/deploy_public_backend.sh; \
+	status=succeeded
 
 foundry-frontend-deploy:
 	$(MAKE) foundry-frontend-deploy-ready
 
 foundry-frontend-deploy-ready:
-	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd deploy frontend --no-prompt
+	@set -euo pipefail; \
+	timing_enabled=0; \
+	if [[ -n "$${FOUNDRY_RELEASE_ID:-}" ]]; then timing_enabled=1; python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage frontend_deployment --action start >/dev/null; fi; \
+	status=failed; \
+	trap 'if [[ "$$timing_enabled" -eq 1 ]]; then python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage frontend_deployment --action end --status "$$status" >/dev/null || true; fi' EXIT; \
+	./scripts/foundry/deploy_public_frontend.sh; \
+	status=succeeded
 
 foundry-app-deploy:
 	$(MAKE) foundry-postgres-readiness
@@ -251,16 +321,26 @@ foundry-app-deploy:
 
 foundry-deploy: foundry-postgres-readiness
 	$(MAKE) foundry-package
+	$(MAKE) foundry-model-preflight
+	$(MAKE) foundry-runtime-connection-ready
 	$(MAKE) foundry-deploy-ready
 
 foundry-deploy-ready:
-	@test -f backend/Dockerfile.hosted
-	@test -f backend/foundry/main.py
-	@AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_hosted_container.sh
+	@set -euo pipefail; \
+	timing_enabled=0; \
+	if [[ -n "$${FOUNDRY_RELEASE_ID:-}" ]]; then timing_enabled=1; python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage hosted_deployment_activation --action start >/dev/null; fi; \
+	status=failed; \
+	trap 'if [[ "$$timing_enabled" -eq 1 ]]; then python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage hosted_deployment_activation --action end --status "$$status" >/dev/null || true; fi' EXIT; \
+	test -f backend/Dockerfile.hosted; \
+	test -f backend/foundry/main.py; \
+	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_hosted_container.sh; \
+	status=succeeded
 
 foundry-release-deploy:
 	$(MAKE) foundry-package
+	$(MAKE) foundry-model-preflight
 	$(MAKE) foundry-postgres-readiness
+	$(MAKE) foundry-runtime-connection-ready
 	$(MAKE) -j3 foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready
 
 foundry-up:
@@ -269,14 +349,24 @@ foundry-up:
 	$(MAKE) foundry-appinsights-connection
 
 foundry-smoke:
-	@if [[ -n "$${SMOKE_THREAD_ID:-}" ]]; then \
-		cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --conversation-id "$${SMOKE_THREAD_ID}" --no-prompt; \
-	else \
-		cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai agent invoke order-resolution-hosted "$${SMOKE_MESSAGE:-Resolve delayed order ORD-1009}" --protocol responses --new-conversation --new-session --no-prompt; \
-	fi
+	./scripts/foundry/hosted_smoke.sh
 
 foundry-postgres-readiness:
 	./scripts/foundry/check_public_postgres_readiness.sh
+
+foundry-model-preflight:
+	./scripts/foundry/preflight_models.sh
+
+foundry-runtime-connection:
+	$(MAKE) foundry-postgres-readiness
+	$(MAKE) foundry-runtime-connection-ready
+
+foundry-runtime-connection-ready:
+	az bicep build --file infra/foundry-hosted/iac/modules/foundry-project-runtime-secret-connection.bicep --stdout >/dev/null
+	./scripts/foundry/converge_runtime_secret_connection.sh
+
+foundry-hosted-rbac:
+	./scripts/foundry/ensure_hosted_agent_rbac.sh
 
 foundry-hosted-e2e:
 	./scripts/foundry/hosted_e2e.sh
@@ -286,6 +376,22 @@ foundry-appinsights-connection:
 
 foundry-telemetry:
 	./scripts/foundry/verify_telemetry.sh
+
+foundry-verify:
+	./scripts/foundry/verify_deployment.sh
+
+foundry-evidence: ensure-backend-env
+	@test -n "$${FOUNDRY_RELEASE_ID:-}" || { echo "FOUNDRY_RELEASE_ID is required." >&2; exit 2; }
+	@set -euo pipefail; \
+	python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage final_evidence --action start >/dev/null; \
+	status=failed; \
+	trap 'python3 scripts/foundry/release_evidence.py timing --release-id "$${FOUNDRY_RELEASE_ID}" --stage final_evidence --action end --status "$$status" >/dev/null || true' EXIT; \
+	PYTHONPATH=. backend/.venv/bin/python scripts/foundry/release_evidence.py aggregate --release-id "$${FOUNDRY_RELEASE_ID}"; \
+	status=succeeded
+	PYTHONPATH=. backend/.venv/bin/python scripts/foundry/release_evidence.py finalize --release-id "$${FOUNDRY_RELEASE_ID}" --status succeeded
+
+foundry-release-migration-plan:
+	python3 scripts/foundry/release_migration.py
 
 foundry-release:
 	AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_public_dev.sh

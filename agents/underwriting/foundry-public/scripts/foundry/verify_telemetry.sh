@@ -9,6 +9,10 @@ require_bin() {
 }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -n "${RELEASE_ID:-}" ]]; then
+  . "$ROOT_DIR/scripts/foundry/release_paths.sh"
+  release_paths_configure "$ROOT_DIR"
+fi
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 EVIDENCE_FILE="${HOSTED_E2E_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-e2e-evidence.json}"
 REPORT_FILE="${APPINSIGHTS_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/appinsights-evidence.json}"
@@ -43,7 +47,9 @@ require_bin awk
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
+subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 application_insights_name="$(required_env APPLICATION_INSIGHTS_NAME)"
+az account set --subscription "$subscription_id" >/dev/null
 started_at="$(jq -r '.started_at // .generated_at // empty' "$EVIDENCE_FILE")"
 mapfile -t workflow_run_ids < <(
   jq -r '
@@ -99,6 +105,7 @@ query="${query/__WORKFLOW_RUN_IDS__/$workflow_run_ids_json}"
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   result="$(
     az monitor app-insights query \
+      --subscription "$subscription_id" \
       --resource-group "$resource_group" \
       --app "$application_insights_name" \
       --analytics-query "$query" \

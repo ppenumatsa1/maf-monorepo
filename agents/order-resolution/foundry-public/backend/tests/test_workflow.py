@@ -249,7 +249,8 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
     assert any(
         "order ord-1001: issue wrong_item, status in_transit, "
         "policy free_replacement_and_return_label, action issue_partial_refund, "
-        "and amount $79.00. HITL approval was not required." in message
+        "and amount $79.00. HITL approval was not required."
+        in message
         and "Previous result: Your partial refund has been submitted for order ord-1001." in message
         for message in output_messages
     )

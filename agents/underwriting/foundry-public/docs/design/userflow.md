@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Local MAF runtime | Implemented in repo | CLI and isolated E2E mode execute the shared workflow against local PostgreSQL |
 | Foundry hosted runtime | Implemented in repo | Hosted Responses agent executes MAF with durable PostgreSQL state and rich traces |
-| Operations console | Implemented in repo | React UI relays hosted runs, reads paged history, consumes AG-UI progress, and embeds a safe run assistant |
+| Operations console | Implemented in repo | External React/Nginx UI proxies same-origin `/api` requests to the internal backend, reads paged history, consumes AG-UI progress, and embeds a safe run assistant |
 | Release governance | Canonical docs added | README + engineering operating model + delivery ledger define how hosted readiness is claimed |
 
 Fresh hosted release evidence belongs in [issues-changes-fixes.md](issues-changes-fixes.md); this document describes the supported flow, not a current deployment claim.
@@ -15,7 +15,8 @@ Fresh hosted release evidence belongs in [issues-changes-fixes.md](issues-change
 
 1. Operator selects a scenario (happy path, retry, crash) and submits an application.
 2. UI starts a hosted run and opens AG-UI stream updates.
-3. Public adapter creates or reuses one `workflow_run_id` and invokes the hosted Responses agent.
+3. Internal backend adapter creates or reuses one `workflow_run_id` and invokes
+   the hosted Responses agent.
 4. Hosted agent starts the master workflow and persists the durable run.
 5. The master workflow fans out directly to risk, credit, medical, and driving executors in one superstep.
 6. Fan-in aggregator updates shared state as each check completes.
@@ -46,24 +47,32 @@ Fresh hosted release evidence belongs in [issues-changes-fixes.md](issues-change
 
 The public lane follows one production path:
 
-1. Browser calls the public adapter only.
-2. Public adapter starts or resumes the hosted Responses workflow.
+1. Browser calls only same-origin routes on the external frontend.
+2. The frontend proxies those routes to the internal backend adapter, which
+   starts or resumes the hosted Responses workflow.
 3. Hosted workflow writes checkpoints, events, state, and results.
 4. Browser refresh, replay, AG-UI, and CopilotKit explanation all come from the same durable run identity.
 
-No public-lane shim should bypass the hosted workflow, replace checkpointing, or expose Foundry credentials to the browser.
+No public-lane shim should bypass the hosted workflow, replace checkpointing,
+expose Foundry credentials to the browser, or reintroduce a browser-baked
+backend FQDN.
 
 ## Release governance flow
 
 1. Operator runs local gates.
 2. Operator runs the checked-in authenticated Foundry release sequence.
-3. Operator validates happy path, retry, and crash/resume behavior in hosted smoke and browser E2E.
+3. Operator validates same-origin health/API plus distinct happy, retry, and
+   `medical_check` crash/resume behavior in hosted smoke and browser E2E.
 4. Operator checks Foundry and Application Insights correlation using the durable `workflow_run_id`.
-5. Operator records evidence and any deferrals in [issues-changes-fixes.md](issues-changes-fixes.md).
+5. Operator runs deployment verification, aggregates secret-free
+   release-window evidence, and records any deferrals in
+   [issues-changes-fixes.md](issues-changes-fixes.md).
 
 ## Expected Outcomes
 
 - Happy path: completed run with decision output and persisted checkpoints/events.
 - Retry path: retry-related events are present and final result appears once.
 - Crash/resume path: resumable crashed run completes without duplicate persistence.
-- Public cutover path: browser, public adapter, hosted Responses workflow, and PostgreSQL all correlate on one `workflow_run_id`.
+- Public cutover path: browser, external frontend proxy, internal backend
+  adapter, hosted Responses workflow, and PostgreSQL all correlate on one
+  `workflow_run_id`.

@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+source "$ROOT_DIR/scripts/release/selected-target.sh"
+
+case "${INFRASTRUCTURE_MODE:-}" in
+  bootstrap) ;;
+  steadyState)
+    echo "Skipping PostgreSQL bootstrap grants in steadyState mode."
+    exit 0
+    ;;
+  *)
+    echo "INFRASTRUCTURE_MODE must be bootstrap or steadyState." >&2
+    exit 1
+    ;;
+esac
+
+: "${AZURE_ENV_NAME:?AZURE_ENV_NAME is required}"
+: "${AZURE_SUBSCRIPTION_ID:?AZURE_SUBSCRIPTION_ID is required}"
+: "${AZURE_RESOURCE_GROUP:?AZURE_RESOURCE_GROUP is required}"
+: "${AZURE_LOCATION:?AZURE_LOCATION is required}"
 : "${AZURE_POSTGRES_HOST:?AZURE_POSTGRES_HOST is required}"
 : "${AZURE_POSTGRES_DATABASE:?AZURE_POSTGRES_DATABASE is required}"
 : "${AZURE_POSTGRES_USER:?AZURE_POSTGRES_USER is required}"
@@ -12,25 +31,34 @@ if ! command -v psql >/dev/null 2>&1 || ! command -v az >/dev/null 2>&1; then
   exit 1
 fi
 
-resource_group="rg-${AZURE_ENV_NAME:?AZURE_ENV_NAME is required}"
+require_selected_target \
+  "$AZURE_ENV_NAME" \
+  "$AZURE_SUBSCRIPTION_ID" \
+  "$AZURE_RESOURCE_GROUP" \
+  "$AZURE_LOCATION"
+require_azure_cli_target "$AZURE_SUBSCRIPTION_ID"
+
+resource_group="$AZURE_RESOURCE_GROUP"
 server_name="${AZURE_POSTGRES_HOST%%.*}"
-tenant_id="$(az account show --query tenantId --output tsv)"
-administrator_resource_id="/subscriptions/$(az account show --query id --output tsv)/resourceGroups/${resource_group}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${server_name}/administrators/${POSTGRES_ENTRA_ADMIN_PRINCIPAL_ID}"
 backend_principal_id="$(az identity show \
   --resource-group "$resource_group" \
   --name "$AZURE_POSTGRES_USER" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
   --query principalId \
   --output tsv)"
 
-az rest \
-  --method PUT \
-  --url "https://management.azure.com${administrator_resource_id}?api-version=2022-12-01" \
-  --headers 'Content-Type=application/json' \
-  --body "{\"properties\":{\"principalName\":\"${POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME}\",\"principalType\":\"User\",\"tenantId\":\"${tenant_id}\"}}" \
+az postgres flexible-server microsoft-entra-admin create \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --resource-group "$resource_group" \
+  --server-name "$server_name" \
+  --display-name "$POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME" \
+  --object-id "$POSTGRES_ENTRA_ADMIN_PRINCIPAL_ID" \
+  --type User \
   --output none
 
 export PGPASSWORD
 PGPASSWORD="$(az account get-access-token \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
   --resource-type oss-rdbms \
   --query accessToken \
   --output tsv)"

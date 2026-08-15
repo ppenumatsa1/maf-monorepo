@@ -1,16 +1,47 @@
 targetScope = 'subscription'
 
 @description('AZD environment name.')
+@allowed([
+  'maf-ora-azure'
+])
 param environmentName string
 
+@description('Approved Azure subscription for this deployment lane.')
+@allowed([
+  '7df95e88-701c-4693-af77-3159f83b558d'
+])
+param targetSubscriptionId string
+
+@description('Approved resource group for this deployment lane.')
+@allowed([
+  'rg-maf-ora-azure'
+])
+param resourceGroupName string
+
 @description('Deployment location.')
+@allowed([
+  'northcentralus'
+])
 param location string
 
+@description('Infrastructure lifecycle mode. Bootstrap creates PostgreSQL; steadyState excludes it from deployment.')
+@allowed([
+  'bootstrap'
+  'steadyState'
+])
+param infrastructureMode string
+
 @description('Prefix used for Azure resource names.')
-param namePrefix string = 'mafapp'
+param namePrefix string
 
 @description('Public IPv4 address of the AZD runner that performs the PostgreSQL Entra grant bootstrap.')
-param postgresBootstrapAllowedIp string
+param postgresBootstrapAllowedIp string = ''
+
+@description('Explicit backend image used when the Container App template is reconciled.')
+param backendImage string = ''
+
+@description('Explicit frontend image used when the Container App template is reconciled.')
+param frontendImage string = ''
 
 @description('Application database name.')
 param postgresDatabaseName string = 'maf_workflow'
@@ -42,7 +73,7 @@ param foundryChatModelName string = 'gpt-4.1-mini'
 param foundryChatModelVersion string = '2025-04-14'
 
 @description('Azure AI Foundry chat deployment SKU name. Keep low-cost defaults and override per-region/quota as needed.')
-param foundryChatDeploymentSkuName string = 'GlobalStandard'
+param foundryChatDeploymentSkuName string = 'Standard'
 
 @description('Azure AI Foundry chat deployment capacity.')
 param foundryChatDeploymentCapacity int = 50
@@ -60,7 +91,7 @@ param foundryEmbeddingsModelName string = 'text-embedding-3-small'
 param foundryEmbeddingsModelVersion string = '1'
 
 @description('Azure AI Foundry embeddings deployment SKU name. Keep low-cost defaults and override per-region/quota as needed.')
-param foundryEmbeddingsDeploymentSkuName string = 'GlobalStandard'
+param foundryEmbeddingsDeploymentSkuName string = 'DataZoneStandard'
 
 @description('Azure AI Foundry embeddings deployment capacity.')
 param foundryEmbeddingsDeploymentCapacity int = 1
@@ -68,12 +99,43 @@ param foundryEmbeddingsDeploymentCapacity int = 1
 @description('Azure AI Foundry evaluator deployment capacity.')
 param foundryEvaluatorDeploymentCapacity int = 50
 
+@description('Azure AI Foundry evaluator deployment SKU name.')
+param foundryEvaluatorDeploymentSkuName string = 'Standard'
+
+@description('Azure AI Foundry evaluator deployment name.')
+param foundryEvaluatorDeploymentName string = 'gpt-4.1-mini-evaluator'
+
+@description('Azure AI Foundry evaluator model format.')
+param foundryEvaluatorModelFormat string = 'OpenAI'
+
+@description('Azure AI Foundry evaluator model name.')
+param foundryEvaluatorModelName string = 'gpt-4.1-mini'
+
+@description('Azure AI Foundry evaluator model version.')
+param foundryEvaluatorModelVersion string = '2025-04-14'
+
 @description('Responsible AI policy name applied to model deployments.')
 param foundryRaiPolicyName string = 'Microsoft.Default'
 
-var resourceSuffix = take(uniqueString(subscription().id, environmentName, location), 6)
+var validatedSubscriptionId = subscription().subscriptionId == targetSubscriptionId
+  ? targetSubscriptionId
+  : fail('The active deployment subscription is not approved for this lane.')
+var validatedResourceGroupName = resourceGroupName == 'rg-${environmentName}'
+  ? resourceGroupName
+  : fail('The resource group does not match the approved AZD environment.')
+var validatedBootstrapAllowedIp = infrastructureMode != 'bootstrap' || !empty(postgresBootstrapAllowedIp)
+  ? postgresBootstrapAllowedIp
+  : fail('Bootstrap mode requires an explicit PostgreSQL operator IPv4 address.')
+var validatedBackendImage = infrastructureMode != 'bootstrap' || (!empty(backendImage) && !contains(toLower(backendImage), 'placeholder') && !contains(toLower(backendImage), 'replace_'))
+  ? backendImage
+  : fail('Bootstrap mode requires backendImage to be an explicit deployable image.')
+var validatedFrontendImage = infrastructureMode != 'bootstrap' || (!empty(frontendImage) && !contains(toLower(frontendImage), 'placeholder') && !contains(toLower(frontendImage), 'replace_'))
+  ? frontendImage
+  : fail('Bootstrap mode requires frontendImage to be an explicit deployable image.')
+
+var resourceSuffix = take(uniqueString(validatedSubscriptionId, environmentName, location), 6)
 var normalizedPrefix = toLower(replace(namePrefix, '-', ''))
-var resourceGroupName = 'rg-${environmentName}'
+var postgresServerName = take('${namePrefix}-pg-${resourceSuffix}', 63)
 var commonTags = {
   'azd-env-name': environmentName
   app: 'maf-order-resolution-agent'
@@ -82,7 +144,7 @@ var commonTags = {
 }
 
 resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
-  name: resourceGroupName
+  name: validatedResourceGroupName
   location: location
   tags: commonTags
 }
@@ -101,7 +163,7 @@ module containerRegistry './modules/container-registry.bicep' = {
   name: 'containerRegistry'
   scope: rg
   params: {
-    name: take('${normalizedPrefix}acr${resourceSuffix}', 50)
+    name: take('${normalizedPrefix}acrpuzsryv2', 50)
     location: location
     tags: commonTags
   }
@@ -128,20 +190,25 @@ module foundry './modules/foundry.bicep' = {
     embeddingsModelVersion: foundryEmbeddingsModelVersion
     embeddingsDeploymentSkuName: foundryEmbeddingsDeploymentSkuName
     embeddingsDeploymentCapacity: foundryEmbeddingsDeploymentCapacity
+    evaluatorDeploymentName: foundryEvaluatorDeploymentName
+    evaluatorModelFormat: foundryEvaluatorModelFormat
+    evaluatorModelName: foundryEvaluatorModelName
+    evaluatorModelVersion: foundryEvaluatorModelVersion
+    evaluatorDeploymentSkuName: foundryEvaluatorDeploymentSkuName
     evaluatorDeploymentCapacity: foundryEvaluatorDeploymentCapacity
     raiPolicyName: foundryRaiPolicyName
   }
 }
 
-module postgres './modules/postgres-flexible-server.bicep' = {
+module postgres './modules/postgres-flexible-server.bicep' = if (infrastructureMode == 'bootstrap') {
   name: 'postgres'
   scope: rg
   params: {
-    name: take('${namePrefix}-pg-${resourceSuffix}', 63)
+    name: postgresServerName
     location: location
     tags: commonTags
     databaseName: postgresDatabaseName
-    bootstrapAllowedIp: postgresBootstrapAllowedIp
+    bootstrapAllowedIp: validatedBootstrapAllowedIp
   }
 }
 
@@ -177,7 +244,6 @@ module containerAppsEnvironment './modules/container-app-environment.bicep' = {
   }
 }
 
-var placeholderImage = 'python:3.12-alpine'
 var backendSecrets = concat(
   empty(mcpApiKey) ? [] : [
     {
@@ -212,7 +278,7 @@ var backendEnv = concat(
     }
     {
       name: 'AZURE_POSTGRES_HOST'
-      value: postgres.outputs.fullyQualifiedDomainName
+      value: '${postgresServerName}.postgres.database.azure.com'
     }
     {
       name: 'AZURE_POSTGRES_DATABASE'
@@ -271,7 +337,10 @@ var backendEnv = concat(
   ]
 )
 
-module backend './modules/container-app.bicep' = {
+var backendName = 'maf-backend-${resourceSuffix}'
+var frontendName = 'maf-frontend-${resourceSuffix}'
+
+module backend './modules/container-app.bicep' = if (infrastructureMode == 'bootstrap') {
   name: 'backendContainerApp'
   scope: rg
   dependsOn: [
@@ -280,12 +349,12 @@ module backend './modules/container-app.bicep' = {
     backendFoundryProjectUser
   ]
   params: {
-    name: 'maf-backend-${resourceSuffix}'
+    name: backendName
     location: location
     tags: commonTags
     serviceName: 'backend'
     managedEnvironmentId: containerAppsEnvironment.outputs.id
-    image: placeholderImage
+    image: validatedBackendImage
     targetPort: 8000
     cpu: '0.5'
     memory: '1Gi'
@@ -313,23 +382,23 @@ var frontendEnv = [
   }
   {
     name: 'NGINX_API_UPSTREAM'
-    value: backend.outputs.url
+    value: backend!.outputs.url
   }
 ]
 
-module frontend './modules/container-app.bicep' = {
+module frontend './modules/container-app.bicep' = if (infrastructureMode == 'bootstrap') {
   name: 'frontendContainerApp'
   scope: rg
   dependsOn: [
     frontendAcrPull
   ]
   params: {
-    name: 'maf-frontend-${resourceSuffix}'
+    name: frontendName
     location: location
     tags: commonTags
     serviceName: 'frontend'
     managedEnvironmentId: containerAppsEnvironment.outputs.id
-    image: placeholderImage
+    image: validatedFrontendImage
     targetPort: 5173
     cpu: '0.25'
     memory: '0.5Gi'
@@ -348,6 +417,16 @@ module frontend './modules/container-app.bicep' = {
       items: []
     }
   }
+}
+
+resource existingBackend 'Microsoft.App/containerApps@2024-03-01' existing = {
+  name: backendName
+  scope: rg
+}
+
+resource existingFrontend 'Microsoft.App/containerApps@2024-03-01' existing = {
+  name: frontendName
+  scope: rg
 }
 
 module backendAcrPull './modules/acr-pull-role.bicep' = {
@@ -397,11 +476,15 @@ output FOUNDRY_PROJECTS_ENDPOINT string = foundry.outputs.projectEndpoint
 output FOUNDRY_MODEL_DEPLOYMENT_NAME string = foundry.outputs.chatDeploymentName
 output FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME string = foundry.outputs.embeddingsDeploymentName
 output FOUNDRY_EVAL_MODEL string = foundry.outputs.evaluatorDeploymentName
-output AZURE_POSTGRES_HOST string = postgres.outputs.fullyQualifiedDomainName
+output AZURE_POSTGRES_HOST string = '${postgresServerName}.postgres.database.azure.com'
 output AZURE_POSTGRES_DATABASE string = postgresDatabaseName
 output AZURE_POSTGRES_USER string = backendIdentity.outputs.name
 output AZURE_CLIENT_ID string = backendIdentity.outputs.clientId
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.logAnalyticsWorkspaceId
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output API_URL string = backend.outputs.url
-output WEB_URL string = frontend.outputs.url
+output API_URL string = infrastructureMode == 'bootstrap'
+  ? backend!.outputs.url
+  : 'https://${existingBackend.properties.configuration.ingress.fqdn}'
+output WEB_URL string = infrastructureMode == 'bootstrap'
+  ? frontend!.outputs.url
+  : 'https://${existingFrontend.properties.configuration.ingress.fqdn}'

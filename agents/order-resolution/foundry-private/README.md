@@ -150,6 +150,19 @@ is private-only from creation, and app-only deployment runs the read-only
 private readiness gate before activating artifacts. No operation may use
 password-repair, public-access, firewall, or administrator-user bypasses.
 
+Release authority is prepared under `.artifacts/releases/<release-id>/`.
+Sanitized `release.json` and provenance are retainable; detailed evidence is
+written under `evidence/` and logs under `logs/`, both ignored by Git. The
+standalone evidence retry attaches only to the same running source/release
+context. The lane-local `extensions.timing` object records UTC millisecond
+start/end timestamps, durations, retry attempts, overlap, and total
+app-only-start-to-telemetry-success elapsed time for every deployment and
+evidence stage. This path is
+`prepared_not_live_validated`. Singular
+`.artifacts/release/` and historical `backend/.foundry/results/` release output
+are `legacy_pending_cutover`; migration tooling is dry-run only and never
+copies or deletes history.
+
 The same source-of-truth target is available only from the private runner:
 
 ```bash

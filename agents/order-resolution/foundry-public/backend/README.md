@@ -22,8 +22,9 @@ file.
 Deploy from the repository root with the authenticated release command:
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription-id>" \
-RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
+make foundry-profile-apply \
+  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+make foundry-bootstrap
 make foundry-release
 ```
 
@@ -31,14 +32,22 @@ make foundry-release
 refreshed from canonical `backend/` source before every deployment.
 The public hosted project uses Microsoft-managed Foundry agent state; PostgreSQL
 continues to own the workflow, checkpoint, approval, and audit records.
-The default release route is gated `app_only`: it reuses the existing database
+The default release route is `app_only`: it reuses the selected portable target
+and its existing database
 and does not automatically provision infrastructure. It validates and deploys
-the approved application legs, then runs hosted smoke/E2E, Foundry evaluation,
-and Application Insights validation. Infrastructure reconciliation is an
-explicit exception that requires a reviewed preview plus
-`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
-`FOUNDRY_INFRA_RECONCILIATION_REFERENCE` before `make foundry-provision` can
-run.
+the application legs by immutable digest, securely converges the
+`orderresolutionruntimesecrets` project connection, converges the hosted
+identity's account-scoped runtime role, verifies exact live state, then runs
+hosted smoke/E2E, Foundry evaluation, Application Insights validation, and
+aggregate secret-free evidence. The hosted definition and GET metadata contain
+only the connection placeholder, never the resolved PostgreSQL URL.
+Infrastructure reconciliation is a separate
+`make foundry-provision` operation. Bootstrap mode creates the complete lane;
+hydration then switches the selected environment to non-mutating reuse mode.
+PostgreSQL schema, runtime credential, and readiness steps are explicit and
+credentials remain local to the AZD environment. Production runtimes set
+`DB_SCHEMA_MANAGED_EXTERNALLY=true`, so startup never attempts DDL with the
+least-privilege runtime credential.
 
 The hosted browser path is external frontend Container App -> same-origin
 `/api` proxy -> internal FastAPI wrapper -> managed-identity Foundry Responses.
@@ -93,8 +102,9 @@ requires manual review. `ORD-1001` is low risk; `ORD-1009` requires approval.
 
 - `make eval-backend` runs deterministic contract evaluation.
 - `make eval-foundry` judges conversations in hosted E2E evidence only after
-  their configured minimum trace age (`90` seconds by default), mitigating
-  trace-materialization races.
+  their configured minimum trace age (`90` seconds by default). The evidence
+  must contain the fresh ORD-1001 low-risk, ORD-1009 approval/resume, and
+  damaged-item approval/resume conversation IDs from one release window.
 - The target obtains `FOUNDRY_PROJECTS_ENDPOINT`,
   `FOUNDRY_MODEL_DEPLOYMENT_NAME`, and (when configured) `FOUNDRY_EVAL_MODEL`
   from the selected `infra/foundry-hosted` AZD environment without sourcing or

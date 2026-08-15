@@ -260,7 +260,8 @@ enforced when event payloads are designed.
 ### Intended Azure Topology
 
 The Azure app-hosted package declares two Container Apps in
-`rg-maf-ora-azure` in North Central US:
+subscription `7df95e88-701c-4693-af77-3159f83b558d`,
+`rg-maf-ora-azure`, in North Central US:
 
 ```text
 Operator browser
@@ -359,7 +360,7 @@ has just passed them.
 | Report-only evaluation against selected AZD backend configuration | `make eval-foundry-deployed` |
 | Consolidated local review gate | `./scripts/skills/design-review-skill.sh` |
 | Normal Azure release | `make release-app`, followed by release smoke, hosted E2E, report-only evaluation, and fresh telemetry correlation. |
-| Exceptional reconciliation | Explicit reviewed `make release-infra-preview`, then separately authorized `make release-infra-reconcile`; PostgreSQL must be retained. |
+| Exceptional reconciliation | Explicit `make release-infra-preview`, then direct safety-checked `make release-infra-reconcile`; apply obtains a fresh what-if and PostgreSQL must be retained. |
 
 The required validation set depends on the change; the canonical gate matrix is
 in [engineering-operating-model.md](engineering-operating-model.md). A source

@@ -32,7 +32,7 @@ fi
 read_azd_value() {
   local key="$1"
   local value
-  if ! value="$(azd "${azd_args[@]}" "$key" 2>/dev/null)"; then
+  if ! value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd "${azd_args[@]}" "$key" 2>/dev/null)"; then
     echo "Unable to read $key from the selected Foundry AZD environment." >&2
     exit 1
   fi
@@ -55,7 +55,7 @@ export_required_azd_value() {
 export_required_azd_value FOUNDRY_PROJECTS_ENDPOINT
 export_required_azd_value FOUNDRY_MODEL_DEPLOYMENT_NAME
 
-judge_model="$(azd "${azd_args[@]}" FOUNDRY_EVAL_MODEL 2>/dev/null || true)"
+judge_model="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd "${azd_args[@]}" FOUNDRY_EVAL_MODEL 2>/dev/null || true)"
 if [[ -n "$judge_model" ]]; then
   export FOUNDRY_EVAL_MODEL="$judge_model"
 fi

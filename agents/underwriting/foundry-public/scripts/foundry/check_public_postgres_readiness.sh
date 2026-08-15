@@ -30,6 +30,10 @@ required_env() {
 require_bin az
 require_bin azd
 require_bin python3
+[[ -x "$ROOT_DIR/.venv/bin/python" ]] || {
+  echo "Project virtual environment is required; run make install first." >&2
+  exit 1
+}
 
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
@@ -41,9 +45,14 @@ operator_ip="$(required_env POSTGRES_OPERATOR_IP)"
 database_url="$(required_env DATABASE_URL)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
 db_auth_mode="$(required_env DB_AUTH_MODE)"
+db_schema_managed_externally="$(required_env DB_SCHEMA_MANAGED_EXTERNALLY)"
 
 if [[ "$db_auth_mode" != "password" ]]; then
   echo "DB_AUTH_MODE must be password." >&2
+  exit 1
+fi
+if [[ "$db_schema_managed_externally" != "true" ]]; then
+  echo "DB_SCHEMA_MANAGED_EXTERNALLY must be true for hosted runtime readiness." >&2
   exit 1
 fi
 if [[ "$database_url" != "$runtime_database_url" ]]; then
@@ -186,4 +195,22 @@ if ! az postgres flexible-server db show \
   exit 1
 fi
 
-echo "PostgreSQL readiness passed: TLS URL, password runtime credential, dual authentication, and Azure-services firewall are configured."
+DATABASE_URL="$runtime_database_url" \
+RUNTIME_DATABASE_URL="$runtime_database_url" \
+DB_AUTH_MODE="$db_auth_mode" \
+DB_SCHEMA_MANAGED_EXTERNALLY="$db_schema_managed_externally" \
+PYTHONPATH="$ROOT_DIR/backend" \
+  "$ROOT_DIR/.venv/bin/python" - <<'PY'
+from app.core.config import load_settings
+from app.infrastructure.db.engine import create_db_engine, init_db
+
+settings = load_settings()
+if not settings.db_schema_managed_externally:
+    raise SystemExit("Runtime settings did not enable external schema management.")
+init_db(
+    create_db_engine(settings),
+    schema_managed_externally=settings.db_schema_managed_externally,
+)
+PY
+
+echo "PostgreSQL readiness passed: TLS URL, restricted runtime credential, required schema/index parity, external schema mode, dual authentication, and Azure-services firewall are configured."

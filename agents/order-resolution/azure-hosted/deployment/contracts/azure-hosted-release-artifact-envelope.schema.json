@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github/copilot/azure-hosted-release-artifact-envelope.schema.json",
+  "title": "Azure-hosted release artifact envelope",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evidence_type",
+    "lane",
+    "status",
+    "release_id",
+    "release_started_at",
+    "generated_at",
+    "target",
+    "checks",
+    "extensions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "contract": {
+      "const": "azure-hosted-release/v1"
+    },
+    "evidence_type": {
+      "$ref": "#/$defs/evidenceType"
+    },
+    "artifact_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+    },
+    "lane": {
+      "const": "azure-hosted"
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "release_started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target": {
+      "$ref": "#/$defs/secretFreeObject"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/secretFreeObject"
+    }
+  },
+  "propertyNames": {
+    "not": {
+      "pattern": "([Aa][Pp][Ii][_ -]?[Kk][Ee][Yy]|[Bb][Ee][Aa][Rr][Ee][Rr][_ -]?[Tt][Oo][Kk][Ee][Nn]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Ii][Oo][Nn][_ -]?[Ss][Tt][Rr][Ii][Nn][Gg]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee][_ -]?[Uu][Rr][Ll]|[Aa][Cc][Cc][Ee][Ss][Ss][_ -]?[Tt][Oo][Kk][Ee][Nn])"
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/secretFreeValue"
+  },
+  "$defs": {
+    "evidenceType": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "pending",
+        "passed",
+        "failed",
+        "skipped"
+      ]
+    },
+    "secretFreeString": {
+      "type": "string",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "AccountKey="
+          }
+        },
+        {
+          "not": {
+            "pattern": "SharedAccessSignature="
+          }
+        },
+        {
+          "not": {
+            "pattern": "DefaultEndpointsProtocol="
+          }
+        },
+        {
+          "not": {
+            "pattern": "://[^/\\s:@]+:[^@\\s]+@"
+          }
+        },
+        {
+          "not": {
+            "pattern": "-----BEGIN [A-Z ]+-----"
+          }
+        }
+      ]
+    },
+    "secretFreeArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/secretFreeValue"
+      }
+    },
+    "secretFreeObject": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "pattern": "([Aa][Pp][Ii][_ -]?[Kk][Ee][Yy]|[Bb][Ee][Aa][Rr][Ee][Rr][_ -]?[Tt][Oo][Kk][Ee][Nn]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Ii][Oo][Nn][_ -]?[Ss][Tt][Rr][Ii][Nn][Gg]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee][_ -]?[Uu][Rr][Ll]|[Aa][Cc][Cc][Ee][Ss][Ss][_ -]?[Tt][Oo][Kk][Ee][Nn])"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/secretFreeValue"
+      }
+    },
+    "secretFreeValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/secretFreeString"
+        },
+        {
+          "$ref": "#/$defs/secretFreeArray"
+        },
+        {
+          "$ref": "#/$defs/secretFreeObject"
+        }
+      ]
+    },
+    "check": {
+      "type": "object",
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "log": {
+          "type": "string",
+          "pattern": "^logs/[^\\s]+$"
+        }
+      },
+      "propertyNames": {
+        "not": {
+          "pattern": "([Aa][Pp][Ii][_ -]?[Kk][Ee][Yy]|[Bb][Ee][Aa][Rr][Ee][Rr][_ -]?[Tt][Oo][Kk][Ee][Nn]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Ii][Oo][Nn][_ -]?[Ss][Tt][Rr][Ii][Nn][Gg]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee][_ -]?[Uu][Rr][Ll]|[Aa][Cc][Cc][Ee][Ss][Ss][_ -]?[Tt][Oo][Kk][Ee][Nn])"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/secretFreeValue"
+      }
+    }
+  }
+}

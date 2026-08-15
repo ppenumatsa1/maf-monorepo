@@ -17,13 +17,82 @@ cd "$ROOT_DIR"
 
 FOUNDRY_RELEASE_BASE_REF="${FOUNDRY_RELEASE_BASE_REF:-HEAD}"
 FOUNDRY_VALIDATION_MODE="${FOUNDRY_VALIDATION_MODE:-}"
-FOUNDRY_DEPLOY_MODE="${FOUNDRY_DEPLOY_MODE:-}"
 FOUNDRY_SMOKE_MODE="${FOUNDRY_SMOKE_MODE:-happy}"
-FOUNDRY_DEPLOYMENT_PROFILE="${FOUNDRY_DEPLOYMENT_PROFILE:-}"
+FOUNDRY_DEPLOYMENT_PROFILE="${FOUNDRY_DEPLOYMENT_PROFILE:-$ROOT_DIR/deployment/profiles/foundry-public.env}"
 
-if [[ -n "$FOUNDRY_DEPLOYMENT_PROFILE" ]]; then
-  bash "$ROOT_DIR/deployment/apply-azd-profile.sh" "$FOUNDRY_DEPLOYMENT_PROFILE"
+if [[ -n "${FOUNDRY_DEPLOY_MODE:-}" ]]; then
+  echo "FOUNDRY_DEPLOY_MODE overrides are forbidden; routine releases are always app_only." >&2
+  exit 2
 fi
+
+. "$ROOT_DIR/scripts/foundry/release_paths.sh"
+release_paths_configure "$ROOT_DIR"
+
+bash "$ROOT_DIR/deployment/apply-azd-profile.sh" "$FOUNDRY_DEPLOYMENT_PROFILE"
+
+profile_value() {
+  sed -n "s/^$1=//p" "$FOUNDRY_DEPLOYMENT_PROFILE" | tail -n 1
+}
+
+repository="$(git config --get remote.origin.url || printf 'local-worktree')"
+commit="$(git rev-parse HEAD)"
+"$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/foundry/release_record.py" init \
+  --release-id "$RELEASE_ID" \
+  --repository "$repository" \
+  --commit "$commit" \
+  --profile "$FOUNDRY_DEPLOYMENT_PROFILE" \
+  --environment "$(profile_value AZURE_ENV_NAME)" \
+  --subscription-id "$(profile_value AZURE_SUBSCRIPTION_ID)" \
+  --resource-group "$(profile_value AZURE_RESOURCE_GROUP)" \
+  --location "$(profile_value AZURE_LOCATION)" \
+  --executor "${GITHUB_ACTOR:-local-operator}" \
+  --required-gate verification \
+  --required-gate hosted_e2e \
+  --required-gate hosted_smoke \
+  --required-gate trace_evaluation \
+  --required-gate application_insights >/dev/null
+
+release_finalized=false
+release_stage=bootstrap
+active_timing_stage=
+timing() {
+  "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/foundry/release_record.py" timing \
+    --release-id "$RELEASE_ID" "$@"
+}
+
+run_timed_stage() {
+  local stage=$1
+  shift
+  active_timing_stage="$stage"
+  timing --stage "$stage" --action start
+  if "$@"; then
+    timing --stage "$stage" --action succeed
+    active_timing_stage=
+  else
+    local status=$?
+    timing --stage "$stage" --action fail || true
+    active_timing_stage=
+    return "$status"
+  fi
+}
+
+finalize_failed_release() {
+  local exit_code=$?
+  if [[ "$release_finalized" != true ]]; then
+    if [[ -n "$active_timing_stage" ]]; then
+      timing --stage "$active_timing_stage" --action fail >/dev/null 2>&1 || true
+    fi
+    "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/foundry/release_record.py" finalize \
+      --release-id "$RELEASE_ID" \
+      --status failed \
+      --failed-stage "$release_stage" \
+      --error "Release stage failed; inspect lane-local logs." >/dev/null || true
+  fi
+  exit "$exit_code"
+}
+trap finalize_failed_release EXIT
+exec > >(tee -a "$FOUNDRY_RELEASE_LOG_DIR/release.log") 2>&1
+
 ./scripts/foundry/ensure_foundry_azd_defaults.sh
 
 wait_for_parallel_jobs() {
@@ -44,9 +113,6 @@ deploy_mode="$(printf '%s\n' "$router_output" | sed -n 's/^deploy_mode=//p' | ta
 validation_mode="$(printf '%s\n' "$router_output" | sed -n 's/^validation_mode=//p' | tail -n 1)"
 reason="$(printf '%s\n' "$router_output" | sed -n 's/^reason=//p' | tail -n 1)"
 
-if [[ -n "$FOUNDRY_DEPLOY_MODE" ]]; then
-  deploy_mode="$FOUNDRY_DEPLOY_MODE"
-fi
 if [[ -n "$FOUNDRY_VALIDATION_MODE" ]]; then
   validation_mode="$FOUNDRY_VALIDATION_MODE"
 fi
@@ -67,6 +133,7 @@ case "$validation_mode" in
 esac
 
 make "$validation_target" &
+release_stage=local_validation
 validation_pid=$!
 make foundry-iac-build &
 iac_pid=$!
@@ -74,28 +141,53 @@ wait_for_parallel_jobs "$validation_pid" "$iac_pid"
 
 case "$deploy_mode" in
   app_only)
-    make foundry-release-deploy
-    make foundry-appinsights-connection
-    ;;
-  full)
-    echo "Routine releases are app-only. Run the explicitly approved provisioning workflow separately." >&2
-    exit 1
+    make foundry-release-readiness
+    release_stage=package_build
+    active_timing_stage=package_build
+    timing --stage package_build --action start --start-app-only
+    if make foundry-package; then
+      timing --stage package_build --action succeed
+      active_timing_stage=
+    else
+      status=$?
+      timing --stage package_build --action fail || true
+      active_timing_stage=
+      exit "$status"
+    fi
+    release_stage=deploy_hosted_activation
+    run_timed_stage deploy_hosted_activation \
+      bash -c 'make foundry-deploy-ready && make -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready && make foundry-appinsights-connection'
     ;;
   *)
-    echo "Unsupported deploy mode: $deploy_mode" >&2
+    echo "Release router contract violation: deploy_mode must be app_only, got: $deploy_mode" >&2
     exit 1
     ;;
 esac
 
-SMOKE_MODE="$FOUNDRY_SMOKE_MODE" make foundry-smoke
-make foundry-eval &
+release_stage=smoke
+run_timed_stage smoke env SMOKE_MODE="$FOUNDRY_SMOKE_MODE" make foundry-smoke
+release_stage=evaluation
+(run_timed_stage evaluation make foundry-eval) &
 evaluation_pid=$!
-if ! make foundry-hosted-e2e; then
+release_stage=deployed_e2e
+if ! run_timed_stage deployed_e2e make foundry-hosted-e2e; then
   wait "$evaluation_pid" || true
   exit 1
 fi
-make foundry-telemetry &
-telemetry_pid=$!
-wait_for_parallel_jobs "$evaluation_pid" "$telemetry_pid"
+release_stage=telemetry
+run_timed_stage telemetry make foundry-telemetry
+if ! wait "$evaluation_pid"; then
+  release_stage=evaluation
+  exit 1
+fi
+release_stage=deployment_verification
+run_timed_stage deployment_verification make foundry-verify
+release_stage=final_evidence
+active_timing_stage=final_evidence
+timing --stage final_evidence --action start
+make foundry-evidence
+active_timing_stage=
+release_finalized=true
+trap - EXIT
 
 echo "Underwriting Foundry public release completed."

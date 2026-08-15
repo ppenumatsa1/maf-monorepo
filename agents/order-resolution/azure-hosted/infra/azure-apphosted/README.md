@@ -17,12 +17,21 @@ hosted E2E, report-only evaluation, and telemetry-correlation evidence.
 
 | Setting | Value |
 | --- | --- |
+| Subscription | `7df95e88-701c-4693-af77-3159f83b558d` |
 | Resource group | `rg-maf-ora-azure` |
 | AZD environment | `maf-ora-azure` |
 | Region | North Central US (`northcentralus`) |
 
 North Central US is required because Azure PostgreSQL is offer-restricted in
 East US for this target.
+
+Foundry chat, embeddings, and evaluator deployment SKUs are parameterized.
+Chat/evaluator bootstrap defaults use `Standard`; `text-embedding-3-small`
+uses `DataZoneStandard` because North Central US does not support its
+`Standard` SKU. Do not default any deployment to `GlobalStandard` while the
+checked `gpt-4.1-mini` quota is fully consumed.
+Container Apps quota-helper access is not assumed. Treat the subscription
+preview as the capacity gate and stop on any quota error.
 
 ## Layout
 
@@ -31,6 +40,11 @@ East US for this target.
 - `iac/main.parameters.json`: AZD parameter binding.
 - `runtime/.env.example`: app-hosted runtime settings.
 - `runtime/smoke-test.sh`: backend/frontend and ORD-1001/ORD-1009 checks.
+
+This package participates in a hybrid layout: tracked profiles and deployment
+contracts stay in `deployment/profiles/`, `.azure/deployment-plan.md`, and
+`docs/design/`; each authorized release writes its generated evidence bundle to
+`.artifacts/releases/<release-id>/`.
 
 ## Runtime settings
 
@@ -55,11 +69,25 @@ deployment. Do not change the deployment-plan status until current code and IaC
 evidence exists.
 
 Normal deployment is app-only (`make release-app`) and preserves PostgreSQL.
-Use `make release-infra-preview` only with explicit reviewed approval to inspect
-an infrastructure reconciliation; do not call provision because an app,
-Dockerfile, frontend runtime setting, or Bicep file changed. The backend
+For a fresh subscription, `make prepare-bootstrap` validates the tracked
+target-only profile and writes required untracked inputs to the selected local
+AZD environment. The template requires explicit images and has no tracked
+deployable placeholder parameter file. After bootstrap, `make
+prepare-steady-state` verifies the PostgreSQL identities and switches the AZD
+environment to `steadyState` only after deleting and verifying removal of the
+exact `allow-bootstrap-runner` firewall rule.
+Use `make release-infra-preview` to inspect an infrastructure reconciliation
+without changing resources. `make release-infra-reconcile` is explicit
+execution intent and independently runs the same guarded what-if immediately
+before apply; it refuses any PostgreSQL entry because steady-state IaC excludes
+the server and database. Container App modules are also bootstrap-only, so
+reconciliation cannot overwrite MCP secrets, URLs, app configuration, or
+revisions. Do not call reconciliation because an
+app, Dockerfile, frontend runtime setting, or Bicep file changed. The backend
 release image must retain the approved CFS `PIP_INDEX_URL`, and the frontend
 build must remain compatible with its Alpine/musl runtime.
+There is no hosted-agent deployment stage in this package; Foundry remains
+limited to model inference inputs and report-only evaluation outputs.
 
 After an authorized deployment, run:
 
@@ -68,3 +96,6 @@ infra/azure-apphosted/runtime/smoke-test.sh "$API_URL" "$WEB_URL"
 ```
 
 Set `EXPECT_TRIAGE_MODE=foundry_models` only when verifying model inference.
+The complete app-only release uses `make release-app`; its validation wrapper
+always attempts final aggregation, so failed gates leave a failed
+`evidence/release-evidence.json` in the current release directory.

@@ -40,3 +40,17 @@ infra/foundry-hosted/agent/
 
 # Local deployment progress reports and operational evidence.
 deployment-report/
+
+# Release authority keeps only the contract and sanitized records/manifests.
+!.artifacts/
+!.artifacts/releases/
+.artifacts/releases/*
+!.artifacts/releases/*/
+.artifacts/releases/*/*
+!.artifacts/releases/_contract/
+!.artifacts/releases/_contract/**
+!.artifacts/releases/_history/
+!.artifacts/releases/_history/**
+!.artifacts/releases/*/release.json
+!.artifacts/releases/*/provenance-manifest.json
+!.artifacts/releases/*/checksums.sha256

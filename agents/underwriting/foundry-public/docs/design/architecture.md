@@ -23,7 +23,8 @@ Deliver a verifiable multi-step underwriting workflow that is:
 - operationally transparent (run history, event timeline, checkpoints, AG-UI stream),
 - decision-safe (deterministic score policy before any model rationale),
 - durable (PostgreSQL-backed checkpoints and business projections),
-- extensible (shared domain contracts across local validation, the public adapter, and the hosted agent),
+- extensible (shared domain contracts across local validation, the internal
+  backend adapter, and the hosted agent),
 - release-governed (hosted readiness is claimed only from recorded smoke/E2E/eval/telemetry evidence).
 
 ## Logical View
@@ -171,7 +172,9 @@ flowchart TD
   - Real MAF checkpoint storage through `PostgresCheckpointStorage`.
 - **Frontend** (`frontend/src`)
   - Operations console for scenario execution, live progress stream, and run-history inspection.
-  - Embedded CopilotKit assistant receives only an allowlisted selected-run projection through the public adapter.
+  - Embedded CopilotKit assistant receives only an allowlisted selected-run
+    projection through the internal backend adapter and same-origin frontend
+    proxy.
 
 ### Execution Surfaces
 
@@ -183,9 +186,10 @@ The same underwriting business flow runs across:
 
 ### Clean cutover and no-shims rule
 
-The public hosted lane adopts Order Resolution's operating model:
+The public hosted lane uses an independent clean-cutover operating model:
 
-- the browser-facing adapter starts or resumes hosted work and reads durable projections;
+- the external frontend proxies browser traffic to the internal backend
+  adapter, which starts or resumes hosted work and reads durable projections;
 - the hosted Responses entrypoint owns production orchestration and writes;
 - local execution mode exists only for isolated validation;
 - no compatibility shim should reintroduce a second orchestration runtime, shadow checkpoint path, or direct browser-to-Foundry flow.
@@ -208,7 +212,7 @@ flowchart LR
     Browser[Operator Browser]
   end
 
-  subgraph App[Public application boundary]
+  subgraph App[Application boundary]
     UI[React and Nginx Container App]
     API[FastAPI Adapter]
   end
@@ -228,7 +232,18 @@ flowchart LR
   Agent -->|TLS read and write| DB
 ```
 
-The public adapter passes start/resume input to the hosted agent only in the Responses body; it never places application data in Responses metadata. The browser never receives a Foundry or database credential and never calls Foundry directly. The hosted runtime alone receives its TLS database URL.
+The internal backend adapter passes start/resume input to the hosted agent only
+in the Responses body; it never places application data in Responses metadata.
+The browser never receives a Foundry or database credential and never calls
+Foundry directly. The backend receives the least-privilege database URL through
+an ACA secret, while the hosted agent resolves the same credential through the
+project `CustomKeys` connection.
+
+At the Azure edge, only the frontend Container App has external ingress. Its
+local Nginx configuration proxies relative `/api` and `/backend-health`
+requests to the backend's internal Container Apps FQDN. The browser bundle
+contains no Azure backend URL. Backend and hosted-agent startup validate the
+administrator-managed PostgreSQL schema with no production runtime DDL.
 
 ### Durable Stores
 
@@ -243,6 +258,12 @@ PostgreSQL is the durable source of truth for both business and workflow recover
 
 ### Hosted Execution Boundary
 
-The hosted runtime uses a dedicated least-privilege PostgreSQL password over TLS. Password authentication and the narrow required network posture are release-managed and injected only into the hosted runtime. This prototype intentionally keeps the public adapter as a browser-facing relay while the hosted agent owns durable execution.
+The backend and hosted runtime use the same dedicated least-privilege
+PostgreSQL password over TLS through separate secret-delivery mechanisms.
+Password authentication and the narrow required network posture are
+release-managed. This prototype intentionally keeps the backend adapter
+internal behind the external frontend's same-origin proxy while the hosted
+agent owns durable execution.
 
-`UNDERWRITING_EXECUTION_MODE=local` exists only for isolated local E2E validation. It is never the intended deployed public-adapter mode.
+`UNDERWRITING_EXECUTION_MODE=local` exists only for isolated local E2E
+validation. It is never the intended deployed internal-adapter mode.

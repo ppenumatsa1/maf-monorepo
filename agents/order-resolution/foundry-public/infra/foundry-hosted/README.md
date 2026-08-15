@@ -7,68 +7,89 @@ Container App.
 
 ## IaC ownership boundary
 
-This deployment requires existing, retained public-lane dependencies. Bicep
-references—but does not configure or recreate—the Container Apps environment,
-ACR, Foundry account/project/model deployments, and Application Insights
-component. Existing Foundry connections, evaluation storage, monitoring
-configuration, and their RBAC remain outside this template.
+The Bicep template has two explicit modes. `bootstrap` creates the complete
+lane: Foundry account/project/models, ACR, monitoring, Container Apps
+environment/apps, separate app identities, PostgreSQL, evaluation storage,
+connections, and resource-scoped RBAC. `reuse` resolves deterministic existing
+names and creates no resources, connections, or role assignments.
 
-The only deployable resources retained in Bicep are this lane's external
-frontend and internal backend Container Apps, their lane-specific registry-pull
-identity, and the two resource-scoped assignments required by those apps:
-`AcrPull` for the pull identity and Azure AI User for the backend identity at
-the existing project scope. The existing PostgreSQL server and `maf_workflow`
-database are never represented as Bicep resources; the backend receives the
-operator-supplied TLS connection string as a Container Apps secret.
+Evaluation storage is reachable by Foundry through the validated
+selected-network/trusted-service posture: public network access is enabled,
+the default network action is deny, and only the `AzureServices` bypass is
+configured. Blob public access and shared-key authorization remain disabled.
+Do not change storage to fully public access or disable networking without a
+private endpoint.
+
+Reuse hydration writes every required Bicep output into the selected local AZD
+environment, including project/model values, monitoring and Container Apps
+resource IDs, PostgreSQL FQDN, and `API_BASE_URL`/`WEB_URL`.
+
+PostgreSQL administration is an explicit post-provision sequence. The canonical
+schema is applied with the local administrator credential, a dedicated runtime
+login receives DML-only grants, the runtime URL is stored only in the local AZD
+environment, and readiness verifies TLS, dual authentication, database and
+firewall state before an app release.
 
 Foundry supplies and operates the agent session, file, and vector-store services.
 This deployment configures none of the shared resources for those capabilities.
 
 There are no customer-managed networking or runner resources.
 
-The configured public frontend FQDN is
-`https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io/`.
-It is an existing-resource target, not evidence of a currently live revision.
-The backend FQDN is internal by design and must not be used as a browser API
-base URL.
-
 ## Public target
 
-- Resource group: `rg-maf-ora-foundry-public-dev2`
-- azd environment: `foundry-public-dev2`
-- Project: `order-resolution-public-managed-dev2`
+- Subscription: `7df95e88-701c-4693-af77-3159f83b558d`
+- Resource group: `rg-maf-ora-foundry-public`
+- Location: `eastus2`
+- Bootstrap/reuse environments: `order-resolution-bootstrap` /
+  `order-resolution-foundry-public`
 - Agent: `order-resolution-hosted`
+
+The profiles describe the canonical target but do not prove current live state.
+Use the bootstrap profile only for explicitly approved creation and the reuse
+profile for routine app-only releases. Review `azd provision --preview` before
+infrastructure mutation. `make foundry-model-preflight` is the read-only live
+model/quota gate; it validates the agent-specific chat, embeddings, and
+evaluator set while recording, not changing, live SKU and capacity.
 
 ## Authenticated local release
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription-id>" \
-RUNTIME_DATABASE_URL="postgresql://<user>:<password>@<server>.postgres.database.azure.com:5432/maf_workflow?sslmode=require" \
+make foundry-profile-apply \
+  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+make foundry-bootstrap
 make foundry-release
 ```
 
 The release script uses the change-aware deployment router, runs its selected
 local validation concurrently with Bicep compilation, and always takes the
-app-only route by default. It fresh-syncs and packages the hosted
+app-only route. It fresh-syncs and packages the hosted
 context, checks the existing PostgreSQL target once, and deploys the backend,
-frontend, and hosted agent independently. After smoke, the evaluator waits for
-fresh hosted-E2E evidence and its configured HITL trace age; telemetry begins
-only after that E2E evidence exists. It reports completion only after both
-evaluation and telemetry gates succeed. The workflow reuses the existing
-database and never authorizes a destructive PostgreSQL action.
+frontend, and hosted agent independently by immutable ACR digest. Before hosted
+deployment it converges the deterministic project `CustomKeys` connection by
+streaming secure Bicep parameters over stdin; the runtime URL is not written to
+disk or command arguments. The hosted definition contains only the literal
+project-connection placeholder, never the resolved URL. Hosted-agent deployment obtains the
+platform identity from the active version and
+idempotently converges only the account-scoped `Cognitive Services OpenAI User`
+role. `make foundry-verify` then checks active revisions/images, external
+frontend/internal backend ingress, frontend and same-origin backend health,
+hosted version/image and placeholders, App Insights, backend database-secret
+parity, and externally managed schema mode. After smoke, the evaluator waits
+for fresh three-conversation hosted-E2E evidence and its configured HITL trace
+age; telemetry begins only after that evidence exists. `make foundry-evidence`
+closes the release with one secret-free JSON report.
 
-An actual infrastructure reconciliation is exceptional. It requires both
-`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
-`FOUNDRY_INFRA_RECONCILIATION_REFERENCE`; without both, `make
-foundry-provision` refuses before invoking Azure. The approval must cover a
-reviewed non-mutating preview of the fixed target.
+Infrastructure creation/reuse is a separate `make foundry-provision`
+operation. Apply the bootstrap profile and run `make foundry-bootstrap-env`
+before first creation. After successful provisioning, output hydration switches
+the local environment to reuse mode.
 
 Before an authenticated release, follow the non-mutating validation recipe and
 proof template in `.azure/deployment-plan.md`. After deployment, run hosted
 browser validation:
 
 ```bash
-PLAYWRIGHT_BASE_URL="https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io" \
+PLAYWRIGHT_BASE_URL="$(azd env get-value WEB_URL --cwd infra/foundry-hosted)" \
 make test-e2e
 ```
 
@@ -91,17 +112,22 @@ FOUNDRY_AZD_ENV_NAME=<environment> make eval-foundry
 ```
 
 `make foundry-up` verifies the deployed project still has an
-`ApplicationInsights` connection targeting the configured component. It fails
-before hosted E2E/evaluation if that prerequisite is absent or drifted.
+`ApplicationInsights` connection targeting the configured component. The same
+check is part of `make foundry-verify`, which fails before hosted
+E2E/evaluation if that prerequisite is absent or drifted.
 
-Telemetry-reader and Foundry-connection access are existing operational
-prerequisites. The release path does not add RBAC assignments to shared
-monitoring or Foundry resources.
+Telemetry-reader access remains an operational prerequisite. The release path
+mutates only the Order-owned runtime-secret project connection and the hosted
+identity's required account-scoped role; it does not add shared monitoring
+roles.
 
-For an infrastructure-only PostgreSQL check:
+For the explicit PostgreSQL sequence:
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription-id>" make foundry-postgres-readiness
+make foundry-postgres-schema
+make foundry-postgres-credentials
+make foundry-postgres-readiness
+make foundry-runtime-connection
 ```
 
 Compile before a deployment:
@@ -110,12 +136,12 @@ Compile before a deployment:
 az bicep build --file infra/foundry-hosted/iac/main.bicep
 ```
 
-Before an approved `make foundry-provision`,
-the shared AZD environment bootstrap resets both `SERVICE_*_IMAGE_NAME` values
-to `mcr.microsoft.com/k8se/quickstart:latest`. This prevents a retained
-environment from referring to a deleted ACR/tag during Container App creation.
-The following `azd deploy` builds and replaces both bootstrap images with the
-published application images.
+Bootstrap uses public placeholder images only for initial Container App
+creation. The app-only release scripts build uniquely tagged images, resolve
+their ACR digests, deploy those immutable digest references, persist safe
+gitignored component metadata, rotate the backend database secret, preserve the
+internal backend/external frontend ingress boundary, and replace the
+placeholders.
 
 ## Container dependency feed
 

@@ -170,8 +170,8 @@ deployment_profile_validate() {
     deployment_profile_error "AZURE_LOCATION is invalid"
     return 1
   }
-  [[ "$(deployment_profile_value NAME_PREFIX)" =~ ^[a-z][a-z0-9]{2,14}$ ]] || {
-    deployment_profile_error "NAME_PREFIX must be 3-15 lowercase alphanumeric characters"
+  [[ "$(deployment_profile_value NAME_PREFIX)" =~ ^[a-z][a-z0-9-]{1,13}[a-z0-9]$ ]] || {
+    deployment_profile_error "NAME_PREFIX must be 3-15 lowercase alphanumeric/hyphen characters"
     return 1
   }
   if [[ "$lane" == "foundry-private" ]]; then

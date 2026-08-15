@@ -23,7 +23,9 @@ require_bin jq
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 order_resolution_dir="$(cd "$script_dir/../../.." && pwd -P)"
-profile_path="${DEPLOYMENT_PROFILE_PATH:-$order_resolution_dir/deployment/profiles/foundry-private.env}"
+lane_root="$order_resolution_dir/foundry-private"
+source "$lane_root/scripts/foundry/private_profile.sh"
+profile_path="$(private_profile_resolve "$lane_root" "${DEPLOYMENT_PROFILE_PATH:-}")"
 source "$order_resolution_dir/deployment/profile.sh"
 deployment_profile_load "$profile_path"
 deployment_profile_validate

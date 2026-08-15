@@ -9,6 +9,237 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-08-15 - Deployment documentation synchronized
+
+**Documentation alignment.** Updated the deployment flow, README navigation,
+repository instructions, Azure plan, and Foundry infrastructure guide to match
+the validated app-only release implementation: secure stdin-based `CustomKeys`
+connection convergence, concurrent backend/frontend/hosted deployment,
+external-frontend/internal-backend topology, hosted RBAC convergence, and
+three-conversation HITL evidence.
+
+**Validation.** Before the documentation update, the profile and script
+contracts, 102 backend tests, 10/10 deterministic evaluation cases, seven
+workflow Playwright cases, three selected-thread Playwright cases, Bicep
+builds, AZD packaging, shell syntax, and scoped diff checks passed. The first
+E2E attempt encountered a transient Docker port-forward error; the isolated
+retry on fresh ports passed all ten browser tests.
+
+This is a documentation-only alignment entry. It does not claim a new Azure
+deployment, hosted invocation, evaluation run, or telemetry window.
+
+## 2026-08-15 - Runtime DDL fix and completed public release
+
+**Root cause and fix.** Revision
+`orderresoluta63e7c16-backend--0000002` attempted administrator-owned schema
+DDL while authenticated as the intentionally least-privileged runtime role.
+The production runtime now sets `DB_SCHEMA_MANAGED_EXTERNALLY=true`; canonical
+schema creation remains in the explicit administrator bootstrap command.
+The runtime role retains only database connect, schema usage, required table
+DML, and sequence usage. It still cannot create schema objects or roles.
+
+**Validation.** PostgreSQL readiness passed with the exact runtime credential.
+Focused database tests passed, followed by 102 backend tests, 10/10
+deterministic evaluation cases, seven workflow Playwright cases, three
+selected-thread Playwright cases, and the design-review gate. Healthy revision
+`orderresoluta63e7c16-backend--0000003` first proved the corrected startup
+contract before the full release.
+
+**Completed release.**
+
+- Backend revision `orderresoluta63e7c16-backend--0000004` is healthy and
+  running with immutable image digest
+  `sha256:50dc3c9d389ebb3a466aa665de49162be43ee0cdd4284dbd90b5ff4672c7dcec`.
+- Frontend revision `orderresoluta63e7c16-frontend--0000002` is healthy and
+  running at
+  `https://orderresoluta63e7c16-frontend.livelymushroom-afe58aa5.eastus2.azurecontainerapps.io`
+  with immutable image digest
+  `sha256:ae5d7b781208d3862d382507708171a76e42a35d22c342b898843447afc2012c`.
+- Hosted agent `order-resolution-hosted` version `4` is active at
+  `https://orderresoluta63e7c16ai.services.ai.azure.com/api/projects/order-resolution/agents/order-resolution-hosted/endpoint/protocols/openai/responses?api-version=v1`.
+- Fresh low-risk smoke and hosted low-risk/HITL approval-resume E2E passed for
+  conversations
+  `conv_1d9ab08b460389b200uEl7q3qJs6kPYvEH73yeHVDQFEn983m0` and
+  `conv_5dcbb41299bf0d3000VrhU3ZPjH7SSRR7eyola4Fki1ar3f6QB`.
+- Trace evaluation `eval_8476b52b167a47ce85e228beb00c67bf` /
+  `evalrun_f0320e561eab401991156088b6e26318` completed with 2 passed,
+  0 failed, and 0 errored conversations.
+- Application Insights correlated 66 rows for the two fresh E2E conversations
+  with zero exceptions.
+
+No infrastructure provisioning, PostgreSQL privilege broadening, network
+change, or RBAC mutation occurred during this app-only release.
+
+## 2026-08-14 - Public release blocked by runtime schema DDL
+
+**Blocked observation.** At `2026-08-15T03:39:46Z`, backend revision
+`orderresoluta63e7c16-backend--0000002` failed startup while
+`PostgresDatabase.ensure_schema()` executed `CREATE TABLE IF NOT EXISTS`.
+PostgreSQL returned `psycopg.errors.InsufficientPrivilege: permission denied
+for schema public`. The revision used immutable image
+`orderresoluta63e7c16acr.azurecr.io/order-resolution-public-backend:7c5937824ea3-20260815033507`.
+No PostgreSQL, network, or RBAC permission was broadened, and further
+deployment/retry work was stopped.
+
+**Root-cause hypothesis.** The prior readiness gate proved that the dedicated
+runtime role could connect over TLS and read the canonical schema, but startup
+still attempted schema creation. By design, the least-privilege runtime role
+does not own `public` and lacks the schema `CREATE` capability required by
+runtime DDL. Readiness therefore covered runtime DML/connectivity but did not
+prove that application startup avoids administrator-owned schema operations.
+
+**Completed deployment state.**
+
+- Frontend revision `orderresoluta63e7c16-frontend--0000001` is healthy with
+  100% traffic and immutable image
+  `orderresoluta63e7c16acr.azurecr.io/order-resolution-public-frontend:7c5937824ea3-20260815031235`.
+- Hosted agent `order-resolution-hosted` version `2` reached `active` with
+  immutable image
+  `orderresoluta63e7c16acr.azurecr.io/order-resolution-hosted:7c5937824ea3-20260815033201`,
+  Responses endpoint configuration, PostgreSQL runtime settings, telemetry
+  settings, and content recording disabled.
+- The Foundry project `ApplicationInsights` connection was verified against
+  `orderresoluta63e7c16-ai` after correcting ARM resource-ID comparison to be
+  case-insensitive.
+- Backend revision `orderresoluta63e7c16-backend--0000002` is not a successful
+  release revision because startup failed. The earlier placeholder revision is
+  not application release evidence.
+
+**Evidence not completed.** No fresh successful release smoke, hosted low-risk
+and HITL approval/resume E2E, report-only trace evaluation, or current-ID-only
+Application Insights telemetry/zero-exception gate completed for this release.
+The checked-in historical E2E/evaluation artifacts remain dated
+`2026-08-13` and are not evidence for this attempt.
+
+**Safe next steps.**
+
+1. Keep schema creation in the administrator-only bootstrap command; do not
+   grant broad `CREATE`, ownership, or elevated database roles to the runtime
+   identity.
+2. Make application startup explicitly treat the production schema as
+   externally managed, while preserving local/test schema initialization.
+3. Add focused tests proving a production runtime role can start without DDL
+   and that missing required tables fail clearly rather than attempting to
+   create them.
+4. Run PostgreSQL readiness plus a startup probe using the exact runtime
+   credential, then redeploy only the backend and hosted-agent application
+   images.
+5. Verify active immutable revisions and hosted-agent version, then run a
+   completely fresh smoke -> low-risk/HITL E2E -> report-only trace evaluation
+   -> current conversation-ID telemetry chain with zero exceptions.
+
+## 2026-08-14 - Portable public-lane bootstrap provisioned
+
+**Provisioning.** Executed the validated bootstrap against subscription
+`7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-ora-foundry-public`, and `eastus2`. Strong PostgreSQL administrator and
+runtime passwords were generated locally and retained only in local AZD
+environment values. No credential was printed, logged, or committed.
+
+**Issue and fix.** The first two ARM attempts exposed a Foundry control-plane
+race: concurrent model-deployment writes returned `RequestConflict`, and the
+first attempt also observed project-role propagation before the new project was
+visible. The Bicep model deployments are now serialized chat -> embeddings ->
+evaluator. The next provision completed successfully and the generated ARM
+template was refreshed.
+
+**Resource evidence.** The lane contains the Foundry account
+`orderresoluta63e7c16ai`, project `order-resolution`, three succeeded
+`Standard` deployments, ACR `orderresoluta63e7c16acr`, Container Apps
+environment plus internal backend/external frontend apps, PostgreSQL
+`orderresoluta63e7c16pg`, Application Insights, Log Analytics, evaluation
+storage, and the Application Insights/evaluation/runtime storage connections.
+All required AZD output and database-runtime values are hydrated.
+
+**RBAC evidence.** Live scope queries found only resource-scoped assignments:
+backend and frontend identities plus the Foundry project have `AcrPull` at the
+ACR; the project also has repository reader, OpenAI user, monitoring reader,
+and evaluation-storage data-owner access; the backend has Foundry User at the
+project; and the Foundry account has evaluation-storage data-owner access.
+All three `AcrPull` assignments were visible after propagation.
+
+**Database evidence.** The canonical schema was applied, the
+`order_resolution_runtime` credential was created with the tested
+least-privilege grants, and readiness passed for TLS URL parity, runtime
+connectivity, PostgreSQL 17 `Ready`, `Standard_D2ds_v5`, dual authentication,
+the database, and the Azure-services/operator firewall rules.
+
+**Steady state.** Selected and hydrated `order-resolution-foundry-public`.
+The final `azd provision --preview --no-prompt` reported `Skip` for all ten
+established top-level resources and applied nothing, including no PostgreSQL
+mutation. Subscription policy left evaluation storage with effective public
+network access disabled despite the template's selected-network request;
+AAD connections and scoped roles exist, but evaluation reachability must be
+confirmed during the later evaluation gate.
+
+**Release boundary.** No application release, smoke test, hosted E2E,
+evaluation run, or telemetry stimulus was executed.
+
+## 2026-08-14 - Portable bootstrap/reuse conversion (local only)
+
+**Issue.** The public lane encoded one retained `dev2` environment and could
+not create a complete target from source. PostgreSQL was only an opaque reused
+connection string, reuse still carried declarative mutations, and profiles
+could not safely select the approved subscription/resource group without
+mixing generated runtime values into source control.
+
+**Change.** Added explicit `bootstrap` and `reuse` infrastructure modes for
+subscription `7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-ora-foundry-public`, and `eastus2`. Bootstrap now owns the Foundry
+account/project and chat/embeddings/evaluator deployments, ACR, monitoring,
+Container Apps environment/apps, separate identities, PostgreSQL,
+evaluation storage, Foundry connections, and resource-scoped RBAC. Reuse has
+no resource, connection, or role-assignment creation. Secret-free profiles
+select the target; deterministic names and non-secret outputs hydrate only the
+local AZD environment.
+
+**PostgreSQL contract.** Added separate schema application, least-privilege
+runtime credential provisioning/rotation, and connectivity/readiness gates. The runtime
+role receives DML only for the order-resolution tables and the required
+sequence; verification proves schema/role creation is denied. Credentials and
+TLS URLs remain local secrets.
+
+**Release/topology.** Automatic release remains app-only. The external
+frontend continues to proxy same-origin browser requests to the internal
+FastAPI adapter; only the adapter invokes hosted Responses, and both hosted
+runtime surfaces use PostgreSQL durable state.
+
+**Validation.** Bicep compilation, shell syntax, credential-helper tests,
+bootstrap/reuse contracts, profile/application contracts, local `azd package`,
+100 backend tests, 10/10 workflow eval cases, 7 workflow Playwright cases,
+3 selected-thread integration cases, and scoped diff checks passed. No Azure
+preview, provisioning, deployment, resource mutation, hosted invocation, or
+PostgreSQL operation was performed.
+
+**Shared Azure preflight follow-up.** Target tenant/subscription authentication
+is valid, providers are registered, and the target resource group is absent,
+so the first authorized infrastructure operation must be bootstrap.
+`gpt-4.1-mini` `GlobalStandard` is fully consumed at 5000/5000; bootstrap now
+defaults to parameterized `Standard` (5000 available), with
+`DataZoneStandard` (2000 available) remaining an explicit supported choice.
+PostgreSQL capability data contains `Standard_D2ds_v5`. The Container Apps
+quota extension query was permission-denied; the plan records preview as the
+required gate rather than bypassing that restriction.
+
+## 2026-08-14 - Independent portability blocker remediation
+
+**Storage reachability.** Corrected evaluation storage from an unreachable
+`publicNetworkAccess: Disabled` posture without a private endpoint to the
+validated Foundry selected-network posture: public networking enabled,
+`defaultAction: Deny`, `AzureServices` bypass, blob public access disabled, and
+shared keys disabled. Both AAD Foundry storage connections can now use the
+trusted-service route without exposing storage generally.
+
+**Reuse hydration.** Expanded reuse discovery to persist the complete Bicep
+output contract: project ID/endpoints, model names, hosted Responses URL,
+registry endpoint, Application Insights and Log Analytics IDs, PostgreSQL FQDN,
+Container Apps environment/app IDs and names, managed identity names, image
+repositories, and `API_BASE_URL`/`WEB_URL`. Added a mock-Azure contract that
+fails if any output is omitted.
+
+**Permission boundary.** The parent-context Microsoft Foundry dependency setup
+script was permission-denied. No bypass or permission broadening was attempted.
+
 ## 2026-08-12 - Validation-only catalog-skill update
 
 **Skill inventory.** Selectively added the complete
@@ -237,9 +468,9 @@ only needed to publish this public lane's applications.
   runtime connection-string input; no database administrator credential is
   accepted by Bicep.
 - Changed the release router so all automatic routes are `app_only` while
-  validation remains quick or full as appropriate. Infrastructure provision
-  requires both `FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
-  `FOUNDRY_INFRA_RECONCILIATION_REFERENCE`.
+  validation remains quick or full as appropriate. Infrastructure provision is
+  a separate fixed-target command without a manual approval variable or
+  reference.
 
 **Validation and status**
 

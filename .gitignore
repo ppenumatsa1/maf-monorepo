@@ -47,10 +47,17 @@
 **/playwright-report/
 **/test-results/
 **/.artifacts/
+!agents/order-resolution/foundry-private/.artifacts/
+!agents/order-resolution/foundry-private/.artifacts/releases/
+!agents/order-resolution/azure-hosted/.artifacts/
+!agents/order-resolution/azure-hosted/.artifacts/releases/
 
 # Local deployment progress reports and operational evidence.
 /deployment-reports/
 /poc/
+
+# Local Azure lane recovery helper; intentionally operator-specific.
+/scripts/start-maf-lanes.sh
 
 # Editor and operating-system files
 .vscode/

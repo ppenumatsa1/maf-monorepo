@@ -45,8 +45,10 @@ Prototype repo references:
 - Scope: local-first prototype with a public operations console, Application Insights telemetry, and a Foundry hosted durable-execution lane.
 - Engine: real Microsoft Agent Framework workflow runtime.
 - Persistence: PostgreSQL for app/audit data and custom PostgreSQL-backed MAF checkpoint storage.
-- Hosting: the Foundry hosted agent is the production durable executor. The public API relays browser requests and projects durable PostgreSQL data.
-- Delivery governance: underwriting now follows the same engineering operating model as Order Resolution — one canonical hosted public lane, no compatibility shims, and evidence-driven release claims in `docs/design/issues-changes-fixes.md`.
+- Hosting: the Foundry hosted agent is the production durable executor. The
+  external frontend proxies browser requests to the internal API, which relays
+  hosted work and projects durable PostgreSQL data.
+- Delivery governance: underwriting owns one canonical hosted lane with no compatibility shims and evidence-driven release claims in `docs/design/issues-changes-fixes.md`.
 - Durable Extension: not used in this prototype.
 
 ---
@@ -193,11 +195,12 @@ flowchart LR
 - Prototype resilience middleware:  
   https://github.com/ppenumatsa1/maf-underwriting-agent/blob/main/backend/app/maf/middleware/resilience.py
 
-### 3.5 What does adopting Order Resolution's operating model change?
+### 3.5 What does the standardized operating model change?
 
 It changes **delivery governance**, not the underwriting workflow design.
 
-- The public adapter is the browser-facing boundary.
+- The external frontend is the browser-facing boundary and proxies to the
+  internal backend adapter.
 - The hosted Responses entrypoint is the production executor.
 - PostgreSQL remains the durable recovery and audit store.
 - AG-UI and CopilotKit remain public surfaces backed by durable projections.
@@ -331,7 +334,9 @@ Current position:
 9. Retry/backoff is layered through middleware.
 10. Business/audit state is separated from MAF checkpoint state.
 11. Runner-level runtime dependencies are created per workflow build/resume, preventing cross-run context sharing through reused mutable objects.
-12. The public lane follows a clean-cutover model: browser -> public adapter -> hosted Responses workflow -> PostgreSQL.
+12. The public lane follows a clean-cutover model: browser -> external frontend
+    proxy -> internal backend adapter -> hosted Responses workflow ->
+    PostgreSQL.
 
 ---
 
@@ -348,4 +353,16 @@ Current position:
 
 ## Short customer-facing summary
 
-This prototype runs real Microsoft Agent Framework workflows locally and in the Foundry hosted agent, persists checkpoints to PostgreSQL, and resumes by `workflow_run_id` from the latest supported checkpoint. It demonstrates one master workflow with direct-executor fan-out/fan-in in one superstep, shared-state aggregation, middleware-based retry/backoff, idempotent replay-safe recovery, a business-friendly operations console, Application Insights correlation, safe Foundry workflow/model traces, AG-UI streaming, and a constrained CopilotKit assistant. The public lane follows a clean-cutover model with no compatibility shims: the browser calls the public adapter, and the hosted Responses workflow remains the production durable executor. Version-40 nested-graph checkpoints cannot resume after deployment; no compatibility workflow or fallback exists.
+This prototype runs real Microsoft Agent Framework workflows locally and in
+the Foundry hosted agent, persists checkpoints to PostgreSQL, and resumes by
+`workflow_run_id` from the latest supported checkpoint. It demonstrates one
+master workflow with direct-executor fan-out/fan-in in one superstep,
+shared-state aggregation, middleware-based retry/backoff, idempotent
+replay-safe recovery, a business-friendly operations console, Application
+Insights correlation, safe Foundry workflow/model traces, AG-UI streaming, and
+a constrained CopilotKit assistant. The public lane follows a clean-cutover
+model with no compatibility shims: the browser calls the external frontend,
+which proxies to the internal backend adapter, and the hosted Responses
+workflow remains the production durable executor. Version-40 nested-graph
+checkpoints cannot resume after deployment; no compatibility workflow or
+fallback exists.

@@ -21,6 +21,8 @@ Primary scenarios include happy path approvals, retryable check failures, and cr
    - API/event/telemetry schema: [docs/design/schema-io-telemetry.md](docs/design/schema-io-telemetry.md)
 3. **Delivery model + release governance**
    - Engineering operating model: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+   - Deployment flow: [docs/design/deployment-flow.md](docs/design/deployment-flow.md)
+   - Deployment profiles and migration entry points: [deployment/README.md](deployment/README.md)
    - Issues / changes / fixes ledger: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 4. **Implementation + repo shape**
    - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
@@ -54,11 +56,13 @@ This README describes the supported architecture and release workflow. It does n
 
 ## Canonical operating model and clean cutover
 
-Underwriting now follows the same engineering operating model and release governance shape used by Order Resolution while preserving the underwriting-specific workflow design.
+Underwriting owns an independent engineering and release contract while preserving the underwriting-specific workflow design.
 
 - **One business workflow:** fan-out/fan-in underwriting orchestration stays in MAF.
 - **Hosted public execution:** `backend/foundry/main.py` remains the public hosted Responses executor.
-- **Adapter-only public API:** the FastAPI layer starts/resumes hosted work, serves durable read models, exposes AG-UI, and hosts the CopilotKit bridge.
+- **Same-origin public edge:** the external frontend Nginx container proxies
+  `/api` and `/backend-health` to the internal FastAPI Container App.
+- **Adapter-only internal API:** FastAPI starts/resumes hosted work, serves durable read models, exposes AG-UI, and hosts the CopilotKit bridge.
 - **No compatibility shims:** do not add a second orchestration engine, shadow checkpoint store, direct browser-to-Foundry path, or legacy public-lane fallback that bypasses the hosted workflow.
 - **Clean cutover rule:** deployed public traffic uses the hosted Responses lane; local execution mode exists only for isolated local validation.
 - **Checkpoint migration rule:** version-40 nested-graph checkpoints are unsupported for resume after this deployment. There is no compatibility workflow or fallback; start a new run if a pre-cutover checkpoint must be retried.
@@ -68,10 +72,19 @@ Underwriting now follows the same engineering operating model and release govern
 
 - **Local full stack** owns browser, FastAPI APIs, AG-UI stream, and isolated MAF validation.
 - **Public Foundry hosted lane** executes the agent-specific Responses workflow and owns MAF/PostgreSQL writes.
-- **Public UI/API** relays hosted start/resume, reads PostgreSQL run/state/event/checkpoint history, and exposes it to operators.
+- **Public UI/internal API** uses an Underwriting-owned same-origin Nginx proxy;
+  the backend has internal ACA ingress and is not directly internet reachable.
 - **Public browser path** never calls Foundry directly and does not receive Foundry credentials.
 
-The hosted runtime uses a dedicated least-privilege PostgreSQL password over TLS. The password is provisioned and rotated by the checked-in release workflow, injected only into the hosted runtime, and never stored in source, browser configuration, or telemetry.
+The hosted runtime uses a dedicated least-privilege PostgreSQL password over
+TLS. After credential provisioning, the release workflow converges the
+Underwriting-owned `underwritingruntimesecrets` Foundry project `CustomKeys`
+connection. Hosted agent metadata stores only
+`${{connections.underwritingruntimesecrets.credentials.database_url}}`; the
+resolved URL is never stored in `HostedAgentDefinition`, source, browser
+configuration, or telemetry.
+Production runtime sets `DB_SCHEMA_MANAGED_EXTERNALLY=true`: startup validates
+the required tables, columns, and indexes but performs no DDL.
 
 ## Quick Start (Local)
 
@@ -111,11 +124,18 @@ make test-e2e
 For hosted release validation, run the authenticated lane and then record evidence in the delivery ledger:
 
 ```bash
+make foundry-package
 make foundry-smoke
 make foundry-eval
+make foundry-verify
+make foundry-evidence
 ```
 
 ## Canonical public release workflow
+
+The checked-in target contract is subscription
+`7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-underwriting`, location `eastus2`.
 
 Use the current operator environment and authenticated local secrets, then run
 the checked-in release orchestrator:
@@ -128,13 +148,21 @@ Release governance expectations:
 
 1. Run local gates first.
 2. The release orchestrator runs validation and the Bicep build concurrently,
-   performs either full provisioning or app-only deployment according to the
-   deployment router, then deploys the three runtime components concurrently
-   after shared readiness.
+   then runs one shared database/model readiness gate, converges the runtime
+   connection, and packages all services. It deploys the hosted agent first and
+   persists its active metadata before deploying backend and frontend
+   concurrently. Bootstrap provisioning is separate; routine releases are
+   always `app_only`, and `FOUNDRY_DEPLOY_MODE` is rejected.
 3. It runs hosted smoke, then Foundry evaluation and deployed browser E2E in
    parallel, then validates Application Insights telemetry after E2E writes
    its evidence.
-4. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
+4. It verifies ACA revisions/images, external-frontend/internal-backend
+   topology, same-origin health/API, hosted version/image, Application Insights,
+   and external-schema mode, then aggregates secret-free JSON evidence.
+5. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
+
+Invoking a validated bootstrap or release workflow is the execution trigger;
+there is no additional manual approval checkpoint.
 
 `deployment-report/` is ignored local timing evidence only. It does not prove
 release readiness; the delivery ledger is the canonical release-evidence record.
@@ -156,7 +184,7 @@ Treat this README as the contract for the workflow, not as a source of truth for
 
 The backend exposes `POST /api/v1/underwriting/ag-ui` for Agent Framework AG-UI streaming. The UI still relies on persisted run/state/events/checkpoints APIs as the durable source of truth for replay and refresh scenarios.
 
-The embedded CopilotKit assistant discovers `/api/v1/underwriting/copilotkit/info` and calls the named run-assistant route at the configured backend origin. It receives only allowlisted selected-run metadata and does not call Foundry from the browser.
+The embedded CopilotKit assistant discovers `/api/v1/underwriting/copilotkit/info` and calls the named run-assistant route on the frontend origin. Nginx proxies it to the internal backend. It receives only allowlisted selected-run metadata and does not call Foundry from the browser.
 
 ## Documentation Map
 
@@ -171,6 +199,7 @@ The embedded CopilotKit assistant discovers `/api/v1/underwriting/copilotkit/inf
 ### Delivery and implementation
 
 - Engineering operating model: [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+- Deployment flow: [docs/design/deployment-flow.md](docs/design/deployment-flow.md)
 - Issues / changes / fixes ledger: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
 - Project structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
 - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)

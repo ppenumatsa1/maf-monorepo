@@ -57,7 +57,9 @@ def _parse_evidence_timestamp(payload: dict[str, object], field: str) -> datetim
     return parsed.astimezone(timezone.utc)
 
 
-def _load_hosted_e2e_evidence(path: Path) -> tuple[datetime, datetime, list[str]]:
+def _load_hosted_e2e_evidence(
+    path: Path,
+) -> tuple[datetime, datetime, list[str], str]:
     if not path.is_file():
         raise FileNotFoundError(f"Hosted E2E evidence is required: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -67,20 +69,29 @@ def _load_hosted_e2e_evidence(path: Path) -> tuple[datetime, datetime, list[str]
     generated_at = _parse_evidence_timestamp(payload, "generated_at")
     if generated_at < started_at:
         raise ValueError("Hosted E2E evidence generated_at cannot precede started_at")
+    release_id = payload.get("release_id")
+    if not isinstance(release_id, str) or not release_id:
+        raise ValueError("Hosted E2E evidence is missing release_id")
 
+    evidence_ids = payload.get("conversation_ids")
     conversation_ids = _dedupe(
         [
             value
             for value in (
-                payload.get("low_risk_thread_id"),
-                payload.get("approved_thread_id"),
+                evidence_ids
+                if isinstance(evidence_ids, list)
+                else [
+                    payload.get("low_risk_thread_id"),
+                    payload.get("approved_thread_id"),
+                    payload.get("damaged_item_thread_id"),
+                ]
             )
             if isinstance(value, str) and value.strip()
         ]
     )
-    if len(conversation_ids) != 2:
-        raise ValueError("Hosted E2E evidence must contain two conversation IDs")
-    return started_at, generated_at, conversation_ids
+    if len(conversation_ids) != 3:
+        raise ValueError("Hosted E2E evidence must contain three conversation IDs")
+    return started_at, generated_at, conversation_ids, release_id
 
 
 def _trace_materialization_delay(
@@ -152,16 +163,25 @@ async def run_foundry_eval() -> None:
     timeout = float(os.getenv("FOUNDRY_EVAL_TIMEOUT", foundry_cfg.get("timeout", 900)))
 
     evidence_path = root / evidence_uri
-    started_at, generated_at, conversation_ids = _load_hosted_e2e_evidence(evidence_path)
+    started_at, generated_at, conversation_ids, release_id = _load_hosted_e2e_evidence(
+        evidence_path
+    )
+    requested_release_id = os.getenv("FOUNDRY_RELEASE_ID")
+    if requested_release_id and requested_release_id != release_id:
+        raise ValueError("Hosted E2E evidence does not belong to the active release window")
     trace_materialization_delay = _trace_materialization_delay(
         generated_at,
         minimum_trace_age_seconds,
     )
-    report_path = foundry_root / "results" / "foundry-report.json"
+    report_path = Path(
+        os.getenv("FOUNDRY_EVAL_EVIDENCE_FILE", foundry_root / "results" / "foundry-report.json")
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
         "status": "failed",
         "provider": "foundry-trace",
+        "release_id": release_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "evaluators": evaluators,
         "conversation_ids": conversation_ids,
         "e2e_started_at": started_at.isoformat(),
@@ -217,6 +237,8 @@ async def run_foundry_eval() -> None:
         payload = {
             "status": str(eval_run.status),
             "provider": "foundry-trace",
+            "release_id": release_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "eval_id": eval_object.id,
             "run_id": eval_run.id,
             "conversation_count": len(conversation_ids),

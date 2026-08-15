@@ -2,10 +2,150 @@
 
 ## Current status
 
-**Source implementation synchronized; no current deployment validation
-claimed.** Historical entries below explain prior work but do not prove a
-currently live endpoint or revision. Current deployed evidence belongs in the
-dated ledger in `.azure/deployment-plan.md` only after its commands complete.
+**Fresh Azure infrastructure and the app-only release are validated.** The
+2026-08-15 entry records the immutable images, healthy revisions, smoke,
+hosted browser E2E, report-only Foundry evaluation, and exact Application
+Insights correlation. PostgreSQL, infrastructure, and RBAC were not mutated.
+
+## 2026-08-15 — Fresh app-only Azure release validated
+
+**Release and endpoints.** Release `cli-20260815T031509Z` updated only the
+existing Container Apps in subscription
+`7df95e88-701c-4693-af77-3159f83b558d` and resource group
+`rg-maf-ora-azure`. Backend
+[https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io)
+and frontend
+[https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io)
+are running on ready revisions
+`maf-backend-abnhku--ci-cli-20260815t031509z` and
+`maf-frontend-abnhku--ci-cli-20260815t031509z`.
+
+**Immutable images and gates.** The exact images passed backend lint and 66
+tests, deterministic evaluation 10/10, frontend build, local workflow and
+selected-thread Playwright (7 + 3), deterministic design review, and Docker
+E2E (7 + 3) before push. ACR digests are backend
+`sha256:6dde47133ffff78105a14cd4e7c168666373f0980c4ba7fa81a9806557b988a3`
+and frontend
+`sha256:2ca6d41b1d9f8598bae749b19be6eac47a5689149271c69fd557e551eb6ef0ce`.
+Both managed identities retained only `AcrPull` at the registry for image
+pulls.
+
+**Fresh hosted evidence.** The evidence window started at
+`2026-08-15T03:19:50.037142Z`. `ORD-1001` completed without HITL on thread
+`smoke-apphosted-cli-20260815T031509Z-ord1001`, workflow run
+`11c1f439-50bb-4631-9fce-77bf347f540d`; `ORD-1009` exercised HITL on thread
+`smoke-apphosted-cli-20260815T031509Z-ord1009`, workflow run
+`136b3ecd-f28f-4d87-9578-afd595473e74`. Hosted workflow and selected-thread
+browser suites passed 7 + 3 tests. Report-only Foundry evaluation
+`eval_abe05815b0fc4d3fb1fc1df0598adafb` run
+`evalrun_52f4bc6dffe445cf85438389d7eabb75` passed both cases with zero failed,
+errored, or skipped results. Exact-pair Application Insights counts were 6
+and 4 respectively, with zero exceptions for both.
+
+**Issue and fix.** The first update attempt pushed both images but Azure
+rejected revision suffix `ci-cli-20260815T031509Z` because Container Apps
+requires lowercase suffixes. No revision was changed by that failed attempt.
+The release script now lowercases its generated suffix, and release-asset
+validation enforces that guard. The retry deployed both tested digests and all
+gates passed without provisioning, infrastructure reconciliation, database
+schema/data mutation, or RBAC changes. PostgreSQL remained `Ready`.
+
+## 2026-08-14 — Fresh Azure bootstrap provisioned
+
+**Provisioning result.** Subscription
+`7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-ora-azure`, and `northcentralus` were provisioned successfully.
+Bootstrap images were built in the target ACR before the Container Apps were
+created. Both private-image revisions are healthy, proving `AcrPull`
+propagation for the backend and frontend managed identities. Chat and
+evaluator deployments use `Standard`; embeddings uses
+`DataZoneStandard`.
+
+**Registry collision and drift fix.** The originally derived ACR name was
+globally unavailable even though no registry with that name was visible in the
+target subscription. The target now uses the collision-free
+`maforaazureacrpuzsryv2` name. Explicit ACR default properties were added so
+the corrected bootstrap preview skipped the pre-created registry rather than
+proposing normalization changes.
+
+**PostgreSQL recovery fixes.** The initially recorded Entra administrator
+object ID belonged to a different tenant and Azure rejected it. The selected
+target-tenant user identity replaced it. The post-provision hook's raw
+asynchronous administrator REST PUT also returned before a failed operation
+was visible; it now uses the supported, polling, idempotent
+`az postgres flexible-server microsoft-entra-admin create` command. The
+steady-state transition used obsolete database and firewall option names;
+those were corrected to the current Azure CLI contract.
+
+**Database and cleanup evidence.** The `maf_workflow` database contains the
+10 expected public tables. The backend managed-identity role has database
+`CONNECT`, schema `USAGE`/`CREATE`, and table DML privileges. The exact
+`allow-bootstrap-runner` rule matched the recorded operator IP, was deleted,
+and was verified absent before `INFRASTRUCTURE_MODE=steadyState` and the local
+IP value was cleared. Only the intentional `allow-azure-services` rule
+remains.
+
+**Steady-state evidence.** The final preview skipped PostgreSQL and both
+Container Apps and proposed no creates or deletes. Azure what-if reported only
+non-destructive provider/default normalization on the Container Apps
+environment, Foundry resources, model deployments, and Application Insights.
+No app-only release, hosted E2E, report-only evaluation, or telemetry release
+gate was started.
+
+## 2026-08-14 — New-subscription portability preparation
+
+**Learning issue.** The prior package mixed bootstrap and steady-state
+lifecycles. A tracked development parameter file contained a deployable
+placeholder IP, Container Apps used a default placeholder image, and release
+guards accepted any syntactically valid subscription. Re-running the full
+template after bootstrap could therefore target the wrong subscription or
+surface retained PostgreSQL drift.
+
+**Fix.** The approved target is now fixed to subscription
+`7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-ora-azure`, and `northcentralus` in the profile, Bicep parameters, and
+release scripts. Bootstrap requires explicit untracked operator IP, image, and
+Entra administrator values. The tracked placeholder parameter file and
+default placeholder images were removed.
+
+**Safe steady state.** Bootstrap is the only mode that declares PostgreSQL or
+runs its Entra grant hook. After PostgreSQL identity verification,
+`make prepare-steady-state` changes the local AZD environment to
+`steadyState`. Reconciliation independently uses that mode, obtains a fresh
+what-if, and fails if any PostgreSQL resource appears. Routine releases remain
+app-only. Contract tests cover the fixed target, rejected alternate
+subscription, explicit inputs, placeholder absence, bootstrap-only
+PostgreSQL, and steady-state exclusion.
+
+**Evidence boundary.** Bicep compilation and credential-free shell/contract
+tests passed locally. No Azure preview, provision, deployment, PostgreSQL
+change, smoke test, hosted E2E, evaluation, or telemetry query was performed.
+
+**Shared readiness findings.** Target subscription/tenant authentication is
+valid, required providers are registered, and the target resource group does
+not exist. `gpt-4.1-mini` `GlobalStandard` quota is exhausted (`5000/5000`) in
+the checked regions, while `Standard` has 5000 available and
+`DataZoneStandard` has 2000. Foundry deployment SKUs remain parameterized and
+chat/evaluator bootstrap defaults use `Standard`. The
+`text-embedding-3-small` deployment defaults to `DataZoneStandard` because
+North Central US does not support `Standard` for that model.
+PostgreSQL capability data includes `Standard_D2ds_v5`; the existing topology
+is unchanged pending preview. The Container Apps quota helper was
+permission-denied due extension access, so readiness must fail or proceed from
+the normal Bicep preview result rather than bypassing the control.
+
+**Independent review fixes.** Steady-state IaC now excludes both Container App
+modules, preventing infrastructure reconciliation from resetting MCP
+secrets/URLs or application configuration when those values are intentionally
+absent from reconciliation inputs. Every stateful Foundry model, version, SKU,
+capacity, deployment name, project name, and RAI policy value is required from
+the selected AZD environment and passed without logging secrets. The
+bootstrap-to-steady-state transition verifies the exact
+`allow-bootstrap-runner` rule matches the recorded operator IP, deletes only
+that rule, verifies it is absent, and refuses to change local lifecycle mode
+when cleanup fails. The transition is retry-safe: confirmed rule absence is
+accepted after a prior deletion followed by an AZD update failure, while
+ambiguous lookup/auth failures remain blocking.
 
 ## 2026-08-10 — PostgreSQL recovery and release-readiness hardening
 
@@ -80,8 +220,10 @@ No infrastructure reconciliation occurred.
   `API_BASE`, `AG_UI_URL`, and `COPILOTKIT_URL`, ahead of Vite fallbacks.
 - Normal releases are `make release-app` application-only releases. They retain
   the CFS feed, musl-compatible frontend build, existing PostgreSQL server, and
-  `maf_workflow` database. Infrastructure reconciliation requires explicit
-  non-secret approval/reference and Bicep preview; it is never implicit.
+  `maf_workflow` database. Infrastructure reconciliation is never implicit;
+  direct invocation obtains a fresh Bicep what-if and requires PostgreSQL to
+  be absent from steady-state deployment, without a separate approval/reference or
+  caller-supplied digest.
 - Smoke captures a release/time/thread/workflow-run evidence set. Hosted E2E,
   report-only evaluation, and telemetry validation must correlate to that
   fresh set before a deployment is recorded as validated.
@@ -95,20 +237,20 @@ entry; if its TLS trust/handshake setup blocks the test, record the exact
 failure as a Docker E2E blocker rather than substituting local or historical
 results.
 
-### Single-maintainer reconciliation follow-up (2026-08-07)
+### Superseded single-maintainer reconciliation policy (2026-08-07)
 
-This project currently uses an explicit owner-confirmed reconciliation gate
-rather than a team-review workflow. An apply requires
+At the time, this project used an explicit owner-confirmed reconciliation gate
+rather than a team-review workflow. An apply required
 `INFRA_RECONCILIATION_APPROVED=true`, a non-secret owner change reference, and
 the exact preview and template/parameter SHA-256 values emitted by the
 owner-reviewed `make release-infra-preview`.
 
-The simplified gate still uses a subscription-scoped Azure what-if and rejects
-every PostgreSQL mutation before apply. It verifies the existing server and
-database are `NoChange`, preserves their post-apply identity, and requires
-fresh per-thread/per-workflow-run telemetry correlation. Reintroduce external
-reviewer attestation and protected-environment enforcement when the project has
-multiple maintainers.
+This historical policy was replaced on 2026-08-14. The current gate obtains a
+fresh subscription-scoped Azure what-if per invocation, requires PostgreSQL to
+be absent from steady-state deployment, preserves the existing server identity
+after apply, and requires fresh
+per-thread/per-workflow-run telemetry correlation. It has no external-reviewer
+attestation or protected-environment enforcement requirement.
 
 ### Managed-device Docker npm egress follow-up (2026-08-07)
 
@@ -162,7 +304,7 @@ Foundry evaluation, and App Insights correlation evidence.
 The release identity uses GitHub OIDC and a dedicated scoped app identity; no
 deployment password or Azure client secret is stored in GitHub. Infrastructure
 reconciliation remains outside this lane because the Azure preview reported a
-PostgreSQL modification, which the owner-confirmed guard blocks.
+PostgreSQL modification, which the PostgreSQL safety guard blocks.
 
 The first cloud run correctly stopped before image push or Container Apps
 mutation when the Docker browser test exposed an insecure-origin compatibility
@@ -403,8 +545,9 @@ existing PostgreSQL server/database and does not reconcile shared Foundry,
 ACR, monitoring, or Container Apps environment resources. The proposed
 PostgreSQL and shared-resource changes are therefore unsafe for this run.
 `make release-app`, smoke, hosted E2E, Foundry evaluation, and telemetry were
-not run. This is no deployment evidence. Reconciliation remains a separate
-owner-reviewed operation with a reviewed what-if and explicit approval.
+not run. This is no deployment evidence. At the time, reconciliation remained
+a separately owner-reviewed operation with a reviewed what-if and explicit
+approval; that policy is superseded by the current direct safe-apply workflow.
 
 ## 2026-08-13 — App-only release stopped at frontend packaging
 

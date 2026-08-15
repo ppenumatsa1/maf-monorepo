@@ -1,150 +1,129 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
-Generated: 2026-08-04T15:41:18-05:00
+## 1. Project overview
 
----
+**Goal:** Make Underwriting Foundry public infrastructure reusable across Azure
+subscriptions and environments without per-subscription IaC forks.
 
-## 1. Project Overview
+**Path:** Modernize existing AZD + Bicep infrastructure. This work prepares
+infrastructure only; it does not authorize a deployment.
 
-**Goal:** Improve underwriting Foundry trace hierarchy, suppress public API
-health-check telemetry noise, enable managed-identity Azure OpenAI rationale
-generation, and release the change to the existing underwriting environment.
-
-**Path:** Modernize Existing
-
-## 2. Requirements
+## 2. Target context
 
 | Attribute | Value |
-|---|---|
+| --- | --- |
 | Classification | POC / Development |
-| Scale | Small |
-| Budget | Cost-optimized; reuse existing resources |
-| **Subscription** | `4f18d577-3506-4a11-85e5-a83b14727a84` (`ME-MngEnvMCAP328033-ppenumatsa-1`) |
-| **Location** | `eastus2` |
+| Subscription | `7df95e88-701c-4693-af77-3159f83b558d` |
+| Resource group | `rg-maf-underwriting` |
+| Location | `eastus2` |
+| Deployment tool | AZD + Bicep |
 
-The user authorized implementation and deployment to the existing resource
-group `rg-underwriting-readiness-0731` on 2026-08-04.
+`Microsoft.App`, `Microsoft.CognitiveServices`, `Microsoft.DBforPostgreSQL`,
+`Microsoft.ContainerRegistry`, `Microsoft.Insights`, and
+`Microsoft.OperationalInsights` are registered in the target subscription.
+The authorized target resource group was created in East US 2 solely for
+validation.
 
-## 3. Components Detected
+## 3. Architecture and contract
 
-| Component | Type | Technology | Path |
-|---|---|---|---|
-| Foundry Responses host | Hosted agent | Python, Agent Framework, OpenTelemetry | `agents/underwriting/foundry-public/backend/foundry` |
-| Underwriting workflow | Worker | Python, Agent Framework, PostgreSQL checkpoints | `agents/underwriting/foundry-public/backend/app/maf` |
-| Public API | API | FastAPI | `agents/underwriting/foundry-public/backend/app/server.py` |
-| Public frontend | Frontend | React / Vite | `agents/underwriting/foundry-public/frontend` |
-| Deployment definition | IaC | Bicep + azd | `agents/underwriting/foundry-public/infra/foundry-hosted` |
+The parameterized Bicep template supports two mutually explicit modes:
 
-## 4. Recipe Selection
+| Mode | Behavior |
+| --- | --- |
+| `bootstrap` | Creates the Foundry account/project and `gpt-4.1-mini` Global Standard model deployment, ACR, Log Analytics, Application Insights, Container Apps environment/apps, managed identities, PostgreSQL, evaluation storage, connections, and role assignments. |
+| `reuse` | References a fully existing environment and creates no resources or role assignments. |
 
-**Selected:** AZD + Bicep resource reuse
+The normal release remains app-only. Bootstrap uses temporary Container Apps
+images, then the existing backend/frontend release scripts replace them with
+the lane images. PostgreSQL runtime credentials and schema remain explicit
+post-provision steps.
 
-**Rationale:** The existing Foundry project, ACR, PostgreSQL server, Container
-Apps, Application Insights, and Log Analytics workspace are intentionally
-reused. Bicep manages required identity/connection wiring; the existing
-container deployment script registers a new immutable hosted-agent version.
+## 4. Files changed
 
-## 5. Architecture
+| Area | Change |
+| --- | --- |
+| `agents/underwriting/foundry-public/infra/foundry-hosted/iac` | Parameterized bootstrap/reuse Bicep, generated ARM template, and AZD parameter mapping. |
+| `agents/underwriting/foundry-public/scripts/foundry` | Bootstrap profile preparation, post-provision hydration, and explicit ACR repository/target-port handling. |
+| `agents/underwriting/foundry-public/deployment` | Non-secret bootstrap profile template and operator documentation. |
+| `agents/underwriting/foundry-public/docs/design` | Bootstrap versus app-only release operating model. |
+| `agents/underwriting/foundry-public/scripts/foundry/tests` | Bootstrap AZD-contract test. |
 
-**Stack:** Hosted agent container and existing Container Apps
+## 5. Verification evidence
 
-| Component | Azure Service | SKU |
-|---|---|---|
-| `underwriting-hosted` | Foundry hosted agent | Existing project runtime |
-| Public backend / frontend | Azure Container Apps | Existing environment |
-| Workflow state and checkpoints | PostgreSQL Flexible Server | Existing server |
-| Agent image | Azure Container Registry | Existing registry |
-| Traces / logs | Application Insights + Log Analytics | Existing workspace |
+| Check | Result |
+| --- | --- |
+| `make test-deployment-profile` | Pass |
+| `make test-scripts` | Pass: 3 PostgreSQL credential tests and bootstrap contract test |
+| `make foundry-iac-build` | Pass |
+| `git diff --check` | Pass |
+| Target provider registration | Pass |
+| Bootstrap preview | Pass after correcting generated resource-name limits; proposes 12 lane resources and applies none. |
+| Reuse preview | Pass; skips all 10 existing resources and applies none. |
 
-## 6. Provisioning Limit Checklist
+## 6. All validation checks pass
 
-No new durable compute, network, or data resources are planned. The release
-creates one immutable agent version in the existing Foundry project and
-reconciles existing-resource role assignments/connections.
+- [x] 1. AZD Installation
+- [x] 2. Schema Validation
+- [x] 3. Environment Setup
+- [x] 4. Authentication Check
+- [x] 5. Subscription/Location Check
+- [x] 6. Aspire Pre-Provisioning Checks (not an Aspire project)
+- [x] 7. Provision Preview
+- [x] 8. Build Verification
+- [x] 9. Docker Build Context Validation
+- [x] 10. Package Validation
+- [x] 11. Azure Policy Validation
+- [x] 12. Aspire Post-Provisioning Checks (not an Aspire project)
 
-| Resource Type | Number to Deploy | Total After Deployment | Limit/Quota | Notes |
-|---|---:|---:|---:|---|
-| `Microsoft.App/managedEnvironments` | 0 | 2 | 50 | `azure-quotas` CLI: East US 2 `ManagedEnvironmentCount`, 2 used, 48 available. |
-| Foundry hosted-agent version | 1 | Existing agent plus one version | Existing project service capacity | No new Azure resource quota is consumed; deployment targets existing project `azprwhcedyxchnbtm`. |
-| Storage / network / database resources | 0 | Unchanged | Not applicable | Existing evaluation storage and PostgreSQL resources are reused. |
+## 7. Validation proof
 
-**Status:** ✅ All required capacity is available for this release.
+`rg-maf-underwriting` was created in the authorized subscription and location.
+The bootstrap AZD environment generated a successful preview for Container
+Apps, Foundry account/project/model, ACR, PostgreSQL, monitoring, and storage;
+it made no changes. The explicit reuse preview against the original
+environment skipped every existing resource and made no changes.
 
-## 7. Execution Checklist
+The first preview rejected overlength generated Container App and storage
+names. Bootstrap derivation was corrected to reserve suffix capacity, then the
+preview passed. After Azure CLI device authentication for tenant
+`a679d99f-b8f5-4d50-843e-5b73405ce0fc`, `azd auth login --check-status` and
+`azd package --no-prompt` passed. The package output is a local image tag only;
+no image was pushed.
 
-### Phase 1: Planning
+The target subscription policy assignments are Defender/Security Center
+assignments (`DataProtectionSecurityCenter`,
+`SqlVmAndArcSqlServersProtection`, and
+`OpenSourceRelationalDatabasesProtectionSecurityCenter`); none blocks the
+previewed resource types.
 
-- [x] Analyze workspace and existing deployment
-- [x] Resolve active subscription and resource-group location
-- [x] Check capacity with `azure-quotas`
-- [x] Select AZD + Bicep resource-reuse recipe
-- [x] User approved implementation and release
+## 8. Role assignment verification
 
-### Phase 2: Execution
+**Status:** Verified statically.
 
-- [x] Add hosted-agent telemetry bootstrap and business-stage spans
-- [x] Suppress `/health` logs and spans in the public API
-- [x] Enable managed-identity Azure OpenAI client and its RBAC
-- [x] Add targeted tests and update operational documentation
-- [x] Update status to **Ready for Validation**
+- Backend and frontend user-assigned identities receive `AcrPull` only at the
+  ACR scope.
+- The Foundry project receives ACR pull/repository-reader, Azure OpenAI User,
+  and monitoring-reader permissions only at the relevant resource scopes.
+- The backend identity receives Foundry User only at the Foundry project.
+- The Foundry account/project identities receive Storage Blob Data Owner only
+  at the dedicated evaluation-storage account. This is required for evaluation
+  artifact write operations and is not assigned at resource-group or
+  subscription scope.
+- `reuse` declares no role assignments.
 
-### Phase 3: Validation
+## 9. Delivery handoff
 
-- [x] Invoke `azure-validate`
-- [x] Bicep build and deployment preview pass
-- [x] Local quality and browser E2E pass
-- [x] Record validation proof and update status to **Validated**
+Validation is complete. Invoking the validated deployment workflow begins
+bootstrap deployment; no separate manual approval checkpoint is required.
 
-### Phase 4: Deployment
+## 10. Guardrails
 
-- [x] Invoke `azure-deploy`
-- [x] Deploy IaC and a new hosted-agent version
-- [x] Run smoke, trace evaluation, and Application Insights correlation query
-- [x] Update status to **Deployed**
-
-## 8. Validation Proof
-
-| Check | Command Run | Result | Timestamp |
-|---|---|---|---|
-| Dependency and script checks | `make install && bash -n scripts/foundry/*.sh` | ✅ Pass | 2026-08-04 |
-| Static source validation | `make quality` and targeted backend rerun | ✅ Pass: backend lint, format, 11 tests, frontend lint/build | 2026-08-04 |
-| Browser E2E | `make test-e2e` | ✅ Pass: happy path, retry, crash/resume rubric | 2026-08-04 |
-| IaC compilation | `az bicep build --file infra/foundry-hosted/iac/main.bicep` | ✅ Pass; existing nested-deployment lint warning retained | 2026-08-04 |
-| IaC preview | `AZURE_ENV_NAME=underwriting-foundry-public azd provision --preview --no-prompt` | ✅ Pass: existing-resource reuse only; Application Insights connection reconciliation | 2026-08-04 |
-| RBAC review | Reviewed `infra/foundry-hosted/iac/main.bicep` | ✅ Least privilege: ACR pull, Log Analytics Reader, Storage Blob Data Owner, and Cognitive Services OpenAI User for the project; deployment script grants the runtime identity its OpenAI User role after it exists | 2026-08-04 |
-
-**Validated by:** azure-validate skill  
-**Validation timestamp:** 2026-08-04
-
-## 9. Files to Generate or Update
-
-| File | Purpose | Status |
-|---|---|---|
-| `.azure/deployment-plan.md` | Release plan and validation proof | Complete |
-| `backend/app/core/telemetry.py` | Hosted-agent telemetry setup and safe span helpers | Complete |
-| `backend/app/maf/**` | Workflow, executor, retry, and resume span boundaries | Complete |
-| `backend/foundry/main.py` | Foundry Responses root invocation span | Complete |
-| `backend/app/core/observability.py` | Health telemetry exclusion | Complete |
-| `backend/app/infrastructure/llm/foundry_client.py` | Managed-identity model authentication | Complete |
-| `infra/foundry-hosted/*` | Identity RBAC and hosted runtime configuration | Complete |
-| `README.md`, `issues-fixes.md` | Deployment and RCA evidence | Complete |
-
-## 10. Next Steps
-
-1. Keep native batch evaluator generation blocked until the organization policy
-   permits the required evaluation-storage network route or a private
-   evaluation design is available.
-
-## 11. Deployment Evidence
-
-| Gate | Result |
-|---|---|
-| Hosted agent | `underwriting-hosted` version `23` active |
-| Public backend | Revision `azcawhcedyxchnbtmpubbe--0000005`, 100% traffic, healthy |
-| Smoke | Conversation `conv_8455edced675843c00PVE7HeQz4fx1G743M2tFnSRITfKa8A7C`; trace `1ea0a48c71bffdbf9cb752ec840fe2d9`; workflow `run-fb20c35df9`; `APPROVED` |
-| Browser E2E | Happy path, retry, and crash/resume rubric passed |
-| Foundry trace evaluation | `eval_0d4c41bf31bc4455a2040869b93c3950` / `evalrun_13c9fa04a67b46dcad80c4c768c785d7`: 1/1 passed |
-| App Insights | Correlated Responses, workflow initialization, risk, credit, medical, driving, fan-in, final-decision, completion, and a semantic OpenAI `chat` span captured |
-| Health noise | Direct post-cutover `traces` and `dependencies` queries return zero `/health` records |
+- Do not commit secrets, connection strings, resource IDs, image tags, or
+  subscription-specific infrastructure forks.
+- Do not bypass the validated deployment workflow or its runtime verification
+  gates.
+- Preserve the public lane's app-only release boundary.
+- Roll this validated contract to Order Resolution only after Underwriting has
+  passed the Azure preview and validation gates.

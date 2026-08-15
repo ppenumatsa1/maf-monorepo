@@ -4,6 +4,7 @@ umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT_DIR"
+source "$ROOT_DIR/scripts/release/selected-target.sh"
 
 require_value() {
   local name="$1"
@@ -18,14 +19,12 @@ for name in AZURE_ENV_NAME AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCA
   require_value "$name"
 done
 
-[[ "$AZURE_ENV_NAME" == "maf-ora-azure" ]] || {
-  echo "The CI validation environment must be maf-ora-azure." >&2
-  exit 1
-}
-[[ "$AZURE_RESOURCE_GROUP" == "rg-$AZURE_ENV_NAME" ]] || {
-  echo "AZURE_RESOURCE_GROUP does not match the selected AZD environment." >&2
-  exit 1
-}
+require_selected_target \
+  "$AZURE_ENV_NAME" \
+  "$AZURE_SUBSCRIPTION_ID" \
+  "$AZURE_RESOURCE_GROUP" \
+  "$AZURE_LOCATION"
+require_azure_cli_target "$AZURE_SUBSCRIPTION_ID"
 
 azd env new "$AZURE_ENV_NAME" --no-prompt >/dev/null 2>&1 || \
   azd env select "$AZURE_ENV_NAME" --no-prompt

@@ -35,7 +35,7 @@ UI highlights:
 ## Hosted runtime
 
 The public frontend is externally reachable at
-`https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io/`.
+the `WEB_URL` hydrated into the selected `infra/foundry-hosted` AZD environment.
 It is the only browser entrypoint: Nginx proxies same-origin `/api` requests to
 the internal backend Container App, and the browser never receives a Foundry
 endpoint or credential.

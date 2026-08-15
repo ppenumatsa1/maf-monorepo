@@ -6,7 +6,8 @@ This file describes expected behavior for coding agents working in this reposito
 
 - Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
 - Azure target: two Container Apps (FastAPI/MAF backend and React/Nginx
-  frontend) in `rg-maf-ora-azure` in North Central US. Foundry is used only for
+  frontend) in subscription `7df95e88-701c-4693-af77-3159f83b558d`,
+  `rg-maf-ora-azure`, in North Central US. Foundry is used only for
   model inference and report-only evaluations, not as an application host.
   East US is excluded because of the Azure PostgreSQL offer restriction. Do not
   claim deployment until current validation evidence exists.
@@ -89,12 +90,19 @@ Use `scripts/skills/deployment-mode-router.sh` to route quick-vs-full validation
 
 Normal Azure releases are always `make release-app` app-only releases. Preserve
 the existing PostgreSQL server and `maf_workflow` database. Infrastructure
-reconciliation requires explicit owner confirmation, a non-secret
-approval/reference, and an owner-reviewed `make release-infra-preview`; it is
-never implied by changed files. Release
-claims require fresh smoke, hosted E2E, report-only evaluation, and Application
-Insights correlation evidence from the same release window. Retain the CFS
-package feed and Alpine/musl-compatible frontend build.
+reconciliation is never implied by changed files, but invoking its validated
+workflow is execution intent: apply obtains a fresh subscription-scope what-if
+and proceeds only when the selected PostgreSQL server and database are
+absent because steady-state IaC excludes PostgreSQL. Do not add a separate owner approval, reference, or caller-supplied
+preview-digest gate. Release
+claims require fresh smoke, hosted browser E2E, the three HTTP domain
+scenarios, a completed report-only evaluation with zero failed/errored rows,
+exact Application Insights correlation, and final evidence from the same
+release window. The project-local `deployment/profiles/azure-hosted.env` is the
+only target authority; do not introduce shared deployment components. Keep
+generated JSON under `.artifacts/releases/<release-id>/evidence/`, logs under
+`logs/`, and preserve final failed evidence when a gate stops the release.
+Retain the CFS package feed and Alpine/musl-compatible frontend build.
 
 ## Stack Implementation Skills
 

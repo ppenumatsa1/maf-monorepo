@@ -36,10 +36,12 @@ resource_group="$(required_env AZURE_RESOURCE_GROUP)"
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 account_name="$(required_env FOUNDRY_ACCOUNT_NAME)"
 project_name="$(required_env FOUNDRY_PROJECT_NAME)"
+az account set --subscription "$subscription_id" >/dev/null
 appinsights_resource_id="$(get_env APPLICATIONINSIGHTS_RESOURCE_ID)"
 if [[ -z "$appinsights_resource_id" ]]; then
   appinsights_resource_id="$(
     az monitor app-insights component show \
+      --subscription "$subscription_id" \
       --resource-group "$resource_group" \
       --app "$(required_env APPLICATION_INSIGHTS_NAME)" \
       --query id \

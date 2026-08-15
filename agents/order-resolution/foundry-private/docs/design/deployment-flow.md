@@ -63,6 +63,17 @@ Authenticated workflows share the `order-resolution-private-release`
 concurrency group so provisioning, deployment, and evidence execution do not
 overlap.
 
+## Release record cutover status
+
+| Path | Status | Policy |
+| --- | --- | --- |
+| `.artifacts/release/` and relevant tracked `.foundry/results/` history | `legacy_pending_cutover` | Inventory only; no copy or deletion is authorized. |
+| `.artifacts/releases/<release-id>/` | `prepared_not_live_validated` | Future app release and same-context evidence retry write sanitized records, detailed `evidence/`, and `logs/`. |
+
+`make release-history-migration-plan` is dry-run only. A later deletion design
+must require both live-release and durable-archive markers; this tooling never
+creates those markers or deletes source history.
+
 ## Release paths
 
 ### Fresh bootstrap or intentional reconciliation

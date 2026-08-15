@@ -302,7 +302,12 @@ async def run_foundry_eval() -> None:
         root / telemetry_uri,
         required_count=len(conversation_ids),
     )
-    report_path = foundry_root / "results" / "foundry-report.json"
+    configured_report = os.getenv("FOUNDRY_REPORT_FILE")
+    report_path = (
+        Path(configured_report)
+        if configured_report
+        else foundry_root / "results" / "foundry-report.json"
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
         "status": "failed",

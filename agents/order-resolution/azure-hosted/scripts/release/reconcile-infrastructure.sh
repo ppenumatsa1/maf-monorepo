@@ -4,6 +4,7 @@ umask 077
 
 ROOT_DIR="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT_DIR"
+source "$ROOT_DIR/scripts/release/selected-target.sh"
 
 mode="preview"
 for argument in "$@"; do
@@ -44,8 +45,6 @@ release_run_id="${RELEASE_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 artifacts_dir="$ROOT_DIR/.artifacts/release/$release_run_id"
 dry_run="${RELEASE_DRY_RUN:-false}"
 template_source="infra/azure-apphosted/iac/main.bicep"
-parameters_file="${INFRA_RECONCILIATION_PARAMETERS_FILE:-}"
-reference="${INFRA_RECONCILIATION_REFERENCE:-}"
 AZ_COMMAND=""
 AZD_COMMAND=""
 BICEP_COMMAND=""
@@ -94,58 +93,6 @@ verify_trusted_command() {
   printf '%s\n' "$resolved"
 }
 
-require_sha256() {
-  local variable_name="$1"
-  local value="$2"
-  if [[ ! "$value" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "$variable_name must be a lowercase SHA-256 digest." >&2
-    exit 1
-  fi
-}
-
-sha256_file() {
-  /usr/bin/sha256sum "$1" | /usr/bin/awk '{print $1}'
-}
-
-template_parameters_digest() {
-  local template_sha="$1"
-  local parameters_sha="$2"
-  printf '%s\n%s\n' "$template_sha" "$parameters_sha" | /usr/bin/sha256sum | /usr/bin/awk '{print $1}'
-}
-
-require_parameters_file() {
-  if [[ -z "$parameters_file" ]]; then
-    echo "INFRA_RECONCILIATION_PARAMETERS_FILE is required." >&2
-    exit 1
-  fi
-  [[ ! -L "$parameters_file" ]] || {
-    echo "INFRA_RECONCILIATION_PARAMETERS_FILE must not be a symlink." >&2
-    exit 1
-  }
-  parameters_file="$(/usr/bin/readlink -e -- "$parameters_file" 2>/dev/null || true)"
-  [[ -n "$parameters_file" && -f "$parameters_file" ]] || {
-    echo "INFRA_RECONCILIATION_PARAMETERS_FILE must resolve to a regular file." >&2
-    exit 1
-  }
-  [[ "$parameters_file" == "$ROOT_DIR/"* ]] || {
-    echo "INFRA_RECONCILIATION_PARAMETERS_FILE must resolve under the repository root." >&2
-    exit 1
-  }
-}
-
-require_owner_confirmation() {
-  [[ "${INFRA_RECONCILIATION_APPROVED:-}" == "true" ]] || {
-    echo "Applying infrastructure requires INFRA_RECONCILIATION_APPROVED=true after owner review of the captured what-if." >&2
-    exit 1
-  }
-  if [[ -z "$reference" || ${#reference} -gt 256 || "$reference" == *$'\n'* || "$reference" == *$'\r'* ]]; then
-    echo "INFRA_RECONCILIATION_REFERENCE must be a non-secret owner change reference of at most 256 characters." >&2
-    exit 1
-  fi
-  require_sha256 "INFRA_RECONCILIATION_PREVIEW_SHA256" "${INFRA_RECONCILIATION_PREVIEW_SHA256:-}"
-  require_sha256 "INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256" "${INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256:-}"
-}
-
 if [[ "$dry_run" == "true" ]]; then
   BICEP_COMMAND="$(verify_trusted_command bicep)"
   PATH="$SAFE_PATH" /bin/bash ./scripts/release/validate-release-assets.sh
@@ -153,15 +100,9 @@ if [[ "$dry_run" == "true" ]]; then
   cat <<EOF
 Infrastructure reconciliation dry run completed local source checks only.
 It did not contact Azure, produce an authoritative what-if, or authorize provisioning.
-Use --preview with INFRA_RECONCILIATION_PARAMETERS_FILE to capture the required Azure
-subscription-scope what-if evidence.
+Use --preview to capture the required Azure subscription-scope what-if evidence.
 EOF
   exit 0
-fi
-
-require_parameters_file
-if [[ "$mode" == "apply" ]]; then
-  require_owner_confirmation
 fi
 
 AZ_COMMAND="$(verify_trusted_command az)"
@@ -171,6 +112,17 @@ PYTHON_COMMAND="$(verify_trusted_command python3)"
 
 get_azd_output() {
   "$AZD_COMMAND" env get-value "$1" --environment "$environment" 2>/dev/null
+}
+
+required_azd_output() {
+  local name="$1"
+  local value
+  value="$(get_azd_output "$name")"
+  [[ -n "$value" ]] || {
+    echo "Selected AZD environment is missing required steady-state value: $name" >&2
+    exit 1
+  }
+  printf '%s' "$value"
 }
 
 azd_subscription_id="$(get_azd_output AZURE_SUBSCRIPTION_ID)"
@@ -199,10 +151,7 @@ if [[ -z "$resource_group" || -z "$location" || -z "$postgres_host" || -z "$post
   echo "Selected AZD environment is missing resource group, location, or PostgreSQL outputs; reconciliation fails closed." >&2
   exit 1
 fi
-if [[ "$resource_group" != "rg-$environment" ]]; then
-  echo "Selected AZD resource group does not match the deterministic Bicep resource group for this environment." >&2
-  exit 1
-fi
+require_selected_target "$environment" "$AZURE_SUBSCRIPTION_ID" "$resource_group" "$location"
 if [[ ! "$postgres_database" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "Selected AZD PostgreSQL database output is not a supported identifier." >&2
   exit 1
@@ -230,6 +179,68 @@ if [[ -z "$postgres_id" ]]; then
   exit 1
 fi
 postgres_database_id="${postgres_id}/databases/${postgres_database}"
+resolved_postgres_database_id="$("$AZ_COMMAND" postgres flexible-server db show \
+  --resource-group "$resource_group" \
+  --server-name "$postgres_name" \
+  --database-name "$postgres_database" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --query id \
+  --output tsv)"
+if [[ "$resolved_postgres_database_id" != "$postgres_database_id" ]]; then
+  echo "Reconciliation refuses to continue because the selected PostgreSQL database was not found." >&2
+  exit 1
+fi
+
+foundry_project_name="$(required_azd_output FOUNDRY_PROJECT_NAME)"
+foundry_chat_deployment_name="$(required_azd_output FOUNDRY_CHAT_DEPLOYMENT_NAME)"
+foundry_chat_model_format="$(required_azd_output FOUNDRY_CHAT_MODEL_FORMAT)"
+foundry_chat_model_name="$(required_azd_output FOUNDRY_CHAT_MODEL_NAME)"
+foundry_chat_model_version="$(required_azd_output FOUNDRY_CHAT_MODEL_VERSION)"
+foundry_chat_deployment_sku_name="$(required_azd_output FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME)"
+foundry_chat_deployment_capacity="$(required_azd_output FOUNDRY_CHAT_DEPLOYMENT_CAPACITY)"
+foundry_embeddings_deployment_name="$(required_azd_output FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME)"
+foundry_embeddings_model_format="$(required_azd_output FOUNDRY_EMBEDDINGS_MODEL_FORMAT)"
+foundry_embeddings_model_name="$(required_azd_output FOUNDRY_EMBEDDINGS_MODEL_NAME)"
+foundry_embeddings_model_version="$(required_azd_output FOUNDRY_EMBEDDINGS_MODEL_VERSION)"
+foundry_embeddings_deployment_sku_name="$(required_azd_output FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME)"
+foundry_embeddings_deployment_capacity="$(required_azd_output FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY)"
+foundry_evaluator_deployment_name="$(required_azd_output FOUNDRY_EVALUATOR_DEPLOYMENT_NAME)"
+foundry_evaluator_model_format="$(required_azd_output FOUNDRY_EVALUATOR_MODEL_FORMAT)"
+foundry_evaluator_model_name="$(required_azd_output FOUNDRY_EVALUATOR_MODEL_NAME)"
+foundry_evaluator_model_version="$(required_azd_output FOUNDRY_EVALUATOR_MODEL_VERSION)"
+foundry_evaluator_deployment_sku_name="$(required_azd_output FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME)"
+foundry_evaluator_deployment_capacity="$(required_azd_output FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY)"
+foundry_rai_policy_name="$(required_azd_output FOUNDRY_RAI_POLICY_NAME)"
+
+deployment_parameters=(
+  "environmentName=$environment"
+  "targetSubscriptionId=$AZURE_SUBSCRIPTION_ID"
+  "resourceGroupName=$resource_group"
+  "location=$location"
+  "infrastructureMode=steadyState"
+  "namePrefix=$environment"
+  "postgresDatabaseName=$postgres_database"
+  "foundryProjectName=$foundry_project_name"
+  "foundryChatDeploymentName=$foundry_chat_deployment_name"
+  "foundryChatModelFormat=$foundry_chat_model_format"
+  "foundryChatModelName=$foundry_chat_model_name"
+  "foundryChatModelVersion=$foundry_chat_model_version"
+  "foundryChatDeploymentSkuName=$foundry_chat_deployment_sku_name"
+  "foundryChatDeploymentCapacity=$foundry_chat_deployment_capacity"
+  "foundryEmbeddingsDeploymentName=$foundry_embeddings_deployment_name"
+  "foundryEmbeddingsModelFormat=$foundry_embeddings_model_format"
+  "foundryEmbeddingsModelName=$foundry_embeddings_model_name"
+  "foundryEmbeddingsModelVersion=$foundry_embeddings_model_version"
+  "foundryEmbeddingsDeploymentSkuName=$foundry_embeddings_deployment_sku_name"
+  "foundryEmbeddingsDeploymentCapacity=$foundry_embeddings_deployment_capacity"
+  "foundryEvaluatorDeploymentName=$foundry_evaluator_deployment_name"
+  "foundryEvaluatorModelFormat=$foundry_evaluator_model_format"
+  "foundryEvaluatorModelName=$foundry_evaluator_model_name"
+  "foundryEvaluatorModelVersion=$foundry_evaluator_model_version"
+  "foundryEvaluatorDeploymentSkuName=$foundry_evaluator_deployment_sku_name"
+  "foundryEvaluatorDeploymentCapacity=$foundry_evaluator_deployment_capacity"
+  "foundryRaiPolicyName=$foundry_rai_policy_name"
+)
 
 /usr/bin/mkdir -p "$artifacts_dir"
 compiled_template="$artifacts_dir/main.bicep.json"
@@ -238,27 +249,23 @@ PATH="$SAFE_PATH" /bin/bash ./scripts/release/validate-release-assets.sh \
   >"$artifacts_dir/release-assets-validation.log" 2>&1
 "$BICEP_COMMAND" build "$template_source" --stdout >"$compiled_template"
 
-template_sha256="$(sha256_file "$compiled_template")"
-parameters_sha256="$(sha256_file "$parameters_file")"
-evidence_sha256="$(template_parameters_digest "$template_sha256" "$parameters_sha256")"
-
 "$AZ_COMMAND" deployment sub what-if \
   --name "maf-ora-reconcile-$release_run_id" \
   --location "$location" \
   --subscription "$AZURE_SUBSCRIPTION_ID" \
   --template-file "$compiled_template" \
-  --parameters "@$parameters_file" \
+  --parameters "${deployment_parameters[@]}" \
   --result-format ResourceIdOnly \
   --no-pretty-print \
   --no-prompt \
   --only-show-errors \
   --output json >"$what_if_file"
 
-"$PYTHON_COMMAND" - "$what_if_file" "$postgres_id" "$postgres_database_id" <<'PY'
+"$PYTHON_COMMAND" - "$what_if_file" <<'PY'
 import json
 import sys
 
-what_if_path, postgres_server_id, postgres_database_id = sys.argv[1:]
+what_if_path = sys.argv[1]
 try:
     payload = json.load(open(what_if_path, encoding="utf-8"))
 except (OSError, json.JSONDecodeError) as error:
@@ -268,10 +275,6 @@ changes = payload.get("changes")
 if not isinstance(changes, list):
     raise SystemExit("Azure what-if output has no machine-parseable changes list; refusing provision.")
 
-postgres_server_id = postgres_server_id.lower()
-postgres_database_id = postgres_database_id.lower()
-server_no_change = False
-database_no_change = False
 for index, change in enumerate(changes):
     if not isinstance(change, dict):
         raise SystemExit(f"Azure what-if change {index} is malformed; refusing provision.")
@@ -280,45 +283,23 @@ for index, change in enumerate(changes):
     if not isinstance(resource_id, str) or not isinstance(change_type, str):
         raise SystemExit(f"Azure what-if change {index} lacks resourceId or changeType; refusing provision.")
     normalized_resource_id = resource_id.lower()
-    if "/providers/microsoft.dbforpostgresql/" in normalized_resource_id and change_type != "NoChange":
+    if "/providers/microsoft.dbforpostgresql/" in normalized_resource_id:
         raise SystemExit(
-            "Azure what-if includes a PostgreSQL resource mutation "
+            "Azure what-if includes PostgreSQL even though steadyState mode must exclude it "
             f"({change_type}: {resource_id}); refusing provision."
         )
-    if normalized_resource_id == postgres_server_id and change_type == "NoChange":
-        server_no_change = True
-    if normalized_resource_id == postgres_database_id and change_type == "NoChange":
-        database_no_change = True
-
-if not server_no_change or not database_no_change:
-    raise SystemExit(
-        "Azure what-if did not prove the selected PostgreSQL server and database are NoChange; "
-        "refusing provision."
-    )
 PY
 
-preview_sha256="$(sha256_file "$what_if_file")"
 if [[ "$mode" == "preview" ]]; then
   cat <<EOF
 Azure subscription-scope what-if completed without PostgreSQL mutations.
   what-if evidence: $what_if_file
-  INFRA_RECONCILIATION_PREVIEW_SHA256=$preview_sha256
-  INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256=$evidence_sha256
 No resources were changed.
 
-For a single-maintainer apply, verify this output and run with:
-  INFRA_RECONCILIATION_APPROVED=true
-  INFRA_RECONCILIATION_REFERENCE="<non-secret-owner-change-reference>"
-  INFRA_RECONCILIATION_PREVIEW_SHA256=$preview_sha256
-  INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256=$evidence_sha256
+To apply, invoke --apply. Apply independently resolves the selected target and
+current app images, then obtains and validates a fresh Azure what-if.
 EOF
   exit 0
-fi
-
-if [[ "$INFRA_RECONCILIATION_PREVIEW_SHA256" != "$preview_sha256" ||
-  "$INFRA_RECONCILIATION_TEMPLATE_PARAMETERS_SHA256" != "$evidence_sha256" ]]; then
-  echo "Owner-provided evidence digest does not match independently computed what-if or template/parameters evidence." >&2
-  exit 1
 fi
 
 "$AZ_COMMAND" deployment sub create \
@@ -326,7 +307,7 @@ fi
   --location "$location" \
   --subscription "$AZURE_SUBSCRIPTION_ID" \
   --template-file "$compiled_template" \
-  --parameters "@$parameters_file" \
+  --parameters "${deployment_parameters[@]}" \
   --no-prompt \
   --only-show-errors \
   --output none >"$artifacts_dir/infrastructure-reconcile.log" 2>&1
@@ -337,9 +318,18 @@ reconciled_postgres_count="$("$AZ_COMMAND" postgres flexible-server list \
 reconciled_postgres_id="$("$AZ_COMMAND" postgres flexible-server show \
   --resource-group "$resource_group" --name "$postgres_name" \
   --subscription "$AZURE_SUBSCRIPTION_ID" --query id --output tsv)"
-if [[ "$reconciled_postgres_count" != "1" || "$reconciled_postgres_id" != "$postgres_id" ]]; then
-  echo "PostgreSQL identity changed during reconciliation; treating the release as unsafe." >&2
+reconciled_postgres_database_id="$("$AZ_COMMAND" postgres flexible-server db show \
+  --resource-group "$resource_group" \
+  --server-name "$postgres_name" \
+  --database-name "$postgres_database" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --query id \
+  --output tsv)"
+if [[ "$reconciled_postgres_count" != "1" ||
+  "$reconciled_postgres_id" != "$postgres_id" ||
+  "$reconciled_postgres_database_id" != "$postgres_database_id" ]]; then
+  echo "PostgreSQL server/database identity changed during reconciliation; treating the release as unsafe." >&2
   exit 1
 fi
 
-echo "Owner-confirmed infrastructure reconciliation completed while preserving PostgreSQL (reference: $reference)."
+echo "Infrastructure reconciliation completed while preserving PostgreSQL."

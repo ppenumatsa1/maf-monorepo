@@ -21,10 +21,20 @@ This repository implements a public Microsoft Foundry-hosted underwriting workfl
 Canonical contracts live in:
 
 - `docs/design/architecture.md`
+- `docs/design/engineering-operating-model.md`
+- `docs/design/deployment-flow.md`
 - `docs/design/schema-io-telemetry.md`
 - `docs/design/e2e-rubric.md`
 
-The public deployment lane is `infra/foundry-hosted/` with authenticated local `make foundry-*` commands. The deployed topology is React/Vite frontend -> FastAPI public adapter -> Foundry Responses agent `underwriting-hosted` -> PostgreSQL checkpoints and projections.
+The public deployment lane is `infra/foundry-hosted/` with authenticated local
+`make foundry-*` commands. The deployed topology is external React/Nginx
+frontend -> same-origin `/api` proxy -> internal FastAPI adapter -> Foundry
+Responses agent `underwriting-hosted` -> PostgreSQL checkpoints and
+projections. Production runtimes set `DB_SCHEMA_MANAGED_EXTERNALLY=true` and
+must not execute DDL.
+The hosted PostgreSQL URL must be stored in the Underwriting project
+`CustomKeys` connection and referenced only through the Foundry connection
+placeholder in hosted-agent metadata.
 
 ## Workflow Guardrails
 
@@ -36,12 +46,22 @@ The public deployment lane is `infra/foundry-hosted/` with authenticated local `
   - `backend/app/infrastructure/*` owns PostgreSQL, Foundry clients, checkpoint storage, and repository adapters.
   - `backend/app/maf/*` owns workflows, executors, runner, middleware, tools, prompts, and AG-UI event projection.
 - `backend/app/server.py` composes routers; it must not absorb workflow logic.
-- `backend/foundry/main.py` is the hosted workflow entrypoint and constructs the real MAF runner. The public adapter relays start and resume requests and reads durable projections; it must not construct a second hosted-only orchestration path.
+- `backend/foundry/main.py` is the hosted workflow entrypoint and constructs the
+  real MAF runner. The internal backend adapter relays start and resume
+  requests and reads durable projections behind the external frontend proxy;
+  it must not construct a second hosted-only orchestration path.
 - Preserve fan-out/fan-in semantics: risk, credit, medical, and driving executors fan out/fan in in one superstep, `fan_in_aggregator` merges incrementally, and `final_decision` remains deterministic before rationale generation.
 - Preserve checkpoint and resume behavior keyed by `workflow_run_id`; replay and resume must remain idempotent and observable. Only checkpoints written by the deployed master direct-executor graph are resumable: version-40 nested-graph checkpoints are unsupported after deployment, with no compatibility workflow or fallback.
 - Keep AG-UI stream frames additive to durable run, state, events, and checkpoints endpoints. Do not replace durable read-model contracts with transient stream-only state.
 - Keep CopilotKit safe and allowlisted. The bridge may expose only selected run id, normalized status, safe event and executor metadata, checkpoint count and timestamp, and categorical final decision. Never expose applicant details, health disclosures, income, credit scores, raw prompts, raw model output, checkpoint payloads, credentials, or secrets.
 - Preserve telemetry for `foundry.responses.invoke`, hosted workflow, fan-out/fan-in, retry and backoff, injected failures, checkpoint save/load, idempotency skip, and final decision spans. Start and resume may land in separate hosted traces; correlate by `workflow.run_id`.
+- Keep routine deployment hard-enforced as `app_only`; reject
+  `FOUNDRY_DEPLOY_MODE`. Keep the one-time backend internalization command
+  fail-closed and never add a routine public-ingress toggle.
+- Never place the resolved `RUNTIME_DATABASE_URL` in
+  `HostedAgentDefinition.environment_variables` or retrieve it from hosted
+  agent metadata. Verify the placeholder and use readiness/smoke for
+  connectivity.
 - If API, read-model, AG-UI, CopilotKit, or event contracts change intentionally, update frontend, Playwright, and design docs in the same change.
 
 ## Local and Release Validation Commands
@@ -57,8 +77,13 @@ For hosted/public-lane or telemetry changes, also use applicable release gates:
 - `make foundry-bootstrap`
 - `make foundry-iac-build`
 - `make foundry-postgres-readiness`
+- `make foundry-model-preflight`
+- `make foundry-runtime-connection`
+- `make foundry-package`
 - `make foundry-smoke`
 - `make foundry-eval` (the report-only Foundry trace-evaluation gate)
+- `make foundry-verify`
+- `make foundry-evidence`
 
 When the deployed frontend is in scope, run hosted Playwright against it with `PLAYWRIGHT_BASE_URL=<frontend-url> npm run test:e2e` from `frontend/`.
 
@@ -116,6 +141,8 @@ When architecture, workflow contracts, release gates, or operator-facing behavio
 - `.github/copilot-instructions.md`
 - `agents.md`
 - `docs/design/architecture.md`
+- `docs/design/deployment-flow.md`
 - `docs/design/schema-io-telemetry.md`
 - `docs/design/userflow.md`
 - `docs/design/e2e-rubric.md`
+- `deployment/README.md`

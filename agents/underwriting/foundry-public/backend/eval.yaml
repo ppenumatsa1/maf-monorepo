@@ -10,8 +10,9 @@ evaluators:
 foundry:
   name: underwriting-foundry-trace
   evaluators:
-    - task_completion
-    - coherence
+    - task_adherence
+    - intent_resolution
+    - relevance
   trace_evaluation:
     evidence_file: .foundry/results/hosted-smoke-evidence.json
     minimum_trace_age_seconds: 90

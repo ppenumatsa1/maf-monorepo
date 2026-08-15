@@ -128,13 +128,20 @@ def run() -> None:
             )
 
     result = {
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "trace_evidence_generated_at": generated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "status": str(evaluation_run.status),
         "eval_id": evaluation.id,
         "run_id": evaluation_run.id,
         "conversation_ids": conversation_ids,
         "result_counts": getattr(evaluation_run, "result_counts", None),
     }
-    output = root / ".foundry" / "results" / "foundry-trace-eval.json"
+    configured_output = os.getenv("FOUNDRY_TRACE_EVAL_OUTPUT_FILE", "").strip()
+    output = (
+        Path(configured_output)
+        if configured_output
+        else root / ".foundry" / "results" / "foundry-trace-eval.json"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     print(json.dumps(result, indent=2, default=str))

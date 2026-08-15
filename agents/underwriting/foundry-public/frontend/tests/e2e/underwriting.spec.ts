@@ -2,11 +2,6 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { scoreRubric, type RubricResultMap } from './rubric'
 
-const localBackendPort = process.env.E2E_BACKEND_HOST_PORT ?? '8000'
-const playwrightApiBase =
-  process.env.PLAYWRIGHT_API_BASE_URL ??
-  (process.env.PLAYWRIGHT_BASE_URL ? undefined : `http://127.0.0.1:${localBackendPort}`)
-
 async function startScenario(page: Page, scenario: 'happy' | 'retry' | 'crash-medical') {
   const previousRunText = await page.getByTestId('run-id').innerText()
   await page.getByRole('button', { name: 'New underwriting run' }).click()
@@ -19,16 +14,6 @@ async function startScenario(page: Page, scenario: 'happy' | 'retry' | 'crash-me
     .poll(async () => page.getByTestId('run-id').innerText())
     .not.toBe(previousRunText)
 }
-
-test.beforeEach(async ({ page }) => {
-  if (!playwrightApiBase) return
-  await page.route('**/env-config.js', async (route) => {
-    await route.fulfill({
-      contentType: 'application/javascript',
-      body: `window.__APP_CONFIG__ = { API_BASE: ${JSON.stringify(playwrightApiBase)} };`,
-    })
-  })
-})
 
 test('underwriting rubric scenarios', async ({ page }) => {
   const rubric: RubricResultMap = {
@@ -44,6 +29,7 @@ test('underwriting rubric scenarios', async ({ page }) => {
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Underwriting Transactions' })).toBeVisible()
+  await expect.poll(async () => (await page.request.get('/backend-health')).status()).toBe(200)
 
   await startScenario(page, 'happy')
   await expect(page.getByTestId('run-status')).toContainText('COMPLETED', { timeout: 30_000 })

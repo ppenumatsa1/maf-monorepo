@@ -20,17 +20,19 @@ This branch has three supported execution surfaces:
    uses its managed identity to call the Foundry Responses endpoint and shares
    PostgreSQL durable state with the hosted agent.
 
-The public hosted target is `rg-maf-ora-foundry-public-dev2`, using project
-`order-resolution-public-managed-dev2` and Microsoft-managed Foundry agent state.
-PostgreSQL remains the application-owned durable workflow/checkpoint store. No
-customer-managed Foundry state service or GitHub deployment workflow is part of
-this branch.
+The portable public target is subscription
+`7df95e88-701c-4693-af77-3159f83b558d`, resource group
+`rg-maf-ora-foundry-public`, in `eastus2`. Resource names and endpoints are
+deterministically bootstrapped and hydrated into the selected local AZD
+environment. PostgreSQL remains the application-owned durable
+workflow/checkpoint store. No GitHub deployment workflow is part of this
+branch.
 
-The public lane was released as hosted-agent version 15 (v15). The dated,
-identifier-backed smoke, hosted Responses E2E, trace-evaluation, and telemetry
-record is maintained in [issues-changes-fixes.md](issues-changes-fixes.md).
-Repository configuration describes the supported target; it is not by itself
-evidence that a deployment is live.
+The dated, identifier-backed smoke, hosted Responses E2E, trace-evaluation, and
+telemetry record is maintained in
+[issues-changes-fixes.md](issues-changes-fixes.md). Repository configuration
+describes the supported target; only the generated release-window verification
+and reviewed ledger entry are evidence that a deployment is live.
 
 ## Non-negotiable contracts
 
@@ -40,10 +42,18 @@ evidence that a deployment is live.
   `checkpoint.created`, `hitl.request`, `hitl.response`, and `workflow.output`.
 - HITL rules remain deterministic and resumable. Approval completes; rejection
   escalates; duplicate responses are idempotent.
-- Infrastructure permissions are declarative Bicep role assignments.
+- Infrastructure permissions are declarative Bicep role assignments. The
+  hosted-agent platform identity is created only after version deployment, so
+  its sole runtime grant is converged idempotently as `Cognitive Services
+  OpenAI User` at the Foundry account scope.
 - Foundry trace evaluation requires the supported project-scoped
   `ApplicationInsights` connection in addition to runtime telemetry settings;
   `make foundry-up` verifies that connection after provisioning.
+- Hosted PostgreSQL credentials are stored only in the deterministic
+  project-scoped `CustomKeys` connection. Hosted versions contain the literal
+  `${{connections.orderresolutionruntimesecrets.credentials.database_url}}`
+  placeholder for both database variables; GET metadata, release metadata, and
+  evidence must never contain the resolved URL.
 - Foundry evaluation judges the exact conversations emitted by hosted E2E only
   after the configured minimum trace age, mitigating incomplete HITL-resume
   conversations reaching conversation-level evaluators.
@@ -73,8 +83,8 @@ evidence that a deployment is live.
 | Change | Required local gates | Required public hosted gates |
 | --- | --- | --- |
 | Application behavior | `make test`, `make eval-backend`, `make test-e2e` | None unless hosted behavior changes |
-| HITL or persistence | Local gates plus targeted resume/idempotency coverage | ORD-1001, ORD-1009, approval, rejection, duplicate-response E2E |
-| Foundry runtime, IaC, release script | Local gates plus Bicep/script validation | Azure validation, app deployment through `azd`, image registration, smoke, hosted E2E, Foundry eval, telemetry; provision only for explicitly approved reconciliation |
+| HITL or persistence | Local gates plus targeted resume/idempotency coverage | Fresh ORD-1001 low-risk, ORD-1009 approval/resume, and damaged-item approval/resume E2E |
+| Foundry runtime, IaC, release script | Local gates plus Bicep/script/profile validation | Azure preview, explicit bootstrap or non-mutating reuse, model/quota preflight, PostgreSQL schema/credential/readiness, app release, exact verification, smoke, hosted E2E, Foundry eval, telemetry, aggregate evidence |
 | Documentation | Link and command accuracy checks | Update execution evidence when operations change |
 
 GitHub Actions is credential-free CI only. It runs repository checks on
@@ -82,26 +92,33 @@ GitHub Actions is credential-free CI only. It runs repository checks on
 release command is:
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription>" \
-RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
+make foundry-profile-apply \
+  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+make foundry-bootstrap
 make foundry-release
 ```
 
-It runs local gates, deploys the retained Container Apps through `azd`, builds
-and registers the hosted-agent image, then runs combined hosted smoke/E2E,
-enforced Foundry evaluation, and Application Insights verification. Provision
-is not automatic: it requires
-`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` plus a non-secret
-`FOUNDRY_INFRA_RECONCILIATION_REFERENCE` after a reviewed preview.
+It runs local gates, performs a read-only model/quota preflight, securely
+converges the runtime-secret project connection, deploys exact immutable image
+digests, converges hosted identity RBAC, and runs
+`foundry-verify` before hosted smoke/E2E, enforced Foundry evaluation,
+Application Insights telemetry, and aggregate evidence. Provision is separate:
+bootstrap creates the complete lane; output hydration then makes reuse
+non-mutating. Schema creation, runtime credential provisioning, and readiness
+are explicit PostgreSQL gates. Administrator bootstrap exclusively owns DDL;
+production runtime startup sets `DB_SCHEMA_MANAGED_EXTERNALLY=true` and uses
+only the required table DML and sequence privileges.
 
 The release DAG keeps every gate while removing only unnecessary serial waits:
 the selected local validation and Bicep compilation run together; the router
 always chooses `app_only` while independently selecting quick or full
 validation; one PostgreSQL readiness check precedes
-backend/frontend/hosted parallel deployment; and evaluation waits for fresh E2E
-evidence while E2E runs. The evaluator keeps its configured minimum trace age
-for the HITL-resume conversation and requires explicit completion. Telemetry
-starts only after E2E has persisted that evidence. See
+runtime-connection convergence and backend/frontend/hosted parallel deployment;
+exact deployment verification follows convergence; and evaluation waits for
+fresh E2E evidence while E2E runs. The evaluator keeps its configured minimum
+trace age for all three fresh conversations and requires explicit completion.
+Telemetry starts only after E2E has persisted that evidence, and
+`foundry-evidence` requires every artifact to share one release ID/window. See
 `.azure/deployment-plan.md` for the validation recipe and proof template.
 
 ## Evidence handoff
@@ -111,7 +128,8 @@ For every deployment-impacting change, record in
 
 - commit and changed surfaces;
 - local gate results;
-- provision/Container App deployment and hosted image version/conversation IDs;
+- model/quota preflight, exact Container App revisions/images, hosted
+  version/image/RBAC, and conversation IDs;
 - Foundry evaluation ID/run/result counts;
 - App Insights trace/dependency/exception evidence;
 - any evaluation-quality learning and the remediation chosen without weakening
@@ -122,4 +140,5 @@ For every deployment-impacting change, record in
 
 - `ORD-1001`: low risk, completes without HITL.
 - `ORD-1009`: high amount (`185.0`), pauses for HITL and completes after approval.
-- damaged item: pauses for HITL and escalates after rejection.
+- damaged item: pauses for HITL and completes after approval in hosted release
+  E2E; rejection remains covered by the deterministic local contract suite.

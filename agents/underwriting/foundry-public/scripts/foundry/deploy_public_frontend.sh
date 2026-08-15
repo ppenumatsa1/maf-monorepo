@@ -34,46 +34,58 @@ require_bin git
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
+subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 registry_name="$(required_env AZURE_CONTAINER_REGISTRY_NAME)"
 registry_endpoint="$(required_env AZURE_CONTAINER_REGISTRY_ENDPOINT)"
 backend_name="$(required_env BACKEND_CONTAINER_APP_NAME)"
 frontend_name="$(required_env FRONTEND_CONTAINER_APP_NAME)"
+image_repository="$(required_env FRONTEND_IMAGE_REPOSITORY)"
+az account set --subscription "$subscription_id" >/dev/null
+backend_external="$(
+  az containerapp show \
+    --subscription "$subscription_id" \
+    --resource-group "$resource_group" \
+    --name "$backend_name" \
+    --query 'properties.configuration.ingress.external' \
+    --output tsv
+)"
+backend_external="${backend_external,,}"
+if [[ "$backend_external" != "false" && "${ALLOW_PUBLIC_BACKEND_FOR_MIGRATION:-0}" != "1" ]]; then
+  echo "Backend ingress must already be internal. Use the one-time foundry-backend-internalize command for migration." >&2
+  exit 1
+fi
 backend_fqdn="$(
   az containerapp show \
+    --subscription "$subscription_id" \
     --resource-group "$resource_group" \
     --name "$backend_name" \
     --query 'properties.configuration.ingress.fqdn' \
     --output tsv
 )"
-current_image="$(
-  az containerapp show \
-    --resource-group "$resource_group" \
-    --name "$frontend_name" \
-    --query 'properties.template.containers[0].image' \
-    --output tsv
-)"
-[[ -n "$current_image" ]] || {
-  echo "Unable to determine the current frontend container image for $frontend_name." >&2
-  exit 1
-}
-
-image_repository="${current_image#*/}"
-image_repository="${image_repository%@*}"
-image_repository="${image_repository%:*}"
 image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
 image="${registry_endpoint}/${image_repository}:${image_tag}"
 
 az acr build \
+  --subscription "$subscription_id" \
   --registry "$registry_name" \
   --image "${image_repository}:${image_tag}" \
-  --build-arg "VITE_API_BASE_URL=https://${backend_fqdn}" \
   --file "$ROOT_DIR/frontend/Dockerfile" \
   "$ROOT_DIR/frontend"
 
 az containerapp update \
+  --subscription "$subscription_id" \
   --resource-group "$resource_group" \
   --name "$frontend_name" \
   --image "$image" \
+  --set-env-vars "NGINX_API_UPSTREAM=https://${backend_fqdn}" \
+  --output none
+
+az containerapp ingress update \
+  --subscription "$subscription_id" \
+  --resource-group "$resource_group" \
+  --name "$frontend_name" \
+  --type external \
+  --target-port 80 \
   --output none
 
 echo "PUBLIC_FRONTEND_IMAGE=$image"

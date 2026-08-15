@@ -29,6 +29,7 @@ class Settings:
     database_url: str = ""
     db_auth_mode: str = "password"
     db_sslmode: str = "prefer"
+    db_schema_managed_externally: bool = False
     azure_client_id: str = ""
     azure_ai_project_endpoint: str = ""
     foundry_responses_endpoint: str = ""
@@ -82,6 +83,7 @@ def load_settings() -> Settings:
         database_url=os.getenv("DATABASE_URL", ""),
         db_auth_mode=os.getenv("DB_AUTH_MODE", "password"),
         db_sslmode=os.getenv("DB_SSLMODE", "prefer"),
+        db_schema_managed_externally=_env_bool("DB_SCHEMA_MANAGED_EXTERNALLY"),
         azure_client_id=os.getenv("AZURE_CLIENT_ID", ""),
         azure_ai_project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT", ""),
         foundry_responses_endpoint=os.getenv("FOUNDRY_RESPONSES_ENDPOINT", ""),

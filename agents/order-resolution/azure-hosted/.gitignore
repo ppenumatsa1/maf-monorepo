@@ -27,8 +27,20 @@ backend/.foundry/results/*.json
 # Logs
 *.log
 
-# Test artifacts
-.artifacts/
+# Test artifacts. Retain only the release contract, dry-run history/provenance
+# manifests, and sanitized release records.
+.artifacts/**
+!.artifacts/releases/
+.artifacts/releases/**
+!.artifacts/releases/*/
+.artifacts/releases/*/**
+!.artifacts/releases/*/release.json
+!.artifacts/releases/_contract/
+!.artifacts/releases/_contract/release-v1.schema.json
+!.artifacts/releases/history/
+!.artifacts/releases/history/**
+!.artifacts/releases/provenance/
+!.artifacts/releases/provenance/**
 playwright-report/
 test-results/
 scripts/parity/reports/
@@ -37,5 +49,6 @@ scripts/parity/reports/
 local.ini
 *.local.ini
 
-# Generated Bicep build artifacts (keep parameters.dev.json tracked)
+# Generated bootstrap/reconciliation inputs
+infra/azure-apphosted/iac/*.local.parameters.json
 backend/tmp-foundry-sample/

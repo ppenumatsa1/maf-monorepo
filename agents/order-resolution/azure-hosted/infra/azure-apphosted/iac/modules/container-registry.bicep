@@ -11,10 +11,18 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   sku: {
     name: 'Basic'
   }
-  properties: {
+  #disable-next-line BCP037
+  properties: union({
     adminUserEnabled: false
+    dataEndpointEnabled: false
     publicNetworkAccess: 'Enabled'
+    encryption: {
+      status: 'disabled'
+    }
     policies: {
+      exportPolicy: {
+        status: 'enabled'
+      }
       quarantinePolicy: {
         status: 'disabled'
       }
@@ -27,7 +35,14 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
         status: 'disabled'
       }
     }
-  }
+  }, {
+    anonymousPullEnabled: false
+    policies: {
+      azureADAuthenticationAsArmPolicy: {
+        status: 'enabled'
+      }
+    }
+  })
 }
 
 output id string = containerRegistry.id

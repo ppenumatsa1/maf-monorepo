@@ -20,7 +20,7 @@ class PostgresDatabase:
     def database_url(self) -> str:
         value = os.getenv("DATABASE_URL")
         if value:
-            return value
+            return value.replace("postgresql+psycopg://", "postgresql://", 1)
         if os.getenv("APP_ENV", "").lower().startswith("foundry"):
             raise RuntimeError("DATABASE_URL must be set for Foundry-hosted runtime.")
         return DEFAULT_DATABASE_URL
@@ -40,6 +40,13 @@ class PostgresDatabase:
     def ensure_schema(self) -> None:
         with self._lock:
             if self._schema_initialized:
+                return
+            if os.getenv("DB_SCHEMA_MANAGED_EXTERNALLY", "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }:
+                self._schema_initialized = True
                 return
             schema_path = Path(__file__).resolve().parents[1] / "sql" / "schema.sql"
             schema_sql = schema_path.read_text(encoding="utf-8")

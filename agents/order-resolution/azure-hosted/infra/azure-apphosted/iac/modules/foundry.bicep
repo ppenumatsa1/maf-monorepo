@@ -11,19 +11,19 @@ param chatDeploymentName string
 param chatModelFormat string = 'OpenAI'
 param chatModelName string = 'gpt-4.1-mini'
 param chatModelVersion string = '2025-04-14'
-param chatDeploymentSkuName string = 'GlobalStandard'
+param chatDeploymentSkuName string = 'Standard'
 param chatDeploymentCapacity int = 1
 param embeddingsDeploymentName string
 param embeddingsModelFormat string = 'OpenAI'
 param embeddingsModelName string = 'text-embedding-3-small'
 param embeddingsModelVersion string = '1'
-param embeddingsDeploymentSkuName string = 'GlobalStandard'
+param embeddingsDeploymentSkuName string = 'DataZoneStandard'
 param embeddingsDeploymentCapacity int = 1
 param evaluatorDeploymentName string = 'gpt-4.1-mini-evaluator'
 param evaluatorModelFormat string = 'OpenAI'
 param evaluatorModelName string = 'gpt-4.1-mini'
 param evaluatorModelVersion string = '2025-04-14'
-param evaluatorDeploymentSkuName string = 'GlobalStandard'
+param evaluatorDeploymentSkuName string = 'Standard'
 param evaluatorDeploymentCapacity int = 1
 param raiPolicyName string = 'Microsoft.Default'
 

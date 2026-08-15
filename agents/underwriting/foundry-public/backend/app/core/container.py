@@ -21,7 +21,7 @@ def build_underwriting_service(
         raise ValueError("UNDERWRITING_EXECUTION_MODE must be 'hosted' or 'local'")
 
     engine = create_db_engine(settings)
-    init_db(engine)
+    init_db(engine, schema_managed_externally=settings.db_schema_managed_externally)
     repository = WorkflowRunRepository(engine)
     workflow = (
         create_workflow_engine(repository=repository, settings=settings)

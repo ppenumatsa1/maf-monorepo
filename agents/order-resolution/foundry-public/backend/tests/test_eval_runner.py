@@ -66,10 +66,7 @@ async def test_run_case_enforces_duplicate_hitl_idempotency(tmp_path: Path) -> N
 @pytest.mark.asyncio
 async def test_public_session_history_case_requires_concrete_explanation(tmp_path: Path) -> None:
     cases_path = (
-        Path(__file__).parents[1]
-        / ".foundry"
-        / "datasets"
-        / "order-resolution-hosted-cases.jsonl"
+        Path(__file__).parents[1] / ".foundry" / "datasets" / "order-resolution-hosted-cases.jsonl"
     )
     case = next(case for case in _load_cases(cases_path) if case.id == "ord-1007-session-history")
     workflow = OrderResolutionWorkflow(

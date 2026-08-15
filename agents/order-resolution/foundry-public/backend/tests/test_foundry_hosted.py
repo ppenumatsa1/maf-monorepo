@@ -164,6 +164,8 @@ def test_hosted_manifest_configures_responses_and_model_settings() -> None:
     )
     assert "FOUNDRY_PROJECTS_ENDPOINT:" not in manifest_text
     assert "FOUNDRY_RUNTIME_DATABASE_URL:" not in manifest_text
+    assert "\n            DATABASE_URL:" not in manifest_text
+    assert "\n            RUNTIME_DATABASE_URL:" not in manifest_text
     assert not hasattr(foundry_main, "setup_observability")
 
 

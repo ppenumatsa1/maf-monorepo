@@ -404,8 +404,10 @@ flowchart LR
 The browser never receives a Foundry endpoint credential, Foundry access
 token, or database credential. The internal wrapper uses managed identity for
 the Foundry data-plane request. The hosted service uses its runtime database
-configuration; no direct browser-to-Foundry or browser-to-PostgreSQL path is
-part of this design.
+configuration through the project-scoped `orderresolutionruntimesecrets`
+`CustomKeys` connection. Its version metadata contains only the literal
+connection placeholder, not the resolved PostgreSQL URL. No direct
+browser-to-Foundry or browser-to-PostgreSQL path is part of this design.
 
 ### Durable Stores and Recovery
 
@@ -484,21 +486,26 @@ GitHub Actions is credential-free CI only. Authenticated public release runs
 from an operator workstation through:
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription>" \
-RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
+make foundry-profile-apply \
+  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+make foundry-bootstrap
 make foundry-release
 ```
 
 The automatic route is **app-only**: it selects quick or full validation, runs
-the Bicep build, packages/deploys the approved backend, frontend, and hosted
-agent application legs, then runs smoke, hosted E2E, trace evaluation, and
-Application Insights verification. It reuses the existing PostgreSQL database
-and does not automatically provision infrastructure.
+the Bicep build, performs a read-only model/quota preflight, packages/deploys
+the approved backend, frontend, and hosted-agent legs by immutable digest,
+converges the hosted identity's account-scoped runtime role, then runs exact
+deployment verification, smoke, three-conversation hosted E2E, trace
+evaluation, Application Insights verification, and aggregate evidence. It
+reuses the selected target and does not automatically provision infrastructure.
 
-Provisioning is a separate exception. `make foundry-provision` refuses to run
-without both `FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
-`FOUNDRY_INFRA_RECONCILIATION_REFERENCE` after a reviewed preview. The exact
-release DAG, ownership boundary, and proof template are in
+Provisioning is separate. In bootstrap mode `make foundry-provision` creates
+the complete Foundry/account/project/models, ACR, monitoring, Container Apps,
+identity, PostgreSQL, evaluation-storage, connection, and scoped-RBAC set.
+Output hydration then switches the local AZD environment to reuse mode, whose
+conditional template creates no resources or role assignments. The exact
+release DAG, PostgreSQL credential/readiness flow, and proof template are in
 [.azure/deployment-plan.md](../../.azure/deployment-plan.md) and
 [engineering-operating-model.md](engineering-operating-model.md).
 
@@ -510,6 +517,8 @@ release DAG, ownership boundary, and proof template are in
 | Deterministic workflow contract cases | `make eval-backend` |
 | Browser native-SSE, approval, and selected-thread behavior | `make test-e2e` |
 | Hosted/runtime report-only evaluation | `make eval-foundry` |
+| Independent live deployment contract | `make foundry-verify` |
+| One secret-free release-window report | `make foundry-evidence` |
 | Consolidated local design/review gate | `./scripts/skills/design-review-skill.sh` |
 | Hosted release proof | `make foundry-release`, then record dated non-secret evidence in `issues-changes-fixes.md` |
 

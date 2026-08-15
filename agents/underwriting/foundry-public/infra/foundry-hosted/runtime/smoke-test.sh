@@ -220,6 +220,10 @@ require_bin jq
 require_bin python3
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+if [[ -n "${RELEASE_ID:-}" ]]; then
+  . "$ROOT_DIR/scripts/foundry/release_paths.sh"
+  release_paths_configure "$ROOT_DIR"
+fi
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 EVIDENCE_FILE="${FOUNDRY_SMOKE_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-smoke-evidence.json}"
 

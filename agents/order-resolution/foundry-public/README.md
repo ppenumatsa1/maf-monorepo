@@ -35,6 +35,7 @@ If someone starts from this README, this path should let them understand and run
 6. **IaC + public hosted deployment**
    - Infra overview: [infra/README.md](infra/README.md)
    - Foundry-hosted lane: [infra/foundry-hosted/README.md](infra/foundry-hosted/README.md)
+   - Deployment flow: [docs/design/deployment-flow.md](docs/design/deployment-flow.md)
 7. **Validation + operations/SRE**
    - Scripts and validation commands: [scripts/README.md](scripts/README.md)
    - Operational run history and RCA log: [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
@@ -89,10 +90,11 @@ applicable implementation and E2E guidance.
   identity to invoke Foundry Responses and PostgreSQL for durable state.
 - **Public Foundry** owns hosted Responses-agent deployment, conversation/HITL
   verification, Foundry evaluation, and Application Insights telemetry.
-- **Configured public UI FQDN:** `ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io`.
-  It is an existing-resource deployment target, not evidence that a current
-  public revision is live. The backend URL is internal-only and is intentionally
-  not a browser endpoint.
+- **Portable target:** subscription
+  `7df95e88-701c-4693-af77-3159f83b558d`, resource group
+  `rg-maf-ora-foundry-public`, and `eastus2`. Generated resource names and
+  endpoints are hydrated into the selected local AZD environment. The backend
+  URL remains internal-only and is intentionally not a browser endpoint.
 - Evidence is tracked in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
 
 ## Quick Start (Local)
@@ -168,26 +170,52 @@ Baseline behavior checks:
 
 - ORD-1001 should usually complete without HITL.
 - ORD-1009 should require HITL.
+- A damaged-item ORD-1001 message should require HITL even though its amount is low.
 
 ## Deploy to Foundry (Hosted Agent)
 
-Run the authenticated local release sequence:
+Select and hydrate a secret-free existing-target profile, then run the
+authenticated app-only release sequence:
 
 ```bash
-AZURE_SUBSCRIPTION_ID="<subscription-id>" \
-RUNTIME_DATABASE_URL="postgresql://...?...sslmode=require" \
+make foundry-profile-apply \
+  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+make foundry-bootstrap
 make foundry-release
 ```
+
+The shared profile is preferred. The lane-local
+`deployment/profiles/foundry-public.env` remains
+`legacy_pending_cutover` compatibility and emits a warning when selected.
 
 The default release route is gated `app_only`: it does not automatically
 provision infrastructure and reuses the existing PostgreSQL database and
 retained public-lane dependencies. It runs the selected validation and Bicep
-build, then deploys the approved application legs, followed by smoke, hosted
-E2E, evaluation, and App Insights validation.
-Infrastructure reconciliation requires a reviewed preview plus
-`FOUNDRY_INFRA_RECONCILIATION_APPROVED=true` and a non-secret
-`FOUNDRY_INFRA_RECONCILIATION_REFERENCE`; use `make foundry-provision` only
-for that explicit path. To invoke manually after deployment:
+build, performs a read-only chat/embeddings/evaluator deployment and quota
+preflight, then deploys immutable image digests. The hosted identity converges
+only the account-scoped `Cognitive Services OpenAI User` role. After PostgreSQL
+readiness, the release idempotently stores the runtime URL in the deterministic
+project `CustomKeys` connection and gives the hosted definition only
+`${{connections.orderresolutionruntimesecrets.credentials.database_url}}`.
+Release gates then verify active ACA revisions, topology, same-origin proxy
+health, hosted agent version/image and literal connection placeholders, App
+Insights, backend database-secret parity, and
+`DB_SCHEMA_MANAGED_EXTERNALLY=true` before smoke, three-conversation hosted
+E2E, evaluation, telemetry, and one aggregate release-window report.
+Future execution writes the v1 authority record to
+`.artifacts/releases/<release-id>/release.json`, detailed evidence below
+`evidence/`, and logs below `logs/`. This path is
+`prepared_not_live_validated`; `deployment-report/` and singular
+`.artifacts/release/` remain `legacy_pending_cutover`.
+`make foundry-provision` is separate. In bootstrap mode it creates the complete
+lane; after output hydration the environment switches to non-mutating reuse
+mode. Bootstrap also requires the explicit schema, least-privilege runtime
+credential, and readiness sequence documented in
+[.azure/deployment-plan.md](.azure/deployment-plan.md). Production runtimes set
+`DB_SCHEMA_MANAGED_EXTERNALLY=true`: only the administrator bootstrap applies
+DDL, while the runtime credential remains limited to required DML and sequence
+usage. To invoke manually
+after deployment:
 
 ```bash
 azd ai agent show order-resolution-hosted --output json
@@ -199,7 +227,7 @@ For high-risk requests, continue the same conversation with `Approve` or `Reject
 Run the browser contract suite against the public UI after deployment:
 
 ```bash
-PLAYWRIGHT_BASE_URL="https://ora-public-dev2-frontend.greentree-dc9ce897.eastus2.azurecontainerapps.io" \
+PLAYWRIGHT_BASE_URL="$(azd env get-value WEB_URL --cwd infra/foundry-hosted)" \
 make test-e2e
 ```
 
@@ -213,11 +241,25 @@ configuration is read from the backend environment:
 - FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME
 - FOUNDRY_EVAL_MODEL (the dedicated judge deployment used by `make eval-foundry`)
 
-The public hosted configuration uses `gpt-4o-mini` for the agent and
-`gpt-4o-mini-evaluation` as the evaluator judge. The hosted IaC does not pin a
-model version by default: Azure resolves the current available regional default
-when creating its chat, embeddings, and evaluator deployments. Pin an explicit
-version only after checking that region with `az cognitiveservices model list`.
+Portable bootstrap defaults to pinned `gpt-4.1-mini` chat/evaluator deployments
+and `text-embedding-3-small` on the `Standard` SKU. SKU, capacities, and
+versions remain explicit AZD inputs. `make foundry-model-preflight` records the
+live deployment model, version, SKU, capacity, and matching regional quota
+without creating, resizing, or changing a deployment.
+
+The release writes generated, gitignored JSON under
+`backend/.foundry/results/`. `make foundry-verify` can independently re-run the
+live contract checks, and `make foundry-evidence` aggregates the model
+preflight, runtime-connection convergence, deployment verification, smoke,
+hosted E2E, App Insights connection, telemetry, and Task
+Completion/Coherence evaluation artifacts for one release window. These files
+must remain secret-free and uncommitted.
+
+Evaluation storage remains private-by-default at the network ACL: Foundry
+reaches it only through the Azure trusted-service bypass while all other public
+network traffic is denied. Reuse hydration persists the complete non-secret
+output contract, including app/environment IDs, PostgreSQL FQDN, monitoring
+IDs, and hydrated frontend/backend URLs.
 
 ## Foundry-Hosted Wiring
 
@@ -255,6 +297,7 @@ replace it with an unapproved public package index in a release image.
 ### Delivery and implementation
 
 - Engineering operating model (intent -> skills -> implementation -> evidence): [docs/design/engineering-operating-model.md](docs/design/engineering-operating-model.md)
+- Deployment flow and command-to-stage mapping: [docs/design/deployment-flow.md](docs/design/deployment-flow.md)
 - Repo structure: [docs/design/projectstructure.md](docs/design/projectstructure.md)
 - Tech stack: [docs/design/techstack.md](docs/design/techstack.md)
 - Backend operational details: [backend/README.md](backend/README.md)

@@ -7,10 +7,18 @@ for profile in "$script_dir"/profiles/*.env; do
   bash "$script_dir/profile.sh" validate "$profile"
 done
 
-invalid_profile="$(mktemp)"
-azd_command="$(mktemp)"
-azd_log="$(mktemp)"
-trap 'rm -f "$invalid_profile" "$azd_command" "$azd_log"' EXIT
+grep -Fq 'DEPLOYMENT_LANE=azure-hosted' "$script_dir/profiles/azure-hosted.env"
+grep -Fq 'AZURE_ENV_NAME=maf-ora-azure' "$script_dir/profiles/azure-hosted.env"
+grep -Fq 'AZURE_LOCATION=northcentralus' "$script_dir/profiles/azure-hosted.env"
+grep -Fq 'agents/order-resolution/deployment/profiles/azure-hosted.env' \
+  "$script_dir/../azure-hosted/deployment/profiles/azure-hosted-bootstrap.env"
+
+test_dir="$script_dir/.test-artifacts/profile-$$"
+mkdir -p "$test_dir"
+invalid_profile="$test_dir/invalid.env"
+azd_command="$test_dir/azd"
+azd_log="$test_dir/azd.log"
+trap 'rm -rf "$test_dir"' EXIT
 cat > "$invalid_profile" <<'EOF'
 CONTRACT_VERSION=1
 DEPLOYMENT_LANE=foundry-public

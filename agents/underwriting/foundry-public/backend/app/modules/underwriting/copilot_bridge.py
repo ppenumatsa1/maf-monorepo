@@ -32,7 +32,10 @@ class UnderwritingCopilotBridge:
         self.settings = settings
         if repository is None:
             engine = create_db_engine(settings)
-            init_db(engine)
+            init_db(
+                engine,
+                schema_managed_externally=settings.db_schema_managed_externally,
+            )
             repository = WorkflowRunRepository(engine)
         self.repository = repository
         self._responses_client = responses_client or UnderwritingResponsesClient(settings)

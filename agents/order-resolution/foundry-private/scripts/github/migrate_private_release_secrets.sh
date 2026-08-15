@@ -14,7 +14,8 @@ require_bin gh
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="${ROOT_DIR}/infra/foundry-hosted"
 ORDER_RESOLUTION_DIR="$(cd "$ROOT_DIR/.." && pwd -P)"
-PROFILE_PATH="${DEPLOYMENT_PROFILE_PATH:-$ORDER_RESOLUTION_DIR/deployment/profiles/foundry-private.env}"
+source "$ROOT_DIR/scripts/foundry/private_profile.sh"
+PROFILE_PATH="$(private_profile_resolve "$ROOT_DIR" "${DEPLOYMENT_PROFILE_PATH:-}")"
 source "$ORDER_RESOLUTION_DIR/deployment/profile.sh"
 deployment_profile_load "$PROFILE_PATH"
 deployment_profile_validate

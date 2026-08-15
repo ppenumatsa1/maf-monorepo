@@ -21,7 +21,10 @@ class LocalUnderwritingService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.engine = create_db_engine(settings)
-        init_db(self.engine)
+        init_db(
+            self.engine,
+            schema_managed_externally=settings.db_schema_managed_externally,
+        )
         self.repository = WorkflowRunRepository(self.engine)
         self.workflow = create_workflow_engine(repository=self.repository, settings=settings)
 
