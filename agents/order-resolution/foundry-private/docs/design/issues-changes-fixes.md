@@ -1541,3 +1541,10 @@ infrastructure intentionally skips Container App mutation. App-only deployment
 now stages the secure `database-url` secret and binds `DATABASE_URL` with
 `DB_SCHEMA_MANAGED_EXTERNALLY=true` before deploying the immutable backend
 image.
+
+**Hosted-agent project role.** Release run `31897294847` completed the healthy
+backend/frontend release and pushed the hosted-agent image, but the protected
+OIDC principal lacked `Microsoft.CognitiveServices/accounts/AIServices/agents/write`.
+The principal now has project-scoped Foundry Project Manager and ACR push
+roles, and release identity bootstrap provisions both roles after the Foundry
+project exists.

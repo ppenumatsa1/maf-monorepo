@@ -10,6 +10,7 @@ require_bin() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IDENTITY_DIR="${ROOT_DIR}/infra/github-actions-identity"
+PROJECT_MANAGER_TEMPLATE="${IDENTITY_DIR}/foundry-project-manager.bicep"
 ORDER_RESOLUTION_DIR="$(cd "$ROOT_DIR/.." && pwd -P)"
 PROFILE_PATH="${DEPLOYMENT_PROFILE_PATH:-$ORDER_RESOLUTION_DIR/deployment/profiles/foundry-private.env}"
 source "$ORDER_RESOLUTION_DIR/deployment/profile.sh"
@@ -56,10 +57,39 @@ deployment_json="$(
 )"
 
 client_id="$(jq -r '.properties.outputs.githubActionsClientId.value // empty' <<<"$deployment_json")"
+principal_id="$(jq -r '.properties.outputs.githubActionsPrincipalId.value // empty' <<<"$deployment_json")"
 [[ -n "$client_id" ]] || {
   echo "Identity deployment did not return githubActionsClientId."
   exit 1
 }
+[[ -n "$principal_id" ]] || {
+  echo "Identity deployment did not return githubActionsPrincipalId."
+  exit 1
+}
+
+foundry_account_name="$(
+  az cognitiveservices account list \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "[?kind=='AIServices'].name | [0]" \
+    --output tsv
+)"
+container_registry_name="$(
+  az acr list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv
+)"
+[[ -n "$foundry_account_name" && -n "$container_registry_name" ]] || {
+  echo "The Foundry account and private ACR must exist before release identity bootstrap."
+  exit 1
+}
+az deployment group create \
+  --name order-resolution-private-foundry-project-manager \
+  --resource-group "$RESOURCE_GROUP" \
+  --template-file "$PROJECT_MANAGER_TEMPLATE" \
+  --parameters \
+    deploymentPrincipalId="$principal_id" \
+    foundryAccountName="$foundry_account_name" \
+    foundryProjectName="$FOUNDRY_PROJECT_NAME" \
+    containerRegistryName="$container_registry_name" \
+  --output none
 
 gh variable set AZURE_CLIENT_ID --repo "$GITHUB_REPOSITORY" --body "$client_id"
 gh variable set AZURE_TENANT_ID --repo "$GITHUB_REPOSITORY" --body "$AZURE_TENANT_ID"

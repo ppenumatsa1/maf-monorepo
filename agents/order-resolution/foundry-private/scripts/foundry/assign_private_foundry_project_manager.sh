@@ -40,8 +40,9 @@ get_arm_token() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEMPLATE_FILE="${ROOT_DIR}/infra/github-actions-identity/foundry-project-manager.bicep"
-PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ROOT_DIR}/deployment/profiles/foundry-private.env}"
-source "${ROOT_DIR}/deployment/profile.sh"
+ORDER_RESOLUTION_DIR="$(cd "$ROOT_DIR/.." && pwd -P)"
+PROFILE_FILE="${DEPLOYMENT_PROFILE_FILE:-${ORDER_RESOLUTION_DIR}/deployment/profiles/foundry-private.env}"
+source "${ORDER_RESOLUTION_DIR}/deployment/profile.sh"
 deployment_profile_load "$PROFILE_FILE"
 deployment_profile_validate
 deployment_profile_export
