@@ -2,6 +2,12 @@ name: Order Resolution Private App-only Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      collect_evidence:
+        description: Run HITL, telemetry, and strict evaluation after deployment
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -41,7 +47,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Clean workspace while retaining the private azd environment
-        run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+        run: >-
+          git clean -ffdx
+          -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+          -e agents/order-resolution/foundry-private/backend/.venv/
       - name: Authenticate with the runner's federated Azure identity
         uses: azure/login@v2
         with:
@@ -57,3 +66,7 @@ jobs:
       - name: Validate existing private dependencies and deploy app-only release
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-app-only-release
+      - name: Collect HITL, telemetry, and strict evaluation evidence
+        if: ${{ inputs.collect_evidence }}
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-evidence

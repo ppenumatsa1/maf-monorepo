@@ -13,7 +13,7 @@ from evals.foundry_eval_runner import (
     _load_hosted_e2e_evidence,
     _load_telemetry_trace_ids,
     _parse_hosted_e2e_evidence,
-    _trace_ingestion_wait_seconds,
+    _should_retry_empty_evaluation,
     _validate_result_counts,
 )
 
@@ -125,29 +125,27 @@ def test_load_hosted_e2e_evidence_rejects_malformed_json() -> None:
         )
 
 
-def test_trace_ingestion_waits_for_minimum_delay() -> None:
-    generated_at = datetime(2026, 7, 23, 14, 58, tzinfo=timezone.utc)
-
-    assert (
-        _trace_ingestion_wait_seconds(
-            generated_at,
-            minimum_delay_seconds=300,
-            now=_NOW,
-        )
-        == 180
+def test_empty_evaluation_without_service_error_is_retryable() -> None:
+    assert _should_retry_empty_evaluation(
+        status="failed",
+        result_counts={"total": 0},
+        error=None,
     )
 
 
-def test_trace_ingestion_wait_is_zero_after_minimum_delay() -> None:
-    generated_at = datetime(2026, 7, 23, 14, 50, tzinfo=timezone.utc)
+def test_evaluation_with_results_is_not_retried() -> None:
+    assert not _should_retry_empty_evaluation(
+        status="completed",
+        result_counts={"total": 3, "failed": 1},
+        error=None,
+    )
 
-    assert (
-        _trace_ingestion_wait_seconds(
-            generated_at,
-            minimum_delay_seconds=300,
-            now=_NOW,
-        )
-        == 0
+
+def test_evaluation_service_error_is_not_retried() -> None:
+    assert not _should_retry_empty_evaluation(
+        status="failed",
+        result_counts={"total": 0},
+        error={"message": "authorization failed"},
     )
 
 

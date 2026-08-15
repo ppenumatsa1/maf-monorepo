@@ -68,19 +68,18 @@ bootstrap: install-backend install-frontend
 venv-backend:
 	cd backend && python3 -m venv .venv
 
-install-backend: venv-backend
-	cd backend && . .venv/bin/activate && pip install -r requirements-dev.txt
+install-backend:
+	FORCE_BACKEND_VENV_REFRESH=true ./scripts/foundry/ensure_backend_venv.sh
 
 install-frontend:
 	cd frontend && npm install
 	cd scripts/playwright && npm install
 
 ensure-backend-env:
-	test -d backend/.venv || $(MAKE) venv-backend
-	. backend/.venv/bin/activate && python -c "import pytest" >/dev/null 2>&1 || $(MAKE) install-backend
+	./scripts/foundry/ensure_backend_venv.sh
 
 ensure-foundry-deploy-env: ensure-backend-env
-	. backend/.venv/bin/activate && python -c "import azure.ai.projects" >/dev/null 2>&1 || $(MAKE) install-backend
+	. backend/.venv/bin/activate && python -c "import azure.ai.projects"
 
 ensure-test-postgres:
 	@DATABASE_URL="$${DATABASE_URL:-$${FOUNDRY_RUNTIME_DATABASE_URL:-$${RUNTIME_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/maf_workflow?sslmode=disable}}}" \
@@ -351,9 +350,7 @@ foundry-hosted-app-deploy: ensure-foundry-deploy-env
 foundry-app-only-release:
 	$(MAKE) foundry-app-only-preflight
 	$(MAKE) foundry-postgres-readiness
-	$(MAKE) foundry-app-deploy
-	$(MAKE) foundry-app-images-verify
-	$(MAKE) foundry-hosted-app-deploy
+	./scripts/foundry/deploy_private_app_release.sh
 
 foundry-evidence: ensure-backend-env
 	./scripts/foundry/collect_private_release_evidence.sh

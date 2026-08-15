@@ -185,19 +185,17 @@ def _load_telemetry_trace_ids(
     return list(trace_ids)
 
 
-def _trace_ingestion_wait_seconds(
-    generated_at: datetime,
+def _should_retry_empty_evaluation(
     *,
-    minimum_delay_seconds: float,
-    now: datetime | None = None,
-) -> float:
-    if minimum_delay_seconds < 0:
-        raise ValueError("Trace ingestion delay must not be negative")
-    current_time = now or datetime.now(timezone.utc)
-    if current_time.tzinfo is None:
-        raise ValueError("Current time used for trace ingestion must include a timezone")
-    elapsed = (current_time.astimezone(timezone.utc) - generated_at).total_seconds()
-    return max(0.0, minimum_delay_seconds - max(0.0, elapsed))
+    status: str,
+    result_counts: object,
+    error: object,
+) -> bool:
+    if error not in (None, {}, ""):
+        return False
+    if isinstance(result_counts, dict):
+        return int(result_counts.get("total", 0)) == 0
+    return status in {"completed", "failed"}
 
 
 def _build_trace_testing_criteria(
@@ -268,12 +266,20 @@ async def run_foundry_eval() -> None:
             "backend/eval.yaml trace_evaluation.max_traces must cover all required scenarios"
         )
     max_evidence_age = float(trace_cfg.get("max_evidence_age_seconds", 21600))
-    trace_ingestion_delay = float(
+    readiness_retry_seconds = float(
         os.getenv(
-            "FOUNDRY_TRACE_INGESTION_DELAY_SECONDS",
-            trace_cfg.get("ingestion_delay_seconds", 300),
+            "FOUNDRY_EVAL_READINESS_RETRY_SECONDS",
+            trace_cfg.get("readiness_retry_seconds", 15),
         )
     )
+    readiness_timeout_seconds = float(
+        os.getenv(
+            "FOUNDRY_EVAL_READINESS_TIMEOUT_SECONDS",
+            trace_cfg.get("readiness_timeout_seconds", 240),
+        )
+    )
+    if readiness_retry_seconds <= 0 or readiness_timeout_seconds < 0:
+        raise ValueError("Foundry evaluation readiness retry values are invalid")
 
     evaluator_values = foundry_cfg.get("evaluators")
     if not isinstance(evaluator_values, list) or not all(
@@ -296,16 +302,6 @@ async def run_foundry_eval() -> None:
         root / telemetry_uri,
         required_count=len(conversation_ids),
     )
-    ingestion_wait = _trace_ingestion_wait_seconds(
-        generated_at,
-        minimum_delay_seconds=trace_ingestion_delay,
-    )
-    if ingestion_wait:
-        print(
-            f"Waiting {ingestion_wait:.0f}s for Application Insights trace ingestion "
-            "before submitting Foundry evaluation."
-        )
-        await asyncio.sleep(ingestion_wait)
     report_path = foundry_root / "results" / "foundry-report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
@@ -342,32 +338,56 @@ async def run_foundry_eval() -> None:
                     judge_model,
                 ),
             )
-            eval_run = await openai_client.evals.runs.create(
-                eval_id=eval_object.id,
-                name=f"{eval_name} trace run",
-                metadata={
-                    "e2e_started_at": started_at.isoformat(),
-                    "e2e_generated_at": generated_at.isoformat(),
-                    "conversation_count": str(len(conversation_ids)),
-                    "trace_count": str(len(trace_ids)),
-                },
-                data_source=_build_exact_trace_data_source(trace_ids),
-            )
-            start = asyncio.get_running_loop().time()
-            while str(eval_run.status) not in _TERMINAL_EVAL_STATUSES:
-                if asyncio.get_running_loop().time() - start > timeout:
-                    await openai_client.evals.runs.cancel(
+            readiness_start = asyncio.get_running_loop().time()
+            readiness_attempts = 0
+            while True:
+                readiness_attempts += 1
+                eval_run = await openai_client.evals.runs.create(
+                    eval_id=eval_object.id,
+                    name=f"{eval_name} trace run",
+                    metadata={
+                        "e2e_started_at": started_at.isoformat(),
+                        "e2e_generated_at": generated_at.isoformat(),
+                        "conversation_count": str(len(conversation_ids)),
+                        "trace_count": str(len(trace_ids)),
+                        "readiness_attempt": str(readiness_attempts),
+                    },
+                    data_source=_build_exact_trace_data_source(trace_ids),
+                )
+                run_start = asyncio.get_running_loop().time()
+                while str(eval_run.status) not in _TERMINAL_EVAL_STATUSES:
+                    if asyncio.get_running_loop().time() - run_start > timeout:
+                        await openai_client.evals.runs.cancel(
+                            run_id=eval_run.id,
+                            eval_id=eval_object.id,
+                        )
+                        raise TimeoutError(
+                            f"Foundry trace evaluation timed out after {timeout} seconds"
+                        )
+                    await asyncio.sleep(poll_interval)
+                    eval_run = await openai_client.evals.runs.retrieve(
                         run_id=eval_run.id,
                         eval_id=eval_object.id,
                     )
-                    raise TimeoutError(
-                        f"Foundry trace evaluation timed out after {timeout} seconds"
-                    )
-                await asyncio.sleep(poll_interval)
-                eval_run = await openai_client.evals.runs.retrieve(
-                    run_id=eval_run.id,
-                    eval_id=eval_object.id,
+
+                result_counts = _to_jsonable(getattr(eval_run, "result_counts", None))
+                run_error = _to_jsonable(getattr(eval_run, "error", None))
+                if not _should_retry_empty_evaluation(
+                    status=str(eval_run.status),
+                    result_counts=result_counts,
+                    error=run_error,
+                ):
+                    break
+                readiness_elapsed = asyncio.get_running_loop().time() - readiness_start
+                if readiness_elapsed + readiness_retry_seconds > readiness_timeout_seconds:
+                    break
+                print(
+                    "Foundry evaluation traces are not queryable yet; "
+                    f"retrying in {readiness_retry_seconds:g}s "
+                    f"(attempt {readiness_attempts})."
                 )
+                await asyncio.sleep(readiness_retry_seconds)
+
             output_items = [
                 item
                 async for item in openai_client.evals.runs.output_items.list(
@@ -386,6 +406,7 @@ async def run_foundry_eval() -> None:
             "trace_ids": trace_ids,
             "e2e_started_at": started_at.isoformat(),
             "e2e_generated_at": generated_at.isoformat(),
+            "readiness_attempts": readiness_attempts,
             "result_counts": _to_jsonable(getattr(eval_run, "result_counts", None)),
             "output_items": _to_jsonable(output_items),
             "run_details": _to_jsonable(eval_run),

@@ -82,11 +82,19 @@ image_repository="${HOSTED_AGENT_IMAGE_REPOSITORY:-order-resolution-hosted}"
 image_tag="${HOSTED_AGENT_IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)}"
 image="${registry_endpoint}/${image_repository}:${image_tag}"
 
-docker build \
-  --platform linux/amd64 \
-  --tag "$image" \
-  --file "$FOUNDRY_DIR/agent/Dockerfile" \
-  "$FOUNDRY_DIR/agent"
+if [[ "${HOSTED_AGENT_SKIP_BUILD:-false}" == "true" ]]; then
+  docker image inspect "$image" >/dev/null 2>&1 || {
+    echo "Prebuilt hosted-agent image is unavailable: ${image}" >&2
+    exit 1
+  }
+  echo "Reusing prebuilt hosted-agent image: ${image}"
+else
+  docker build \
+    --platform linux/amd64 \
+    --tag "$image" \
+    --file "$FOUNDRY_DIR/agent/Dockerfile" \
+    "$FOUNDRY_DIR/agent"
+fi
 
 push_output=""
 for retry_delay in 0 15 30 60; do

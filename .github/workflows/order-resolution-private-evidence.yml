@@ -39,7 +39,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Clean workspace while retaining the private azd environment
-        run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+        run: >-
+          git clean -ffdx
+          -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+          -e agents/order-resolution/foundry-private/backend/.venv/
       - name: Authenticate with the runner's federated Azure identity
         uses: azure/login@v2
         with:

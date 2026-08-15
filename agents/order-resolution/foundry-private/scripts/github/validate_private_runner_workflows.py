@@ -84,11 +84,13 @@ def validate_deployment_workflow(name: str) -> None:
             f"{PRIVATE_PREFIX}/scripts/foundry/validate_private_runner_environment.sh",
             name,
         )
-    require(
-        text,
-        f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
-        name,
-    )
+    require(text, "git clean -ffdx", name)
+    require(text, f"-e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/", name)
+    if name in {
+        "order-resolution-private-deploy.yml",
+        "order-resolution-private-evidence.yml",
+    }:
+        require(text, f"-e {PRIVATE_PREFIX}/backend/.venv/", name)
     forbid(text, "pull_request:", name)
     forbid(text, "push:", name)
     forbid(text, "workflow_call:", name)
@@ -216,10 +218,13 @@ def validate() -> None:
         "Validate existing private dependencies and deploy app-only release",
         deploy_name,
     )
+    require(deploy, "collect_evidence:", deploy_name)
+    require(deploy, "Collect HITL, telemetry, and strict evaluation evidence", deploy_name)
+    require(deploy, "if: ${{ inputs.collect_evidence }}", deploy_name)
+    require(deploy, "make foundry-evidence", deploy_name)
     forbid(deploy, "refresh_hosted_agent:", deploy_name)
     forbid(deploy, "repair_postgres_admin_password:", deploy_name)
     forbid(deploy, "run_smoke:", deploy_name)
-    forbid(deploy, "run_evidence:", deploy_name)
     forbid(deploy, "make foundry-hosted-refresh", deploy_name)
     forbid(deploy, "azd ext install", deploy_name)
     forbid(deploy, "bootstrap_private_azd_environment.sh", deploy_name)
@@ -228,8 +233,6 @@ def validate() -> None:
     forbid(deploy, "make foundry-provision", deploy_name)
     forbid(deploy, "make foundry-project-connections", deploy_name)
     forbid(deploy, "make foundry-deploy", deploy_name)
-    forbid(deploy, "make foundry-evidence", deploy_name)
-    forbid(deploy, "\n  evidence:\n", deploy_name)
 
     package_validation = (WORKFLOWS / PACKAGE_VALIDATION_WORKFLOW).read_text()
     for value in (
@@ -277,7 +280,9 @@ def validate() -> None:
         "bootstrap_private_azd_environment.sh",
         "validate_private_runner_environment.sh",
         "make foundry-evidence",
-        f"git clean -ffdx -e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
+        "git clean -ffdx",
+        f"-e {PRIVATE_PREFIX}/infra/foundry-hosted/.azure/",
+        f"-e {PRIVATE_PREFIX}/backend/.venv/",
     ):
         require(evidence, value, EVIDENCE_WORKFLOW)
     require(evidence, "secrets.POSTGRES_ADMIN_PASSWORD", EVIDENCE_WORKFLOW)
@@ -328,9 +333,7 @@ def validate() -> None:
         (
             "$(MAKE) foundry-app-only-preflight",
             "$(MAKE) foundry-postgres-readiness",
-            "$(MAKE) foundry-app-deploy",
-            "$(MAKE) foundry-app-images-verify",
-            "$(MAKE) foundry-hosted-app-deploy",
+            "./scripts/foundry/deploy_private_app_release.sh",
         ),
         "foundry-app-only-release Make target",
     )

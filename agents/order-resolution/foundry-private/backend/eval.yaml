@@ -22,6 +22,7 @@ foundry:
     telemetry_file: .foundry/results/telemetry-verification.json
     max_traces: 10
     max_evidence_age_seconds: 21600
-    ingestion_delay_seconds: 300
+    readiness_retry_seconds: 15
+    readiness_timeout_seconds: 240
 options:
   pass_threshold: 0.8
