@@ -1,0 +1,71 @@
+name: Order Resolution Private PostgreSQL Lockdown
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: order-resolution-private-release
+  cancel-in-progress: false
+
+env:
+  AZD_ENVIRONMENT_NAME: ${{ vars.AZURE_ENV_NAME }}
+  TARGET_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  TARGET_FOUNDRY_PROJECT: ${{ vars.FOUNDRY_PROJECT_NAME }}
+  TARGET_POSTGRES_DATABASE: ${{ vars.POSTGRES_DATABASE_NAME }}
+  PRIVATE_RUNNER_LABEL: ${{ vars.PRIVATE_RUNNER_LABEL }}
+  PRIVATE_RUNNER_VM_NAME: ${{ vars.PRIVATE_RUNNER_VM_NAME }}
+
+jobs:
+  lockdown:
+    runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - name: Validate GitHub target variables against the canonical profile
+        run: agents/order-resolution/foundry-private/scripts/github/validate_github_profile_mirror.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clean workspace while retaining the private azd environment
+        run: git clean -ffdx -e agents/order-resolution/foundry-private/infra/foundry-hosted/.azure/
+      - name: Authenticate with the runner's federated Azure identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/setup-azd@v2
+      - name: Configure private azd environment
+        run: |
+          set -euo pipefail
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd config set auth.useAzCliAuth true
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.agents --no-prompt
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.connections --no-prompt
+      - name: Reconstruct private AZD environment
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: agents/order-resolution/foundry-private/scripts/foundry/bootstrap_private_azd_environment.sh
+      - name: Validate private runner target
+        run: agents/order-resolution/foundry-private/scripts/foundry/validate_private_runner_environment.sh
+      - name: Prove private database connectivity
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-connectivity-proof
+      - name: Disable PostgreSQL public access
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-postgres-lockdown
+      - name: Collect post-lockdown release evidence
+        working-directory: agents/order-resolution/foundry-private
+        run: make foundry-evidence

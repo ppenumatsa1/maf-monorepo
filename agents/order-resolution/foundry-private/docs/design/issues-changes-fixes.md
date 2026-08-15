@@ -1602,3 +1602,17 @@ units allocated. The canonical portable profile now requests capacity `30`,
 providing bounded headroom for the release gate without changing model,
 version, SKU, region, data source, evaluator, identity, network, database, or
 public-access contracts.
+
+Evidence run `31901774909` passed all three hosted HITL conversations,
+Application Insights correlation, exact-trace Task Completion and Coherence
+evaluation, and per-trace result coverage after the capacity correction.
+
+**Proof-gated lockdown workflow.** The evidence-only workflow intentionally
+cannot mutate PostgreSQL, and the app-only release workflow intentionally
+cannot run connectivity proof or lockdown. A dedicated serialized private
+runner workflow now reconstructs and validates the canonical AZD target, runs
+the source-controlled ACA and hosted-agent connectivity proof, consumes only
+that fresh generated proof to disable PostgreSQL public access, and then runs
+the complete evidence gate again. It references only the existing PostgreSQL
+administrator bootstrap secret and cannot provision, deploy applications, or
+reconcile Foundry connections.

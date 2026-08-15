@@ -12,12 +12,14 @@ DEPLOYMENT_WORKFLOWS = (
 )
 PACKAGE_VALIDATION_WORKFLOW = "order-resolution-private-package-validation.yml"
 EVIDENCE_WORKFLOW = "order-resolution-private-evidence.yml"
+LOCKDOWN_WORKFLOW = "order-resolution-private-lockdown.yml"
 RUNNER_START_WORKFLOW = "order-resolution-private-runner-start.yml"
 OBSERVABILITY_WORKFLOW = "order-resolution-private-observability.yml"
 SERIALIZED_PRIVATE_WORKFLOWS = (
     *DEPLOYMENT_WORKFLOWS,
     PACKAGE_VALIDATION_WORKFLOW,
     EVIDENCE_WORKFLOW,
+    LOCKDOWN_WORKFLOW,
     OBSERVABILITY_WORKFLOW,
 )
 PRIVATE_DISPATCH_WORKFLOWS = (
@@ -280,6 +282,46 @@ def validate() -> None:
         "make foundry-postgres-lockdown",
     ):
         forbid(evidence, forbidden_operation, EVIDENCE_WORKFLOW)
+
+    lockdown = (WORKFLOWS / LOCKDOWN_WORKFLOW).read_text()
+    for value in (
+        "workflow_dispatch:",
+        "self-hosted",
+        'runs-on: [self-hosted, "${{ vars.PRIVATE_RUNNER_LABEL }}"]',
+        PROFILE_MIRROR_SCRIPT,
+        "id-token: write",
+        "uses: azure/login@v2",
+        "uses: actions/setup-python@v5",
+        'python-version: "3.12"',
+        "bootstrap_private_azd_environment.sh",
+        "validate_private_runner_environment.sh",
+        "make foundry-connectivity-proof",
+        "make foundry-postgres-lockdown",
+        "make foundry-evidence",
+    ):
+        require(lockdown, value, LOCKDOWN_WORKFLOW)
+    require_order(
+        lockdown,
+        (
+            "make foundry-connectivity-proof",
+            "make foundry-postgres-lockdown",
+            "make foundry-evidence",
+        ),
+        LOCKDOWN_WORKFLOW,
+    )
+    require(lockdown, "secrets.POSTGRES_ADMIN_PASSWORD", LOCKDOWN_WORKFLOW)
+    if lockdown.count("secrets.") != 1:
+        raise AssertionError(
+            f"{LOCKDOWN_WORKFLOW} may reference only the PostgreSQL admin password secret."
+        )
+    for forbidden_operation in (
+        "azd provision",
+        "azd deploy",
+        "make foundry-app-only-release",
+        "make foundry-hosted-app-deploy",
+        "make foundry-project-connections",
+    ):
+        forbid(lockdown, forbidden_operation, LOCKDOWN_WORKFLOW)
 
     observability = (WORKFLOWS / OBSERVABILITY_WORKFLOW).read_text()
     for value in (
