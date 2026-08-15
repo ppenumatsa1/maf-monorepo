@@ -150,16 +150,32 @@ def test_trace_ingestion_wait_is_zero_after_minimum_delay() -> None:
     )
 
 
-def test_trace_criteria_use_conversation_messages_mapping() -> None:
-    criteria = _build_trace_testing_criteria(["coherence"], "gpt-4o-mini")
+def test_trace_criteria_use_trace_query_response_mapping() -> None:
+    criteria = _build_trace_testing_criteria(
+        ["task_completion", "coherence"],
+        "gpt-4o-mini",
+    )
 
     assert criteria == [
+        {
+            "type": "azure_ai_evaluator",
+            "name": "task_completion",
+            "evaluator_name": "builtin.task_completion",
+            "initialization_parameters": {"deployment_name": "gpt-4o-mini"},
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+            },
+        },
         {
             "type": "azure_ai_evaluator",
             "name": "coherence",
             "evaluator_name": "builtin.coherence",
             "initialization_parameters": {"model": "gpt-4o-mini"},
-            "data_mapping": {"messages": "{{item.messages}}"},
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+            },
         }
     ]
 

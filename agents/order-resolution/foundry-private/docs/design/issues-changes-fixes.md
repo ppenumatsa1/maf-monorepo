@@ -1581,3 +1581,13 @@ by the Foundry evaluation SDK guidance. This exposes each evaluator's service
 error and judge reason in protected workflow evidence instead of relying on
 aggregate counts. No runtime, infrastructure, identity, network, database, or
 public-access setting changed.
+
+Diagnostic evidence run `31900119990` exposed the exact service error and
+normalized source shape. Every selected item contains top-level `query` and
+`response`, while both evaluators reported `Missing inputs: data.messages`.
+The exact `azure_ai_traces` run is therefore turn-level, not the separate
+conversation-ID preview source. The runner now restores the documented trace
+`query`/`response` mapping and supplies Task Completion's required
+`deployment_name` initialization parameter; Coherence retains its `model`
+parameter. Per-item output persistence remains enabled for the next guarded
+run.

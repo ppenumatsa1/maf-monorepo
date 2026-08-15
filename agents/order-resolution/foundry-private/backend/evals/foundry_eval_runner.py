@@ -168,16 +168,36 @@ def _build_trace_testing_criteria(
     evaluators: list[str],
     judge_model: str,
 ) -> list[dict[str, object]]:
-    return [
-        {
-            "type": "azure_ai_evaluator",
-            "name": evaluator_name,
-            "evaluator_name": f"builtin.{evaluator_name}",
-            "initialization_parameters": {"model": judge_model},
-            "data_mapping": {"messages": "{{item.messages}}"},
-        }
-        for evaluator_name in evaluators
-    ]
+    criteria: list[dict[str, object]] = []
+    for evaluator_name in evaluators:
+        model_parameter = (
+            "deployment_name"
+            if evaluator_name
+            in {
+                "task_completion",
+                "task_adherence",
+                "intent_resolution",
+                "tool_call_accuracy",
+                "tool_selection",
+                "tool_input_accuracy",
+                "tool_output_utilization",
+                "tool_call_success",
+            }
+            else "model"
+        )
+        criteria.append(
+            {
+                "type": "azure_ai_evaluator",
+                "name": evaluator_name,
+                "evaluator_name": f"builtin.{evaluator_name}",
+                "initialization_parameters": {model_parameter: judge_model},
+                "data_mapping": {
+                    "query": "{{item.query}}",
+                    "response": "{{item.response}}",
+                },
+            }
+        )
+    return criteria
 
 
 def _build_exact_trace_data_source(
