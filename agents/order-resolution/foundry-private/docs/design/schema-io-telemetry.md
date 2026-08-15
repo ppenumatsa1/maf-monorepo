@@ -153,10 +153,10 @@ failed optional projection must not disrupt native SSE or durable workflow
 APIs. CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
 
 The private frontend integration and its typecheck, lint, build, and focused
-browser gates are implemented and locally validated: 128 tests passed, the
+browser gates are implemented and locally validated: 133 tests passed, the
 deterministic evaluation completed 10/10, seven workflow and four
 selected-thread E2E cases passed, and design review passed. The protected
-`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
+run `31911162673` deployment, hosted E2E, Foundry evaluation, and telemetry
 evidence are recorded in
-[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-feedback-optimization-2026-08-15).
 The local result remains distinct from that private-release evidence.

@@ -132,7 +132,7 @@ mutated.
   `ora-foundry-private` environment, and East US 2 target.
 - The Azure YAML schema is accepted by AZD packaging; the Bicep template
   compiles against PostgreSQL API `2024-08-01`.
-- Full backend lint/test validation passed with 132 tests.
+- Full backend lint/test validation passed with 133 tests.
 - Backend, frontend, and hosted-agent AZD packages all completed successfully.
 - The PostgreSQL cutover preview completed without any delete or replacement.
   PostgreSQL, its private endpoint, and all private endpoints were `Skip`;
@@ -150,7 +150,7 @@ mutated.
 | `make foundry-iac-validate` | Bicep compiled with PostgreSQL API `2024-08-01`; no PostgreSQL network-property warning remains. |
 | Focused database/IaC pytest selection | 7 passed. |
 | `validate_private_runner_workflows.py` | Passed private workflow static contracts. |
-| `make test` | Ruff passed and 132 backend tests passed. |
+| `make test` | Ruff passed and 133 backend tests passed. |
 | `make foundry-package` | Backend, frontend, and hosted-agent packages passed. |
 | Azure profile/authentication checks | Passed for the selected subscription, resource group, environment, and East US 2 location. |
 | Azure Policy validation | Existing Entra-only PostgreSQL audit recorded as a separate passwordless-authentication follow-up. |
@@ -162,30 +162,31 @@ mutated.
 | Stage | Workflow | Result |
 | --- | --- | --- |
 | Private infrastructure, preview, and PostgreSQL readiness | [`31906517820`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31906517820) | Passed |
-| Final app-only deployment, commit `6e83a97` | [`31908682961`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31908682961) | Passed; hosted agent version 4 active |
-| Final HITL, telemetry, and strict evaluation | [`31908858225`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31908858225) | Passed; 3/3 traces passed |
+| Optimized app-only deployment and chained evidence, commit `a39ad24` | [`31911162673`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31911162673) | Passed; hosted agent version 6 active and 3/3 traces passed |
 
-The final telemetry gate correlated 122 Application Insights rows and four
+The final telemetry gate correlated 204 Application Insights rows and four
 eligible Foundry evaluation spans across all three fresh hosted E2E
 conversations. The strict Foundry result was `passed=3`, `failed=0`,
-`errored=0`, `skipped=0`.
+`errored=0`, `skipped=0`, with evaluator readiness on the first attempt.
 
 ## Measured delivery timing
 
 | Flow | Start | Telemetry ready | Elapsed |
 | --- | --- | --- | ---: |
 | Infrastructure/IaC to telemetry | Provision run `31906517820` at `20:22:38Z` | Evidence run `31906891692` at `20:36:15Z` | **13m 37s** |
-| App-only to telemetry | Deployment run `31908682961` at `21:10:09Z` | Evidence run `31908858225` at `21:18:52Z` | **8m 43s** |
+| App-only to telemetry, before optimization | Deployment run `31908682961` at `21:10:09Z` | Evidence run `31908858225` at `21:18:52Z` | **8m 43s** |
+| App-only to telemetry, optimized steady state | Chained run `31911162673` at `22:04:17Z` | Same run at `22:11:45Z` | **7m 29s** |
 
 The infrastructure measurement includes the workflow handoffs: 3m36s for
 preview/provision/readiness, 3m37s for app deployment, 5m18s from evidence
-start to telemetry readiness, and 1m06s of dispatch gaps. The final app-only
-measurement includes a 3m33s deployment, a 10s handoff, and 5m00s from
-evidence start to telemetry readiness.
+start to telemetry readiness, and 1m06s of dispatch gaps.
 
-Telemetry readiness intentionally excludes Foundry evaluator completion. In
-the final strict run, exact-trace evaluation finished at `21:22:03Z`, making
-app-only deployment to complete release evidence **11m 54s**.
+The optimized app-only workflow preserves a requirements-hash-validated Python
+environment, overlaps the hosted-agent image build with ACA deployment,
+continues directly into evidence, and submits evaluation as soon as Foundry
+can read the exact traces. Telemetry improved by **1m14s** (14%). Complete
+strict evidence improved from **11m54s** to **7m48s**, a **4m06s** (34%)
+reduction.
 
 ## Role Assignment Verification
 

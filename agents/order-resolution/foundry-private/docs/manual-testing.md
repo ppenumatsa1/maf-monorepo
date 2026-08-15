@@ -78,11 +78,10 @@ includes:
 5. Make an optional projection unavailable or malformed and confirm the native
    SSE timeline, durable history, and HITL controls remain available.
 
-The recorded local evidence is 127 passing tests, a 10/10 deterministic
+The recorded local evidence is 133 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. These results do not establish a hosted private release:
-the protected `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation,
-and telemetry evidence have not yet run for this implementation.
+passing design review. Protected run `31911162673` provides the current hosted
+deployment, E2E, telemetry, and strict 3/3 Foundry evaluation evidence.
 
 ## ORD-1001 to ORD-1010 Cross-Use-Case Matrix
 

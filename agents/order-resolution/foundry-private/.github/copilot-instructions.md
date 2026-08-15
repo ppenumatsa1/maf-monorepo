@@ -50,7 +50,7 @@ Azure-services firewall rule is permitted, and the VNet runner must pass the
 private readiness gate before application deployment.
 
 Private provision, reconciliation, app-release, and observability workflows
-must serialize on the same release group and run only on `foundry-private-v2`.
+must serialize on the same release group and run only on `foundry-private-ora`.
 Classify the operation first: a routine app-only release changes only existing
 ACA revisions and the existing hosted agent, then validates existing
 dependencies. It must not run full Bicep, reconcile shared resources, or change
@@ -58,6 +58,10 @@ PostgreSQL access. Bootstrap/reconciliation is a separate full-Bicep
 operation. Invoking a validated workflow starts it; deployment
 workflows have no confirmation input, environment approval, or owner approval
 gate.
+The routine deploy workflow continues into evidence by default. Preserve the
+requirements-hash virtual-environment cache, concurrent hosted-image build,
+and adaptive zero-row evaluator-readiness retry. Do not reintroduce a fixed
+trace-age sleep or retry real evaluator/service failures.
 Do not add optional refresh, administrator-password, public-access, or
 firewall bypasses to any path.
 
@@ -201,9 +205,9 @@ When behavior changes, update these docs in the same PR:
 - `agents.md`
 
 The selected-thread frontend, strict TypeScript/lint scripts, and focused
-browser coverage are implemented and locally validated: 128 tests passed, the
+browser coverage are implemented and locally validated: 133 tests passed, the
 deterministic evaluation is 10/10, seven workflow and four selected-thread E2E
-cases passed, and design review passed. Protected-release evidence from
-`vm-maffnd-runner` is recorded in
-`docs/design/issues-changes-fixes.md`; do not infer future release results
-from local evidence alone.
+cases passed, and design review passed. The current backend suite has 133
+passing tests. Protected run `31911162673` activated hosted-agent version 6
+and passed telemetry plus strict 3/3 evaluation; future releases still require
+fresh evidence.

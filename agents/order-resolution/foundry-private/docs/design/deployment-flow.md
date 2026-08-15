@@ -37,7 +37,7 @@ The flow is grouped into four phases and 16 clear stages.
 
 | Step | Stage | Outcome |
 | ---: | --- | --- |
-| 10 | Application packaging | Builds backend, frontend, and hosted-agent images and pushes them to private ACR. |
+| 10 | Application packaging | Builds backend and frontend artifacts while the hosted-agent image builds concurrently, then pushes all images to private ACR. |
 | 11 | ACA deployment | Deploys backend and frontend Container Apps. The backend receives the runtime PostgreSQL URL through an ACA secret and runs with `DB_SCHEMA_MANAGED_EXTERNALLY=true`. |
 | 12 | Hosted-agent deployment | Creates and activates the Foundry hosted-agent version using the private ACR image and runtime-secret connection. |
 | 13 | Health, image, and smoke verification | Confirms ready ACA revisions, HTTP 200 health, intended ACR images, active hosted-agent version, and a valid Responses-protocol smoke response. |
@@ -47,7 +47,7 @@ The flow is grouped into four phases and 16 clear stages.
 | Step | Stage | Outcome |
 | ---: | --- | --- |
 | 14 | HITL E2E | Runs low-risk `ORD-1001`, high-risk `ORD-1009`, and damaged-item scenarios, including checkpoint pause/resume and approval. |
-| 15 | Telemetry and evaluation | Correlates all three conversations in Application Insights to exact eligible Foundry traces, then runs Task Completion and Coherence evaluators against those traces. |
+| 15 | Telemetry and evaluation | Correlates all three conversations in Application Insights to exact eligible Foundry traces, then immediately probes Foundry evaluator readiness. Only empty, error-free ingestion misses are retried; real evaluator failures stop the release. |
 | 16 | Final evidence | Records target, hosted-agent version, E2E timestamps, telemetry, evaluation, and final private PostgreSQL state in one release-window report. |
 
 ## Workflow mapping
@@ -56,8 +56,8 @@ The flow is grouped into four phases and 16 clear stages.
 | --- | --- | --- |
 | `order-resolution-private-validation.yml` | 1-2 | Static validation commands |
 | `order-resolution-private-provision.yml` | 3-9 | `make foundry-provision`, `make foundry-postgres-bootstrap`, `make foundry-postgres-readiness` |
-| `order-resolution-private-deploy.yml` | 8, 10-13 | `make foundry-app-only-release` |
-| `order-resolution-private-evidence.yml` | 14-16 | `make foundry-evidence` |
+| `order-resolution-private-deploy.yml` | 8, 10-16 | `make foundry-app-only-release`, then `make foundry-evidence` by default |
+| `order-resolution-private-evidence.yml` | 14-16 | Standalone evidence retry through `make foundry-evidence` |
 
 Authenticated workflows share the `order-resolution-private-release`
 concurrency group so provisioning, deployment, and evidence execution do not
@@ -82,9 +82,10 @@ Do not reconcile infrastructure:
 
 1. Validate the existing target.
 2. Re-run PostgreSQL readiness.
-3. Build and deploy backend, frontend, and hosted-agent artifacts.
+3. Build the hosted image concurrently with backend/frontend deployment.
 4. Verify health, images, and smoke.
-5. Run HITL E2E, telemetry, evaluation, and final evidence.
+5. Continue in the same workflow to HITL E2E, telemetry, adaptive evaluation,
+   and final evidence.
 
 ## PostgreSQL security boundary
 
@@ -113,13 +114,16 @@ Application Insights correlation gate passed.
 | Flow | Runs | Time to telemetry |
 | --- | --- | ---: |
 | Infrastructure/IaC to telemetry | Provision `31906517820`, deploy `31906717310`, evidence `31906891692` | **13m 37s** |
-| App-only to telemetry | Deploy `31908682961`, evidence `31908858225` | **8m 43s** |
-| App-only to complete strict evaluation | Deploy `31908682961`, evidence `31908858225` | **11m 54s** |
+| App-only to telemetry, before | Deploy `31908682961`, evidence `31908858225` | **8m 43s** |
+| App-only to telemetry, optimized | Chained deploy/evidence `31911162673` | **7m 29s** |
+| App-only to complete strict evaluation, before | Deploy `31908682961`, evidence `31908858225` | **11m 54s** |
+| App-only to complete strict evaluation, optimized | Chained deploy/evidence `31911162673` | **7m 48s** |
 
-The largest fixed delay after E2E is telemetry ingestion. The final evidence
-run waited 172 seconds before submitting exact-trace evaluation. Automating
-workflow handoffs removes about one minute from the measured infrastructure
-path without weakening a gate.
+The optimized steady-state run reused the requirements-hash-validated backend
+environment, reused the concurrently built hosted image, and reached strict
+3/3 evaluation on the first evaluator-readiness attempt. Telemetry remains the
+largest variable wait; no security, HITL, trace-correlation, or evaluator gate
+was removed.
 
 ## Stop conditions
 

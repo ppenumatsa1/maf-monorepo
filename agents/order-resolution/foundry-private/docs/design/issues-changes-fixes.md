@@ -4,6 +4,39 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## App-only release feedback optimization (2026-08-15)
+
+**Issue.** The measured app-only path took 8m43s to telemetry and 11m54s to
+strict evaluation. Each evidence workflow could rebuild the Python
+environment, hosted image construction waited behind ACA deployment, deploy
+and evidence used separate workflow dispatches, and evaluation always waited
+for a fixed five-minute trace age even after telemetry correlation passed.
+
+**Fix.**
+
+- Preserve the backend virtual environment on the private runner and invalidate
+  it from the requirements-file hash.
+- Build the hosted-agent image concurrently with backend/frontend deployment,
+  then reuse that exact image for version activation.
+- Continue from app deployment directly into evidence in the same serialized
+  workflow. The standalone evidence workflow remains available for retries.
+- Submit exact-trace evaluation immediately after telemetry correlation.
+  Retry only zero-row, error-free ingestion misses within a bounded window;
+  evaluator failures and service errors remain fail-closed.
+
+**Verification.** Commit `a39ad24` passed 133 backend tests, Ruff, workflow
+contracts, portability checks, Bicep compilation, and AZD packaging. The first
+optimized run `31910734129` initialized the cache and passed 3/3. The
+steady-state run
+[`31911162673`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31911162673)
+reused the cache, activated hosted-agent version 6, correlated 204 telemetry
+rows and four eligible spans, and passed 3/3 on evaluator-readiness attempt 1.
+
+| Measurement | Before | After | Difference |
+| --- | ---: | ---: | ---: |
+| App-only to telemetry | 8m43s | 7m29s | **1m14s faster (14%)** |
+| App-only to strict evaluation | 11m54s | 7m48s | **4m06s faster (34%)** |
+
 ## Private-only PostgreSQL cutover and evidence enforcement (2026-08-15)
 
 **Issue.** The private lane still modeled PostgreSQL as a staged migration:

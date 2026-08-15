@@ -56,10 +56,10 @@ Keep coverage for:
 
 ## Verification
 
-The selected-thread implementation has locally passed 128 tests, a 10/10
+The selected-thread implementation has locally passed 133 tests, a 10/10
 deterministic evaluation, seven workflow E2E cases, four selected-thread E2E
 cases, and design review. Retain `make test-e2e`, focused selected-thread
 Playwright coverage, and `make docker-test` where applicable for future
 changes. Local checks do not substitute for protected private-release
-evidence: the `vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation,
-and telemetry verification remain outstanding.
+evidence. Run `31911162673` is the current hosted deployment, E2E, telemetry,
+and strict 3/3 Foundry evaluation authority.

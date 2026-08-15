@@ -17,10 +17,10 @@ This model is Pareto-first: start with the minimum enforceable contract and expa
 
 Hosted validation and deployment are private-lane-first in the current operating posture:
 
-- **Default hosted lane:** private Foundry (`foundry-private-env` / private runner path).
+- **Default hosted lane:** private Foundry (`ora-foundry-private` / private runner path).
 - **Deployment control plane:** PR/static validation is credential-free.
   Provision, deploy, package, evidence, and observability workflows run only
-  on `self-hosted,foundry-private-v2` using repository-scoped Azure OIDC
+  on `self-hosted,foundry-private-ora` using repository-scoped Azure OIDC
   variables; no Azure or database secret is stored in the workflow. Invoking a
   validated workflow starts it: no confirmation input, environment approval,
   or owner approval gate is permitted.
@@ -45,7 +45,7 @@ Hosted validation and deployment are private-lane-first in the current operating
   It produces no authorization artifact and must pass before app deployment.
 - **Release serialization:** provision/reconciliation, app-release, and
   observability workflows share `order-resolution-private-release` concurrency
-  and execute only on `foundry-private-v2`. Each dispatch must declare one
+  and execute only on `foundry-private-ora`. Each dispatch must declare one
   release class; concurrency does not make the classes interchangeable.
   Optional agent refresh, password repair, public-access, firewall, and
   administrator-user bypasses are not valid release paths.
@@ -102,7 +102,7 @@ not a new workflow, deployment route, or browser-to-private-data-plane path:
 
 The private frontend implementation and its strict TypeScript/lint/build
 scripts and focused selected-thread browser tests are complete and locally
-validated: 128 tests passed, the deterministic evaluation completed 10/10,
+validated: 133 tests passed, the deterministic evaluation completed 10/10,
 seven workflow and four selected-thread E2E cases passed, and design review
 passed. Protected deployment, hosted E2E, Foundry evaluation, and telemetry
 verification are recorded in
@@ -179,6 +179,13 @@ it does not generate a second evaluator traffic pass. Release-automation
 changes use `make test` as their only local private validation; the hosted
 evaluation is collected only in the private release sequence.
 
+The routine app-only workflow chains deployment and evidence in one serialized
+job. It preserves the backend environment when its requirements hash matches,
+builds the hosted image concurrently with ACA deployment, and probes Foundry
+evaluation immediately after telemetry correlation. Only zero-row,
+error-free ingestion misses are retried; evaluator and service failures stop
+the release.
+
 ## Operationalization (automated)
 
 The CI workflow (`.github/workflows/ci.yml`) enforces this model in two lightweight stages:
@@ -211,9 +218,10 @@ For each release-impacting change, capture:
 
 ## Evidence record
 
-The local selected-thread evidence is 128 passing tests, a 10/10 deterministic
+The local selected-thread evidence is 133 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. The protected `vm-maffnd-runner` deployment, hosted E2E,
-Foundry evaluation, and telemetry evidence are recorded in
-[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+passing design review. Protected run `31911162673` on the
+`foundry-private-ora` runner activated hosted-agent version 6 and passed HITL
+E2E, telemetry, and strict 3/3 evaluation. Details are recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-feedback-optimization-2026-08-15).
 Do not infer a future private release from local evidence alone.

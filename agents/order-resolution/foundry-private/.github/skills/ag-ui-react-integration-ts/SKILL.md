@@ -46,7 +46,7 @@ operator behavior that depends on workflow events in the private Foundry lane.
 ## Verification
 
 The selected-thread UI and its local frontend gates are implemented. Recorded
-local evidence is 127 passing tests, a 10/10 deterministic evaluation, seven
+local evidence is 133 passing tests, a 10/10 deterministic evaluation, seven
 workflow E2E cases, four selected-thread E2E cases, and a passing design
 review. Continue to require:
 
@@ -57,6 +57,6 @@ review. Continue to require:
 4. a failure-path check proving native SSE and durable history stay usable when
    the optional projection is unavailable.
 
-These local results are not protected-release evidence. The
-`vm-maffnd-runner` deployment, hosted E2E, Foundry evaluation, and telemetry
-verification remain outstanding for this implementation.
+These local results remain distinct from protected-release evidence. Run
+`31911162673` is the current hosted deployment, E2E, telemetry, and strict 3/3
+Foundry evaluation authority.

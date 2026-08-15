@@ -14,6 +14,12 @@ Current hosted-validation note (2026-07-15):
 - `skills/design-review-skill.sh`: deterministic design-review validation entry point used by `/fleet` skill.
 - `skills/deployment-mode-router.sh`: routes quick/full validation and app-only/full deployment based on changed files.
 - `skills/operating-model-enforcement.sh`: enforces minimum operating-model guardrails for HITL and hosted runtime/deploy surface changes.
+- `foundry/ensure_backend_venv.sh`: reuses the private runner's backend virtual
+  environment when the requirements hash matches and rebuilds it when inputs
+  change.
+- `foundry/deploy_private_app_release.sh`: overlaps the hosted-agent image build
+  with backend/frontend ACA deployment and reuses the validated prebuilt image
+  for hosted-agent activation.
 
 ## Run Playwright locally
 

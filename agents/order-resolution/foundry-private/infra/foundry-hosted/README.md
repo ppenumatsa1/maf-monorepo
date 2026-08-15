@@ -8,7 +8,7 @@ Primary target region for this path is **eastus2**.
 
 This branch keeps one hosted deployment lane:
 
-1. `foundry-private-env` (baseline/private): private networking, private endpoints, and private-runner execution path.
+1. `ora-foundry-private` (baseline/private): private networking, private endpoints, and private-runner execution path.
 
 ## What this stack includes
 
@@ -47,24 +47,25 @@ with no confirmation input, environment approval, or owner approval gate. They
 share the
 `order-resolution-private-release` concurrency group with the observability
 workflow, and run only on
-`self-hosted,foundry-private-v2` with Azure OIDC. They use the runner's retained
+`self-hosted,foundry-private-ora` with Azure OIDC. They use the runner's retained
 selected AZD environment, so do not recreate that environment or place its
 database credentials in GitHub workflow configuration.
 Before the first dispatch, configure repository-scoped nonsecret OIDC and
 target variables with `scripts/github/bootstrap_foundry_github_config.sh` and
 the `POSTGRES_ADMIN_PASSWORD` repository secret.
 
-The release target executes this fixed sequence:
+The bootstrap/reconciliation release executes this fixed sequence:
 
 1. `make test` and private release preflight;
 2. non-mutating provisioning preview, then private core provisioning without
    Foundry connection secrets;
 3. project-identity propagation followed by staged Foundry connection
    provisioning;
-4. backend then frontend ACA deployment;
-5. hosted-agent deployment from the current source;
+4. hosted-image construction in parallel with backend/frontend ACA deployment;
+5. hosted-agent activation from the validated prebuilt image;
 6. private PostgreSQL readiness before application activation;
-7. hosted E2E, Foundry evaluation, and correlated telemetry evidence.
+7. hosted E2E, correlated telemetry, and strict Foundry evaluation in the same
+   serialized workflow.
 
 ```bash
 make foundry-provision-preview  # no Azure resource changes
@@ -76,6 +77,10 @@ creation, and the VNet-runner readiness gate prevents application deployment
 against an invalid endpoint, DNS mapping, schema, or runtime role. No path
 exposes a password-repair, public-access, firewall, or administrator-user
 workaround.
+
+Routine app-only releases do not run full Bicep. They preserve the
+requirements-hash-validated backend environment and chain evidence by default.
+The standalone evidence workflow remains available for retries.
 
 ### Staged Foundry project connections
 
@@ -124,7 +129,7 @@ RUNNER_SSH_PUBKEY_PATH=/secure/path/id_ed25519.pub make foundry-access-path
 ```
 
 The target fails before any Azure command when the key path is absent, missing,
-or empty. It selects `foundry-private-env`, runs private-release preflight, and
+or empty. It selects `ora-foundry-private`, runs private-release preflight, and
 sets the private runner/VM parameters in the retained AZD environment before
 invoking `azd provision`. It also runs the default helper, so the required
 Foundry-account restore flag is present. This uses the existing
@@ -147,14 +152,14 @@ Required environment variables include:
 
 Optional defaults:
 
-- `RUNNER_LABEL` (default and required release target: `foundry-private-v2`)
+- `RUNNER_LABEL` (default and required release target: `foundry-private-ora`)
 - `RUNNER_VERSION` (default: `2.328.0`)
 
 The private runner is the only GitHub Actions host permitted to run the
 provision/deployment lane and remains an in-VNet operator host for the local
 release flow. Runner recovery is an explicit management-plane prerequisite,
 not a release deployment path. Do not dispatch provision or deploy until the
-runner readiness check reports `foundry-private-v2` online.
+runner readiness check reports `foundry-private-ora` online.
 
 ## Runner readiness check
 
@@ -162,7 +167,7 @@ Verify GitHub sees an online runner for the required label:
 
 ```bash
 REPO=ppenumatsa1/maf-order-resolution-agent \
-RUNNER_LABEL=foundry-private-v2 \
+RUNNER_LABEL=foundry-private-ora \
 ./scripts/github/verify_foundry_runner_ready.sh
 ```
 
@@ -174,7 +179,7 @@ Run this on the active private runner VM via SSH/Bastion:
 cd /path/to/repo
 export GH_RUNNER_PAT=<github_pat_with_repo_workflow_scope>
 export REPO=ppenumatsa1/maf-order-resolution-agent
-export RUNNER_LABEL=foundry-private-v2
+export RUNNER_LABEL=foundry-private-ora
 
 ./scripts/github/bootstrap_vm_runner_host.sh
 ./scripts/github/register_vm_runner.sh
@@ -196,7 +201,7 @@ gh api repos/ppenumatsa1/maf-order-resolution-agent/actions/runners \
   - Use direct SSH/Bastion for bootstrap/register actions.
 - Runner label mismatch:
   - Ensure the active runner is configured with
-    `self-hosted,foundry-private-v2`.
+    `self-hosted,foundry-private-ora`.
 - Missing tools on runner host:
   - Re-run `./scripts/github/bootstrap_vm_runner_host.sh`.
 
@@ -217,5 +222,11 @@ Repository deterministic gates remain:
 For this private release automation change, do not run local evaluations.
 Hosted E2E, enforced Foundry evaluation, and telemetry validation are release
 evidence collected only from the private runner.
+
+The routine app-only workflow preserves a requirements-hash-validated backend
+environment, builds the hosted image concurrently with ACA deployment, and
+continues directly into evidence. The standalone evidence workflow is reserved
+for retries. Foundry readiness is adaptive: only a zero-row, error-free
+ingestion miss is retried; evaluator and service failures remain terminal.
 
 Delivery ownership, required gate mapping, and evidence handoff expectations are documented in `docs/design/engineering-operating-model.md`.

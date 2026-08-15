@@ -145,11 +145,12 @@ existing** workflow thread:
 
 The private frontend implementation and corresponding strict
 TypeScript/lint/build and focused selected-thread browser gates are complete
-and locally validated: 128 tests passed, the deterministic evaluation completed
+and locally validated: 133 tests passed, the deterministic evaluation completed
 10/10, seven workflow and four selected-thread E2E cases passed, and design
-review passed. The protected app-only deployment and its hosted smoke, E2E,
-telemetry, and enforced Foundry evaluation are recorded separately in
-[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+review passed. Protected run `31911162673` provides the current app-only
+deployment, hosted smoke, E2E, telemetry, and strict 3/3 Foundry evaluation
+evidence, recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-feedback-optimization-2026-08-15).
 
 ## Process View
 
@@ -474,7 +475,7 @@ The supported private execution surfaces are:
 
 GitHub Actions validation remains credential-free. Protected private provision,
 reconciliation, application-release, and observability workflows serialize on
-`order-resolution-private-release` and run only on `foundry-private-v2` in the
+`order-resolution-private-release` and run only on `foundry-private-ora` in the
 retained private environment. The following boundaries preserve the distinction
 between application delivery and shared infrastructure authority:
 

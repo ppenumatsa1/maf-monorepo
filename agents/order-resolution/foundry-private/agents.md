@@ -28,13 +28,16 @@ This file describes expected behavior for coding agents working in this reposito
   readiness gate for public-access state, private endpoint, DNS, schema, and
   least-privilege runtime permissions.
 - Private provision, reconciliation, app-release, and observability workflows
-  share one serialized release group on `foundry-private-v2`. Classify the
+  share one serialized release group on `foundry-private-ora`. Classify the
   operation before dispatch: a routine app-only release changes only existing
   ACA revisions and the existing hosted agent, and validates existing
   dependencies; it must not invoke full Bicep or change PostgreSQL access.
   Invoking a validated workflow starts it; deployment workflows have no
   confirmation input, environment approval, or owner approval gate.
   Bootstrap/reconciliation is a separate full-Bicep operation.
+  The app-only workflow preserves the requirements-hash-validated backend
+  environment, overlaps hosted-image construction with ACA deployment, and
+  continues into HITL E2E, telemetry, and strict evaluation by default.
   Do not add optional
   agent-refresh, administrator-password, public-access, or firewall bypasses.
 - Preview run `31198356080` found shared authoritative drift in the VNet and
@@ -181,8 +184,8 @@ When architecture or execution policies change, update these instruction files i
 
 The selected-thread implementation includes strict type checking, frontend
 build/lint, focused Playwright coverage, and the retained `make test-e2e`
-suite. Recorded local evidence is 128 passing tests, a 10/10 deterministic
+suite. Recorded local evidence is 133 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. The protected release evidence is recorded in
-`docs/design/issues-changes-fixes.md`; do not infer future release results
-from local evidence alone.
+passing design review. Protected run `31911162673` activated hosted-agent
+version 6 and passed telemetry plus strict 3/3 evaluation. Future releases
+still require fresh evidence.

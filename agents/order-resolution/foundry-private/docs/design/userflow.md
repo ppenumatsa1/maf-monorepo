@@ -78,11 +78,11 @@ comments, credentials, or secrets from these views. CopilotKit in this design
 means `@copilotkit/react-core`, not the GitHub Copilot SDK.
 
 The private frontend implementation and its strict typecheck, lint, build, and
-focused Playwright coverage are complete and locally validated: 128 tests
+focused Playwright coverage are complete and locally validated: 133 tests
 passed, the deterministic evaluation completed 10/10, seven workflow and four
 selected-thread E2E cases passed, and design review passed. The protected
-`vm-maffnd-runner` release evidence is recorded in
-[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07);
+run `31911162673` release evidence is recorded in
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-feedback-optimization-2026-08-15);
 the local gates remain separate from that hosted proof.
 
 ## End-to-End Happy Path (UI -> API -> Backend -> Postgres)

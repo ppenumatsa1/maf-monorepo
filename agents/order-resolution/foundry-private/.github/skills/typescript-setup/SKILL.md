@@ -37,9 +37,9 @@ components, configuration, or selected-thread tests.
 ## Verification
 
 The private frontend now provides the modern strict TypeScript/frontend gates.
-The selected-thread implementation locally passed 128 tests, a 10/10
+The selected-thread implementation locally passed 133 tests, a 10/10
 deterministic evaluation, seven workflow E2E cases, four selected-thread E2E
 cases, and design review. Retain strict type checking, `npm run build`,
 `npm run lint`, and focused selected-thread Playwright coverage for future
-changes. The protected `vm-maffnd-runner` deployment, hosted E2E, Foundry
-evaluation, and telemetry verification remain outstanding.
+changes. Protected run `31911162673` provides the current deployment, hosted
+E2E, telemetry, and strict 3/3 Foundry evaluation evidence.

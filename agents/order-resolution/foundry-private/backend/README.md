@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Local FastAPI host | Implemented | Runs the shared MAF workflow and exposes stable API/SSE/HITL contracts. |
 | Foundry hosted agent | Implemented (private VNet lane retained) | `backend/foundry/main.py` hosts the same workflow with Responses protocol in the ACR-built `Dockerfile.hosted` image. |
-| Private ACA wrapper | Implemented locally; private-release validation pending | Internal FastAPI Container App uses managed identity to dispatch to private Foundry Responses and tails persisted workflow events for SSE. |
+| Private ACA wrapper | Implemented and validated in the private release | Internal FastAPI Container App uses managed identity to dispatch to private Foundry Responses and tails persisted workflow events for SSE. |
 
 There is one business workflow path rooted at `backend/app/maf/workflows/order_resolution.py`,
 with modular internals in `backend/app/maf/prompts/`, `agents/`, `tools/`, `executors/`,
@@ -90,8 +90,15 @@ Evaluation:
   low-risk, high-risk HITL, and damaged-item HITL conversations.
 - `make eval-foundry` judges those exact Foundry traces without reinvoking the
   agent and writes `backend/.foundry/results/foundry-report.json`. It is
-  report-only by default; the private release workflow enforces completion and
-  zero errored items.
+  report-only by default; the private release workflow requires every selected
+  trace to pass and rejects failed, errored, skipped, or missing results.
+- Evaluation starts immediately after telemetry correlation. A bounded retry
+  applies only when Foundry returns zero rows without a service error;
+  evaluator failures and service/authorization errors fail immediately.
+
+Protected run `31911162673` activated hosted-agent version 6, correlated 204
+telemetry rows and four eligible spans, and passed all three selected traces on
+the first evaluator-readiness attempt.
 
 ## APIs
 

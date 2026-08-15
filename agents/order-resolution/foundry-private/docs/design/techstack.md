@@ -75,10 +75,10 @@ grounded in current Microsoft Learn Agent Framework guidance and the installed
 `agent-framework-azure-ai` or `AzureAIAgentsProvider`.
 
 The selected-thread UI's strict typecheck, lint, build, and focused Playwright
-gates are implemented and locally validated: 128 tests passed, the
+gates are implemented and locally validated: 133 tests passed, the
 deterministic evaluation completed 10/10, seven workflow and four
 selected-thread E2E cases passed, and design review passed. The protected
-`vm-maffnd-runner` app-only deployment, hosted E2E, Foundry evaluation, and
+run `31911162673` app-only deployment, hosted E2E, Foundry evaluation, and
 telemetry evidence are recorded in
-[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-evidence-2026-08-07).
+[issues-changes-fixes.md](issues-changes-fixes.md#app-only-release-feedback-optimization-2026-08-15).
 Those results are distinct from the local frontend gates.

@@ -75,11 +75,9 @@ workflow path, or checkpoint-keyed HITL:
 
 The private frontend integration, strict TypeScript/lint scripts, and focused
 selected-thread browser coverage are implemented and locally validated. The
-recorded local evidence is 127 passing tests, a 10/10 deterministic evaluation,
-seven workflow E2E cases, four selected-thread E2E cases, and a passing design
-review. This local evidence is not a protected private release: deployment on
-`vm-maffnd-runner`, hosted E2E, Foundry evaluation, and telemetry evidence have
-not yet been run for this implementation.
+current backend suite has 133 passing tests. Protected run `31911162673`
+deployed hosted-agent version 6 and passed all three HITL scenarios, telemetry
+correlation, and strict 3/3 Foundry evaluation.
 
 ## Historical Foundry trace evidence (2026-07-27)
 
@@ -135,7 +133,7 @@ any dependency is healthy.
 PR validation remains credential-free. Protected dispatch workflows
 `order-resolution-private-provision.yml` and
 `order-resolution-private-deploy.yml` run only on the
-`foundry-private-v2` self-hosted runner, using repository-scoped Azure OIDC
+`foundry-private-ora` self-hosted runner, using repository-scoped Azure OIDC
 variables and the runner's retained private AZD environment. Invoking a
 validated workflow starts it: no confirmation input, environment approval, or
 owner approval gate is allowed. Provision,
@@ -143,6 +141,10 @@ reconciliation, application release, and observability dispatches share one
 release concurrency group. A routine app-only release is restricted to the
 existing ACA revisions and hosted agent and validates its existing
 dependencies. It must not accept or repair the previewed shared-resource drift.
+By default, the deploy workflow continues directly into HITL E2E, telemetry,
+and strict exact-trace evaluation. It preserves a requirements-hash-validated
+backend virtual environment and overlaps hosted-image construction with ACA
+deployment. The standalone evidence workflow remains the retry path.
 Bootstrap/reconciliation remains a separate full-Bicep operation. PostgreSQL
 is private-only from creation, and app-only deployment runs the read-only
 private readiness gate before activating artifacts. No operation may use
@@ -190,18 +192,18 @@ RUNNER_SSH_PUBKEY_PATH=/secure/path/id_ed25519.pub make foundry-access-path
 ```
 
 The target rejects an absent, missing, or empty public-key file. It selects the
-retained `foundry-private-env`, validates its existing private target, enables
+retained `ora-foundry-private` environment, validates its existing private target, enables
 the existing `main.bicep` private-runner/VM parameters, and provisions that
 same resource group; it does not use a separate access resource group or
 public ACR/firewall exception. Connect to the recreated VM through Bastion,
 then run `scripts/github/bootstrap_vm_runner_host.sh` and
 `scripts/github/register_vm_runner.sh`. Registration defaults to the required
-`foundry-private-v2` label. Only after GitHub reports that label online may a
+`foundry-private-ora` label. Only after GitHub reports that label online may a
 private release be dispatched.
 
 If the source-controlled VM and registration remain intact but the VM is
 deallocated, dispatch **Order Resolution Private Runner Start**. It starts
-immediately and starts only `vm-maffnd-runner` through the existing
+immediately and starts only `maforapriv-runner-4u2gr5q5plofy` through the existing
 repository-scoped OIDC identity, then waits for `PowerState/running`. The
 subsequent protected release job is the GitHub registration readiness proof;
 the workflow token intentionally lacks runner-administration permission.
@@ -279,11 +281,10 @@ Baseline behavior checks:
 ### Selected-thread frontend local evidence
 
 The implemented selected-thread UI passed its strict TypeScript/frontend gates,
-128 tests, a 10/10 deterministic evaluation, seven workflow E2E cases, four
+133 tests, a 10/10 deterministic evaluation, seven workflow E2E cases, four
 selected-thread E2E cases, and the design-review gate. This is local evidence
-only. The protected `vm-maffnd-runner` deployment, hosted E2E, Foundry
-evaluation, and telemetry evidence remain required before a private release is
-claimed.
+only. Protected run `31911162673` is the current deployment, hosted E2E,
+telemetry, and strict evaluation authority.
 
 ## Deploy to Foundry (Hosted Agent)
 
