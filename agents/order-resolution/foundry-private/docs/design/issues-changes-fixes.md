@@ -1506,3 +1506,8 @@ selected AZD environment and its secure runtime values, while bootstrap now
 reapplies the canonical reuse profile and discovers authoritative live
 resource names. App-only workflows continue to read no GitHub secrets and
 preserve the runner-local `.azure` state during workspace cleanup.
+
+**Runtime connection portability.** Release run `31896037994` reached the live
+dependency preflight but looked for the legacy fixed connection
+`orderresolutionruntimesecrets`. Validation now reads the authoritative
+`runtimeSecrets` value from the hydrated Bicep `connectionNames` output.

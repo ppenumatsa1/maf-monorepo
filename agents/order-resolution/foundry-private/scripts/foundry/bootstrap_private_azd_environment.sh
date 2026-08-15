@@ -68,8 +68,19 @@ for required_value in \
   }
 done
 
-foundry_project_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${foundry_account_name}/projects/${FOUNDRY_PROJECT_NAME}"
-foundry_project_endpoint="https://${foundry_account_name}.services.ai.azure.com/api/projects/${FOUNDRY_PROJECT_NAME}"
+foundry_project_json="$(
+  az rest \
+    --method get \
+    --url "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${foundry_account_name}/projects/${FOUNDRY_PROJECT_NAME}?api-version=2025-04-01-preview"
+)"
+foundry_project_id="$(
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])["id"])' \
+    "$foundry_project_json"
+)"
+foundry_project_endpoint="$(
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])["properties"]["endpoints"]["AI Foundry API"])' \
+    "$foundry_project_json"
+)"
 acr_endpoint="${acr_name}.azurecr.io"
 postgres_server_fqdn="${postgres_server_name}.postgres.database.azure.com"
 

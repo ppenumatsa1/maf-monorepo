@@ -238,6 +238,10 @@ foundry_project_endpoint="$(require_env FOUNDRY_PROJECTS_ENDPOINT)"
 configured_acr_login_server="$(require_env containerRegistryLoginServer)"
 configured_acr_endpoint="$(require_env AZURE_CONTAINER_REGISTRY_ENDPOINT)"
 postgres_private_endpoint_name="$(require_env POSTGRES_PRIVATE_ENDPOINT_NAME)"
+runtime_connection_name="$(
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])["runtimeSecrets"])' \
+    "$(require_env connectionNames)"
+)"
 
 actual_subscription_id="$(az account show --query id --output tsv)"
 [[ "$actual_subscription_id" == "$AZURE_SUBSCRIPTION_ID" ]] || {
@@ -523,7 +527,7 @@ require_project_connection \
   "https://${search_service_name}.search.windows.net" \
   "$search_resource_id"
 require_project_connection \
-  orderresolutionruntimesecrets \
+  "$runtime_connection_name" \
   CustomKeys \
   CustomKeys \
   https://runtime-secrets.local \

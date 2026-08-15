@@ -30,11 +30,12 @@ if grep -En '(^|[;&|$(][[:space:]]*)azd[[:space:]]' "${scoped_files[@]}"; then
   exit 1
 fi
 
-if grep -Eq 'FOUNDRY_PROJECT_(ID|ENDPOINT)|FOUNDRY_PROJECTS_ENDPOINT' \
+if grep -Eq '^foundry_project_(id|endpoint)="(https://|/subscriptions)' \
   "$scripts_dir/bootstrap_private_azd_environment.sh"; then
   echo "Bootstrap must not pre-construct Foundry project coordinates." >&2
   exit 1
 fi
+grep -Fq 'az rest' "$scripts_dir/bootstrap_private_azd_environment.sh"
 
 grep -Fq 'FOUNDRY_POST_PROVISION_HYDRATE=1' "$root_dir/Makefile"
 grep -Fq 'DB_SCHEMA_MANAGED_EXTERNALLY=true' "$root_dir/Makefile"
