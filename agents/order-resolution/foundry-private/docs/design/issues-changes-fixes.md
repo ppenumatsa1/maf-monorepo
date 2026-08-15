@@ -1572,3 +1572,12 @@ evaluators errored for every trace. Official Foundry trace-evaluation samples
 map conversation evaluators from `{{item.messages}}`; the runner incorrectly
 mapped nonexistent trace `query` and `response` fields. Task completion and
 coherence now use the supported conversation-messages mapping.
+
+**Trace evaluator diagnostic follow-up.** Evidence run `31899519438` proved
+that changing only the mapping was insufficient: all three exact trace items
+still errored. The runner now downloads and persists the evaluation
+`output_items` immediately after the run reaches a terminal state, as required
+by the Foundry evaluation SDK guidance. This exposes each evaluator's service
+error and judge reason in protected workflow evidence instead of relying on
+aggregate counts. No runtime, infrastructure, identity, network, database, or
+public-access setting changed.
