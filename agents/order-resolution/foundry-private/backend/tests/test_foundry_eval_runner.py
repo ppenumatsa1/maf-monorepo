@@ -14,6 +14,7 @@ from evals.foundry_eval_runner import (
     _load_telemetry_trace_ids,
     _parse_hosted_e2e_evidence,
     _trace_ingestion_wait_seconds,
+    _validate_result_counts,
 )
 
 _NOW = datetime(2026, 7, 23, 15, 0, tzinfo=timezone.utc)
@@ -220,3 +221,34 @@ def test_load_telemetry_trace_ids_requires_unique_coverage(
 def test_terminal_eval_statuses_use_openai_canceled_spelling() -> None:
     assert "canceled" in _TERMINAL_EVAL_STATUSES
     assert "cancelled" not in _TERMINAL_EVAL_STATUSES
+
+
+def test_enforced_result_counts_require_every_trace_to_pass() -> None:
+    with pytest.raises(RuntimeError, match="did not pass every selected E2E trace"):
+        _validate_result_counts(
+            {
+                "passed": 2,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "total": 3,
+            },
+            expected_total=3,
+            enforce_pass=True,
+            max_errored=0,
+        )
+
+
+def test_enforced_result_counts_accept_complete_pass() -> None:
+    _validate_result_counts(
+        {
+            "passed": 3,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0,
+            "total": 3,
+        },
+        expected_total=3,
+        enforce_pass=True,
+        max_errored=0,
+    )

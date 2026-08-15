@@ -40,6 +40,7 @@ class ResolutionExecutor:
         workflow_run_id: str,
         order_id: str,
         action: str,
+        approval_confirmed: bool = False,
         emit,
     ) -> None:
         with workflow_stage_span(
@@ -57,8 +58,11 @@ class ResolutionExecutor:
                 business_id=order_id,
                 operation=lambda: submit_resolution(action=action, order_id=order_id),
             )
+            message = f"Resolution complete. Action '{action}' submitted for order {order_id}."
+            if approval_confirmed:
+                message = f"Approval accepted. {message}"
             output = {
-                "message": f"Resolution complete. Action '{action}' submitted for order {order_id}.",
+                "message": message,
                 "submission_id": submission_id,
                 "status": "completed",
             }

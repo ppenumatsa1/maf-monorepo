@@ -493,3 +493,4 @@ async def test_submit_resolution_is_idempotent_for_duplicate_approval(
     outputs = [e for e in resumed_history if e["type"] == "workflow.output"]
     assert len(hitl_responses) == 1
     assert len(outputs) == 1
+    assert outputs[0]["payload"]["message"].startswith("Approval accepted. Resolution complete.")

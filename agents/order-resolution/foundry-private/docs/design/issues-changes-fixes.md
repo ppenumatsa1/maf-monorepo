@@ -4,6 +4,38 @@ This document records the current private deployment posture and release
 evidence. Superseded deployment history and retired topology details are not
 part of the operating record.
 
+## Private-only PostgreSQL cutover and evidence enforcement (2026-08-15)
+
+**Issue.** The private lane still modeled PostgreSQL as a staged migration:
+temporarily permit Azure-services access, generate a connectivity proof,
+disable public access in a separate lockdown workflow, and repeat evidence.
+The live server was already private-only, so this path added time and could
+reintroduce public access. Release evidence also treated a completed Foundry
+evaluation as successful when one or more evaluator rows had failed.
+
+**Fix.** PostgreSQL public access is now disabled in IaC with no firewall-rule
+parameter or resource. Schema and runtime-role bootstrap run only from the
+VNet-connected runner. One readiness gate verifies private endpoint/DNS state,
+database connectivity, schema state, and least-privilege runtime permissions
+before deployment. The proof artifact, lockdown script/workflow, public-access
+fallback, and post-lockdown rerun were removed.
+
+Foundry evaluation enforcement now requires exactly one passing result for
+every selected E2E trace and rejects failed, errored, skipped, missing, or
+extra results. The high-risk approval response now explicitly confirms that
+approval was accepted before reporting the submitted resolution, aligning the
+terminal response with the approval request evaluated from the trace.
+
+**Evidence.**
+
+- Provision workflow `31906517820` completed successfully.
+- App-only deployment `31906717310` completed successfully.
+- Evidence runs `31906891692` and `31907354241` exposed the previous 2/3
+  evaluator-pass condition; they are diagnostic evidence, not release success.
+- Local backend validation after the enforcement and approval-response fixes:
+  132 tests passed and Ruff passed.
+- A fresh evidence run is required after deployment of the response fix.
+
 ## Shared authoritative drift decision (2026-08-07)
 
 **Evidence.** Full-IaC preview run `31198356080` reported shared authoritative

@@ -51,6 +51,42 @@ def _to_jsonable(value: object) -> object:
     return str(value)
 
 
+def _validate_result_counts(
+    result_counts: object,
+    *,
+    expected_total: int,
+    enforce_pass: bool,
+    max_errored: int | None,
+) -> None:
+    if not isinstance(result_counts, dict):
+        if enforce_pass or max_errored is not None:
+            raise RuntimeError("Foundry trace eval did not return result counts")
+        return
+
+    errored = int(result_counts.get("errored", 0))
+    failed = int(result_counts.get("failed", 0))
+    passed = int(result_counts.get("passed", 0))
+    skipped = int(result_counts.get("skipped", 0))
+    total = int(result_counts.get("total", 0))
+
+    if max_errored is not None and errored > max_errored:
+        raise RuntimeError(
+            f"Foundry trace eval produced {errored} errored items; maximum is {max_errored}"
+        )
+    if enforce_pass and (
+        total != expected_total
+        or passed != expected_total
+        or failed != 0
+        or errored != 0
+        or skipped != 0
+    ):
+        raise RuntimeError(
+            "Foundry trace eval did not pass every selected E2E trace: "
+            f"passed={passed}, failed={failed}, errored={errored}, "
+            f"skipped={skipped}, total={total}, expected={expected_total}"
+        )
+
+
 def _parse_utc_timestamp(payload: dict[str, object], field: str) -> datetime:
     value = payload.get(field)
     if not isinstance(value, str) or not value:
@@ -384,20 +420,15 @@ async def run_foundry_eval() -> None:
     if enforce_pass and str(payload.get("status")) != "completed":
         raise RuntimeError(f"Foundry trace eval run ended with status: {payload.get('status')}")
 
-    max_errored = os.getenv("FOUNDRY_EVAL_MAX_ERRORED")
-    result_counts = payload.get("result_counts")
-    if max_errored is not None and isinstance(result_counts, dict):
-        errored = int(result_counts.get("errored", 0))
-        if errored > int(max_errored):
-            raise RuntimeError(
-                f"Foundry trace eval produced {errored} errored items; maximum is {max_errored}"
-            )
-    if enforce_pass and isinstance(result_counts, dict):
-        total = int(result_counts.get("total", 0))
-        if total < len(trace_ids):
-            raise RuntimeError(
-                "Foundry trace eval did not produce a result for every selected E2E trace"
-            )
+    max_errored_value = os.getenv("FOUNDRY_EVAL_MAX_ERRORED")
+    _validate_result_counts(
+        payload.get("result_counts"),
+        expected_total=len(trace_ids),
+        enforce_pass=enforce_pass,
+        max_errored=(
+            int(max_errored_value) if max_errored_value is not None else None
+        ),
+    )
 
 
 if __name__ == "__main__":

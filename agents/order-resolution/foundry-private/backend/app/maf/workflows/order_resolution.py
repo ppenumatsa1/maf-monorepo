@@ -293,6 +293,7 @@ class OrderResolutionWorkflow:
                 workflow_run_id=workflow_run_id,
                 order_id=order_id,
                 action=action,
+                approval_confirmed=True,
                 emit=lambda emit_thread, payload: self._emit(
                     emit_thread, event_types.WORKFLOW_OUTPUT, payload
                 ),
