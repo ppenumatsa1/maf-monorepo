@@ -120,8 +120,13 @@ name_prefix="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value NA
   echo "Selected AZD target does not match the private deployment profile."
   exit 1
 }
-connection_json="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ai connection show ApplicationInsights --output json --no-prompt)"
-application_insights_target="$(printf '%s' "$connection_json" | jq -r '.target // .metadata.ResourceId // .properties.target // empty')"
+foundry_project_id="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value FOUNDRY_PROJECT_ID)"
+connection_json="$(
+  az rest \
+    --method get \
+    --url "https://management.azure.com${foundry_project_id}/connections/ApplicationInsights?api-version=2025-04-01-preview"
+)"
+application_insights_target="$(printf '%s' "$connection_json" | jq -r '.properties.target // empty')"
 if [[ -z "$resource_group" || -z "$application_insights_target" ]]; then
   echo "Private release evidence requires an AZD resource group and ApplicationInsights project connection."
   exit 1

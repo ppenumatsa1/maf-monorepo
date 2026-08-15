@@ -1554,3 +1554,9 @@ the hosted-agent template still referenced the legacy fixed runtime connection
 name. Hosted deployment now derives the `runtimeSecrets` connection from the
 authoritative `connectionNames` output and builds the Foundry environment
 template from that value.
+
+**Evidence connection parsing.** Evidence run `31898062282` stopped before E2E
+because the preview AZD connection extension emitted non-JSON text alongside
+its JSON payload. Evidence collection now reads the Application Insights
+connection directly from the authoritative project ARM resource and parses
+only its `properties.target`.
