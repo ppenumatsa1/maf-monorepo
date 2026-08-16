@@ -102,7 +102,7 @@ eval-foundry-deployed:
 	@set -euo pipefail; \
 	environment="$${AZURE_ENV_NAME:-maf-ora-azure}"; \
 	get_value() { AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$$1" --environment "$$environment"; }; \
-	api_url="$$(get_value API_URL)"; \
+	api_url="$$(get_value WEB_URL)"; \
 	project_endpoint="$$(get_value FOUNDRY_PROJECTS_ENDPOINT)"; \
 	model_name="$$(get_value FOUNDRY_MODEL_DEPLOYMENT_NAME)"; \
 	eval_model="$$(get_value FOUNDRY_EVAL_MODEL)"; \
