@@ -37,6 +37,7 @@ REQUIRED_TIMING_STAGES = (
     "evaluation",
     "final_evidence",
 )
+MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
 TIMING_PREDECESSORS = {
     "hosted_image_package": ("app_only",),
     "aca_deploy": ("app_only",),
@@ -166,6 +167,8 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
     expected_start = stages["app_only"]["started_at"]
     expected_end = stages["telemetry"]["ended_at"]
     expected_duration = duration_ms(expected_start, expected_end)
+    if expected_duration > MAX_APP_TO_TELEMETRY_MS:
+        raise ReleaseError("Private app-only to telemetry exceeded the 15-minute release budget")
     if total != {
         "started_at": expected_start,
         "ended_at": expected_end,

@@ -36,6 +36,7 @@ TIMED_STAGES = (
     "telemetry",
     "final_evidence",
 )
+MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
 FORBIDDEN_KEY = re.compile(
     r"(api[_-]?key|bearer[_-]?token|connection[_-]?string|password|secret|"
     r"database_url|runtime_database_url|access[_-]?token|client[_-]?secret)",
@@ -178,6 +179,8 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
     if telemetry_succeeded_at < app_only_started_at:
         raise ValueError("telemetry_succeeded_at may not predate app_only_started_at")
     expected_total = duration_ms(app_only_started_at, telemetry_succeeded_at)
+    if expected_total > MAX_APP_TO_TELEMETRY_MS:
+        raise ValueError("Azure app-only to telemetry exceeded the 15-minute release budget")
     if type(azure.get("benchmark_duration_ms")) is not int or azure["benchmark_duration_ms"] != expected_total:
         raise ValueError("invalid Azure benchmark_duration_ms")
     final_started_at = parse_utc_timestamp(

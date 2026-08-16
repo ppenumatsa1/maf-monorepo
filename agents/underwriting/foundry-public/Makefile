@@ -307,8 +307,7 @@ foundry-deploy-ready:
 foundry-release-deploy:
 >$(MAKE) foundry-release-readiness
 >$(MAKE) foundry-package
->$(MAKE) foundry-deploy-ready
->$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready
+>$(MAKE) -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready
 
 foundry-backend-internalize:
 >./scripts/foundry/internalize_backend_ingress.sh "$(CONFIRM)"

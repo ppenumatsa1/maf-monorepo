@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RELEASES_ROOT = ROOT / ".artifacts" / "releases"
 LANE = "underwriting-foundry-public"
 TIMING_EXTENSION = "release_timing"
+MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
 TIMING_STAGES = (
     "package_build",
     "deploy_hosted_activation",
@@ -291,6 +292,8 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
     if stages["telemetry"]["ended_at"] != telemetry_ended:
         raise ValueError("telemetry_succeeded_at must equal telemetry stage end.")
     expected_total = duration_ms(app_started, telemetry_ended)
+    if expected_total > MAX_APP_TO_TELEMETRY_MS:
+        raise ValueError("App-only to telemetry exceeded the 15-minute release budget.")
     if timing.get("app_only_duration_ms") != expected_total:
         raise ValueError("App-only total duration is invalid.")
     app_only = timing.get("app_only", {})

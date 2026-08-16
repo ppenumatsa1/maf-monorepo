@@ -37,6 +37,7 @@ TIMING_STAGES = (
     "telemetry",
     "final_evidence",
 )
+MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
 SECRET_KEY_PARTS = (
     "password",
     "secret",
@@ -295,6 +296,8 @@ def validate_release_timing(record: dict[str, Any]) -> None:
 
     total = timing.get("total")
     expected_total = duration_ms(app_start, app_end)
+    if expected_total > MAX_APP_TO_TELEMETRY_MS:
+        raise ValueError("App-only to telemetry exceeded the 15-minute release budget")
     if not isinstance(total, dict) or (
         total.get("status") != "succeeded"
         or parse_timestamp(total.get("started_at"), "total started_at") != app_start
