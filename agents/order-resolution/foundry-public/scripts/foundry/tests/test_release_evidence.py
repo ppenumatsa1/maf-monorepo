@@ -14,6 +14,7 @@ from scripts.foundry.release_evidence import (
     finalize_release,
     initialize_release,
     record_stage_timing,
+    resume_release,
     safe_artifact_path,
     validate_release_timing,
 )
@@ -294,6 +295,35 @@ def test_failed_finalize_closes_running_stage_and_total(
     assert timing["stages"]["app_only"]["status"] == "failed"
     assert timing["total"]["status"] == "failed"
     assert timing["total"]["failed_stage"] == "package_build"
+
+
+def test_resume_failed_release_resets_selected_and_downstream_timing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initialized_release(tmp_path, monkeypatch)
+    write_success_timings(tmp_path)
+    finalize_release(
+        tmp_path,
+        "release-1",
+        "failed",
+        failed_stage="verification",
+        error="transient failure",
+    )
+
+    record = resume_release(
+        tmp_path,
+        "release-1",
+        "verification",
+        timestamp="2026-08-15T20:10:00Z",
+    )
+
+    stages = record["extensions"]["release_timing"]["stages"]
+    assert record["status"] == "running"
+    assert record["completed_at"] is None
+    assert stages["app_only"]["status"] == "running"
+    assert "hosted_deployment_activation" in stages
+    assert "verification" not in stages
+    assert "telemetry" not in stages
 
 
 @pytest.mark.parametrize(

@@ -205,6 +205,49 @@ def record_stage_timing(
         return existing if isinstance(existing, dict) else stages[stage]
 
 
+def resume_release(
+    project_root: Path,
+    release_id: str,
+    from_stage: str,
+    *,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    moment = parse_timestamp(timestamp, "resume timestamp") if timestamp else datetime.now(
+        timezone.utc
+    )
+    release_dir = release_directory(project_root, release_id)
+    record_path = release_dir / "release.json"
+    with release_lock(release_dir):
+        record = read_json(record_path)
+        if record.get("status") != "failed":
+            raise ValueError("Only a failed release may be resumed")
+        timing = timing_extension(record)
+        stages = timing["stages"]
+        from_index = TIMING_STAGES.index(from_stage)
+        for stage in TIMING_STAGES[from_index:]:
+            stages.pop(stage, None)
+        app_only = stages.get("app_only")
+        if not isinstance(app_only, dict) or not isinstance(app_only.get("started_at"), str):
+            raise ValueError("Cannot resume without app_only timing")
+        app_only.update(status="running", ended_at=None, duration_ms=None)
+        timing["total"] = {
+            "status": "running",
+            "started_at": app_only["started_at"],
+            "ended_at": None,
+            "duration_ms": None,
+        }
+        record.update(
+            status="running",
+            updated_at=utc_timestamp(moment),
+            completed_at=None,
+            failed_stage=None,
+            error=None,
+            artifacts=[],
+        )
+        atomic_write_json(record_path, record)
+        return record
+
+
 def validate_release_timing(record: dict[str, Any]) -> None:
     timing = timing_extension(record)
     stages = timing["stages"]
@@ -622,6 +665,10 @@ def main() -> None:
     finalize_parser.add_argument("--status", required=True, choices=("succeeded", "failed"))
     finalize_parser.add_argument("--failed-stage")
     finalize_parser.add_argument("--error")
+    resume_parser = subparsers.add_parser("resume")
+    resume_parser.add_argument("--release-id", required=True)
+    resume_parser.add_argument("--from-stage", required=True, choices=TIMING_STAGES)
+    resume_parser.add_argument("--timestamp")
     timing_parser = subparsers.add_parser("timing")
     timing_parser.add_argument("--release-id", required=True)
     timing_parser.add_argument("--stage", required=True, choices=TIMING_STAGES)
@@ -642,6 +689,13 @@ def main() -> None:
             args.status,
             failed_stage=args.failed_stage,
             error=args.error,
+        )
+    elif args.command == "resume":
+        result = resume_release(
+            project_root,
+            args.release_id,
+            args.from_stage,
+            timestamp=args.timestamp,
         )
     else:
         result = record_stage_timing(
