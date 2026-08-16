@@ -281,14 +281,22 @@ jq -e '.status == "ok"' <<<"$proxy_health" >/dev/null || {
   exit 1
 }
 
-hosted_json="$(
-  FOUNDRY_PROJECT_ENDPOINT="$project_endpoint" \
-    FOUNDRY_HOSTED_AGENT_NAME="$agent_name" \
-    FOUNDRY_HOSTED_AGENT_VERSION="$expected_agent_version" \
-    FOUNDRY_EXPECTED_HOSTED_IMAGE="$expected_hosted_image" \
-    FOUNDRY_RUNTIME_CONNECTION_NAME="$runtime_connection_name" \
-    "$PYTHON" "$ROOT_DIR/scripts/foundry/verify_hosted_agent.py"
-)"
+hosted_json=""
+for attempt in $(seq 1 12); do
+  if hosted_json="$(
+    FOUNDRY_PROJECT_ENDPOINT="$project_endpoint" \
+      FOUNDRY_HOSTED_AGENT_NAME="$agent_name" \
+      FOUNDRY_HOSTED_AGENT_VERSION="$expected_agent_version" \
+      FOUNDRY_EXPECTED_HOSTED_IMAGE="$expected_hosted_image" \
+      FOUNDRY_RUNTIME_CONNECTION_NAME="$runtime_connection_name" \
+      "$PYTHON" "$ROOT_DIR/scripts/foundry/verify_hosted_agent.py"
+  )"; then
+    break
+  fi
+  [[ "$attempt" -lt 12 ]] || exit 1
+  echo "Hosted-agent activation has not propagated; retrying verification ($attempt/12)." >&2
+  sleep 10
+done
 jq -e --arg principal "$expected_principal_id" '.principal_id == $principal' \
   <<<"$hosted_json" >/dev/null || {
   echo "Hosted-agent principal ID does not match deployment metadata." >&2
