@@ -373,6 +373,37 @@ def update_timing(args: argparse.Namespace) -> None:
     atomic_json(record_path, record)
 
 
+def resume_record(args: argparse.Namespace) -> None:
+    record_path = args.release_dir.resolve() / "release.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    if record.get("status") != "failed":
+        raise ValueError("only a failed release may be resumed")
+    at = parse_utc_timestamp(args.at, "at")
+    normalized_at = at.isoformat().replace("+00:00", "Z")
+    azure = azure_timing(record)
+    from_index = TIMED_STAGES.index(args.from_stage)
+    for stage_name in TIMED_STAGES[from_index:]:
+        azure["stages"][stage_name] = {
+            "status": "pending",
+            "started_at": None,
+            "ended_at": None,
+            "duration_ms": None,
+        }
+    if from_index <= TIMED_STAGES.index("telemetry"):
+        azure["telemetry_succeeded_at"] = None
+        azure["benchmark_duration_ms"] = None
+    record.update(
+        status="running",
+        updated_at=normalized_at,
+        completed_at=None,
+        failed_stage=None,
+        error=None,
+        artifacts=[],
+    )
+    scan_secret_like(record)
+    atomic_json(record_path, record)
+
+
 def finalize_record(args: argparse.Namespace) -> None:
     release_dir = args.release_dir.resolve()
     record_path = release_dir / "release.json"
@@ -441,6 +472,10 @@ def parser() -> argparse.ArgumentParser:
     finalize.add_argument("--completed-at", required=True)
     finalize.add_argument("--failed-stage")
     finalize.add_argument("--error")
+    resume = subparsers.add_parser("resume")
+    resume.add_argument("--release-dir", type=Path, required=True)
+    resume.add_argument("--from-stage", choices=TIMED_STAGES, required=True)
+    resume.add_argument("--at", required=True)
     timing = subparsers.add_parser("timing")
     timing.add_argument("--release-dir", type=Path, required=True)
     timing.add_argument(
@@ -457,6 +492,8 @@ def main() -> int:
     try:
         if args.command == "init":
             init_record(args)
+        elif args.command == "resume":
+            resume_record(args)
         elif args.command == "finalize":
             if args.status == "failed":
                 if not args.failed_stage or not args.error:

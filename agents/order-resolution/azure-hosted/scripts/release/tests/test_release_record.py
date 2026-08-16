@@ -145,6 +145,74 @@ def finalize(release_dir: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_resume_failed_release_resets_failed_and_downstream_timing(tmp_path: Path) -> None:
+    release_dir = initialize(tmp_path)
+    assert timing(
+        release_dir, "app-only-start", "2026-08-15T17:01:00Z"
+    ).returncode == 0
+    for stage in ("package_build", "app_deployment", "verification", "smoke"):
+        started_at, ended_at = TIMING[stage]
+        assert timing(release_dir, "stage-start", started_at, stage=stage).returncode == 0
+        assert timing(
+            release_dir, "stage-end", ended_at, stage=stage, status="succeeded"
+        ).returncode == 0
+    started_at, ended_at = TIMING["browser_e2e"]
+    assert timing(
+        release_dir, "stage-start", started_at, stage="browser_e2e"
+    ).returncode == 0
+    assert timing(
+        release_dir,
+        "stage-end",
+        ended_at,
+        stage="browser_e2e",
+        status="failed",
+    ).returncode == 0
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "finalize",
+            "--release-dir",
+            str(release_dir),
+            "--status",
+            "failed",
+            "--completed-at",
+            "2026-08-15T17:06:01Z",
+            "--failed-stage",
+            "browser_e2e",
+            "--error",
+            "transient timeout",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode == 0, failed.stderr
+
+    resumed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "resume",
+            "--release-dir",
+            str(release_dir),
+            "--from-stage",
+            "browser_e2e",
+            "--at",
+            "2026-08-15T17:07:00Z",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert resumed.returncode == 0, resumed.stderr
+    record = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
+    assert record["status"] == "running"
+    assert record["completed_at"] is None
+    assert record["failed_stage"] is None
+    assert record["extensions"]["azure"]["stages"]["smoke"]["status"] == "succeeded"
+    assert record["extensions"]["azure"]["stages"]["browser_e2e"]["status"] == "pending"
+    assert record["extensions"]["azure"]["stages"]["telemetry"]["status"] == "pending"
+
+
 def test_atomic_init_and_finalize_match_common_schema(tmp_path: Path) -> None:
     release_dir = initialize(tmp_path)
     initial = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
