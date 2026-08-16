@@ -251,9 +251,10 @@ foundry-package:
 
 foundry-release-package:
 >./scripts/foundry/sync_hosted_source.sh
->test -f infra/foundry-hosted/src/backend/Dockerfile
->test -f infra/foundry-hosted/src/hosted/Dockerfile.hosted
+>test -f backend/Dockerfile
 >test -f frontend/Dockerfile
+>test -f infra/foundry-hosted/agent/Dockerfile
+>test -f infra/foundry-hosted/agent/backend/foundry/main.py
 
 foundry-provision:
 >./scripts/foundry/bootstrap_azd_env.sh
