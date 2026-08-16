@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import UserDict
 from pathlib import Path
 
 import pytest
@@ -93,6 +94,38 @@ def test_hosted_get_metadata_requires_literal_placeholders() -> None:
             expected_image="example/image@sha256:" + "a" * 64,
             runtime_connection_name="orderresolutionruntimesecrets",
         )
+
+
+def test_hosted_get_metadata_accepts_sdk_mapping_models() -> None:
+    placeholder = "${{connections.orderresolutionruntimesecrets.credentials.database_url}}"
+    image = "example/image@sha256:" + "a" * 64
+    version = UserDict(
+        {
+            "status": "active",
+            "definition": UserDict(
+                {
+                    "container_configuration": UserDict({"image": image}),
+                    "environment_variables": {
+                        "DATABASE_URL": placeholder,
+                        "RUNTIME_DATABASE_URL": placeholder,
+                        "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
+                    },
+                }
+            ),
+            "instance_identity": UserDict({"principal_id": "principal-id"}),
+        }
+    )
+
+    result = verify_hosted_agent.verify_version_metadata(
+        version,
+        agent_name="order-resolution-hosted",
+        agent_version="6",
+        expected_image=image,
+        runtime_connection_name="orderresolutionruntimesecrets",
+    )
+
+    assert result["status"] == "active"
+    assert result["principal_id"] == "principal-id"
 
 
 def test_runtime_connection_template_marks_the_url_secure() -> None:

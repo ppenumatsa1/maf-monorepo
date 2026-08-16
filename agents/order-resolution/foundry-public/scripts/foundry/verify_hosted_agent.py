@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
@@ -16,7 +17,7 @@ def require(name: str) -> str:
 
 
 def read_value(value: object, name: str) -> object | None:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return value.get(name)
     return getattr(value, name, None)
 
