@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "$ROOT_DIR"
+unset RELEASE_ARTIFACTS_ROOT RELEASE_ARTIFACTS_DIR RELEASE_EVIDENCE_DIR
+unset RELEASE_LOGS_DIR RELEASE_CONTEXT_FILE
 source "$ROOT_DIR/scripts/release/release-artifacts.sh"
 
 release_id="test-release-artifacts-$$"
