@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.maf.tools import OrderStatus, fetch_order_status, fetch_policy
-from app.modules.order_resolution.hitl import classify_issue
+from app.modules.order_resolution.hitl import classify_issue, extract_order_id
 from app.modules.order_resolution.ports import McpKnowledgePort
 
 
@@ -31,7 +31,7 @@ class PolicyExecutor:
         emit: Callable[[str, dict[str, Any]], Awaitable[None]],
     ) -> PolicyResolutionInput:
         message = user_message.lower()
-        order_id = "ord-1009" if "1009" in message else "ord-1001"
+        order_id = extract_order_id(message)
         issue_type = classify_issue(message)
         order = fetch_order_status(order_id)
         policy = fetch_policy(issue_type)

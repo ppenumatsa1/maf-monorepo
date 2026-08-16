@@ -7,7 +7,7 @@ from app.core.telemetry import observe_maf_workflow_event
 from app.maf.agents import create_order_resolution_agents
 from app.maf.clients import create_foundry_chat_client, get_foundry_models_config
 from app.maf.middleware import MafUsageTracker
-from app.modules.order_resolution.hitl import classify_issue
+from app.modules.order_resolution.hitl import classify_issue, extract_order_id
 from app.modules.order_resolution.models import WorkflowContext
 
 
@@ -73,5 +73,5 @@ class TriageExecutor:
     def simple_summary(message: str) -> str:
         msg = message.lower()
         issue_type = classify_issue(msg)
-        order_id = "ord-1009" if "1009" in msg else "ord-1001"
+        order_id = extract_order_id(msg)
         return f"order_id={order_id}; issue_type={issue_type}"

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import re
+
+
+def extract_order_id(message: str) -> str:
+    match = re.search(r"\bord[-\s]?(\d+)\b", message, re.IGNORECASE)
+    return f"ord-{match.group(1)}" if match else "ord-1001"
+
 
 def classify_issue(message: str) -> str:
     if "damage" in message or "broken" in message:
