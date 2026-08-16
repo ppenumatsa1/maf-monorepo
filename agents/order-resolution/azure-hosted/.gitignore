@@ -27,14 +27,11 @@ backend/.foundry/results/*.json
 # Logs
 *.log
 
-# Test artifacts. Retain only the release contract, dry-run history/provenance
-# manifests, and sanitized release records.
+# Test artifacts. Generated releases stay local; retain only tracked
+# contracts/history/provenance.
 .artifacts/**
 !.artifacts/releases/
 .artifacts/releases/**
-!.artifacts/releases/*/
-.artifacts/releases/*/**
-!.artifacts/releases/*/release.json
 !.artifacts/releases/_contract/
 !.artifacts/releases/_contract/release-v1.schema.json
 !.artifacts/releases/history/

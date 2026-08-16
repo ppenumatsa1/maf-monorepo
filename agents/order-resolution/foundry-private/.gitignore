@@ -24,17 +24,12 @@ backend/.foundry/checkpoints/*.json
 backend/.foundry/memory/*.json
 backend/.foundry/results/*.json
 
-# Release authority: retain only the contract, sanitized records, history, and provenance.
+# Generated releases stay local; retain only tracked contracts/history.
 .artifacts/releases/*
 !.artifacts/releases/_contract/
 !.artifacts/releases/_history/
-!.artifacts/releases/*/
-.artifacts/releases/*/*
 !.artifacts/releases/_contract/release-v1.schema.json
 !.artifacts/releases/_history/**
-!.artifacts/releases/*/release.json
-!.artifacts/releases/*/provenance/
-!.artifacts/releases/*/provenance/**
 
 # Logs
 *.log

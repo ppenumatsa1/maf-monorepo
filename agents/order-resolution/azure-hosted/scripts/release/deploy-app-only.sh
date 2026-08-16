@@ -51,6 +51,39 @@ deploy_service() {
     >"$RELEASE_LOGS_DIR/$service.deploy.log" 2>&1
 }
 
+resolve_app_name() {
+  local service_name="$1"
+  local matching_apps
+  readarray -t matching_apps < <(
+    az containerapp list \
+      --resource-group "$resource_group" \
+      --subscription "$subscription_id" \
+      --query "[?tags.\"azd-service-name\"=='$service_name'].name" \
+      --output tsv
+  )
+  [[ "${#matching_apps[@]}" == 1 ]] || {
+    echo "Expected exactly one Container App tagged azd-service-name=$service_name." >&2
+    return 1
+  }
+  printf '%s\n' "${matching_apps[0]}"
+}
+
+converge_ingress() {
+  local app_name="$1"
+  local ingress_type="$2"
+  local target_port="$3"
+  az containerapp ingress enable \
+    --name "$app_name" \
+    --resource-group "$resource_group" \
+    --subscription "$subscription_id" \
+    --type "$ingress_type" \
+    --target-port "$target_port" \
+    --transport auto \
+    --allow-insecure false \
+    --only-show-errors \
+    --output none
+}
+
 deploy_service backend &
 backend_pid=$!
 deploy_service frontend &
@@ -69,6 +102,12 @@ if (( backend_status != 0 || frontend_status != 0 )); then
   echo "App-only deployment failed; inspect logs under $RELEASE_LOGS_DIR." >&2
   exit 1
 fi
+
+backend_app="$(resolve_app_name backend)"
+frontend_app="$(resolve_app_name frontend)"
+converge_ingress "$backend_app" internal 8000
+converge_ingress "$frontend_app" external 5173
+
 if [[ "$package_timed_here" == "true" ]]; then
   release_record_timing stage-end package_build succeeded
 fi

@@ -72,7 +72,12 @@ for required in (
     require(run_browser_e2e, required, "browser E2E release gate")
 
 deploy_app_only = Path("scripts/release/deploy-app-only.sh").read_text(encoding="utf-8")
-for required in ('source "$ROOT_DIR/scripts/release/release-artifacts.sh"', 'RELEASE_LOGS_DIR'):
+for required in (
+    'source "$ROOT_DIR/scripts/release/release-artifacts.sh"',
+    "RELEASE_LOGS_DIR",
+    'converge_ingress "$backend_app" internal 8000',
+    'converge_ingress "$frontend_app" external 5173',
+):
     require(deploy_app_only, required, "app-only release path")
 
 deploy_ci_images = Path("scripts/release/deploy-ci-images.sh").read_text(encoding="utf-8")
@@ -81,6 +86,8 @@ for required in (
     'release_artifact_path images.json',
     'image-deploy.log',
     'service_name.image-deploy.log',
+    "--type internal",
+    "--type external",
 ):
     require(deploy_ci_images, required, "CI image release path")
 

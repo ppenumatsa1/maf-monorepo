@@ -135,6 +135,27 @@ deploy_image() {
 backend_digest="$(deploy_image backend "$backend_app" "$BACKEND_IMAGE" "$backend_repository")"
 frontend_digest="$(deploy_image frontend "$frontend_app" "$FRONTEND_IMAGE" "$frontend_repository")"
 
+az containerapp ingress enable \
+  --name "$backend_app" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --type internal \
+  --target-port 8000 \
+  --transport auto \
+  --allow-insecure false \
+  --only-show-errors \
+  --output none
+az containerapp ingress enable \
+  --name "$frontend_app" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --type external \
+  --target-port 5173 \
+  --transport auto \
+  --allow-insecure false \
+  --only-show-errors \
+  --output none
+
 images_file="$(release_artifact_path images.json)"
 python3 - "$images_file" \
   "$RELEASE_ID" \
