@@ -166,17 +166,15 @@ esac
 
 release_stage=smoke
 run_timed_stage smoke env SMOKE_MODE="$FOUNDRY_SMOKE_MODE" make foundry-smoke
+release_stage=deployed_e2e
+run_timed_stage deployed_e2e make foundry-hosted-e2e
 release_stage=evaluation
 (run_timed_stage evaluation make foundry-eval) &
 evaluation_pid=$!
-release_stage=deployed_e2e
-if ! run_timed_stage deployed_e2e make foundry-hosted-e2e; then
-  wait "$evaluation_pid" || true
-  exit 1
-fi
 release_stage=telemetry
-run_timed_stage telemetry make foundry-telemetry
-if ! wait "$evaluation_pid"; then
+run_timed_stage telemetry make foundry-telemetry &
+telemetry_pid=$!
+if ! wait_for_parallel_jobs "$evaluation_pid" "$telemetry_pid"; then
   release_stage=evaluation
   exit 1
 fi

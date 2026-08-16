@@ -63,6 +63,13 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _result_counts(value: object) -> dict[str, int]:
+    return {
+        name: int(getattr(value, name, 0) or 0)
+        for name in ("errored", "failed", "passed", "total", "skipped")
+    }
+
+
 def run() -> None:
     root = Path(__file__).resolve().parents[1]
     config = _read_config(root / "eval.yaml")
@@ -127,6 +134,7 @@ def run() -> None:
                 run_id=evaluation_run.id,
             )
 
+    result_counts = _result_counts(getattr(evaluation_run, "result_counts", None))
     result = {
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "trace_evidence_generated_at": generated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -134,7 +142,7 @@ def run() -> None:
         "eval_id": evaluation.id,
         "run_id": evaluation_run.id,
         "conversation_ids": conversation_ids,
-        "result_counts": getattr(evaluation_run, "result_counts", None),
+        "result_counts": result_counts,
     }
     configured_output = os.getenv("FOUNDRY_TRACE_EVAL_OUTPUT_FILE", "").strip()
     output = (
@@ -147,6 +155,14 @@ def run() -> None:
     print(json.dumps(result, indent=2, default=str))
     if evaluation_run.status != "completed":
         raise RuntimeError(f"Foundry trace evaluation ended with status: {evaluation_run.status}")
+    if (
+        result_counts["total"] != len(conversation_ids)
+        or result_counts["passed"] != len(conversation_ids)
+        or result_counts["failed"]
+        or result_counts["errored"]
+        or result_counts["skipped"]
+    ):
+        raise RuntimeError(f"Foundry trace evaluation did not pass: {result_counts}")
 
 
 if __name__ == "__main__":

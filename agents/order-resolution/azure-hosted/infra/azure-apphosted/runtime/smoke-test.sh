@@ -4,9 +4,10 @@ set -euo pipefail
 BASE_URL="${1:-http://localhost:8000}"
 FRONTEND_URL="${2:-}"
 RELEASE_ID="${RELEASE_ID:-${RELEASE_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
+SMOKE_ATTEMPT_ID="${SMOKE_ATTEMPT_ID:-$(date -u +%s%N)-$$}"
 RELEASE_STARTED_AT="${RELEASE_STARTED_AT:-${RELEASE_E2E_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}}"
-LOW_RISK_THREAD_ID="smoke-apphosted-${RELEASE_ID}-ord1001"
-HIGH_RISK_THREAD_ID="smoke-apphosted-${RELEASE_ID}-ord1009"
+LOW_RISK_THREAD_ID="smoke-apphosted-${RELEASE_ID}-ord1001-${SMOKE_ATTEMPT_ID}"
+HIGH_RISK_THREAD_ID="smoke-apphosted-${RELEASE_ID}-ord1009-${SMOKE_ATTEMPT_ID}"
 
 curl --fail --silent "$BASE_URL/api/health" >/dev/null
 if [[ -n "$FRONTEND_URL" ]]; then

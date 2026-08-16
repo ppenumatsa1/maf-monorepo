@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from app.modules.underwriting.hosted import HOSTED_WORKFLOW_PROTOCOL, HostedWorkflowEnvelope
-from evals.foundry_trace_eval import _criteria, _load_evidence
+from evals.foundry_trace_eval import _criteria, _load_evidence, _result_counts
 
 
 def _backend_root() -> Path:
@@ -50,6 +50,23 @@ def test_criteria_uses_conversation_message_mapping() -> None:
             "data_mapping": {"messages": "{{item.messages}}"},
         }
     ]
+
+
+def test_result_counts_normalizes_foundry_sdk_model() -> None:
+    class Counts:
+        errored = 0
+        failed = 0
+        passed = 1
+        total = 1
+        skipped = 0
+
+    assert _result_counts(Counts()) == {
+        "errored": 0,
+        "failed": 0,
+        "passed": 1,
+        "total": 1,
+        "skipped": 0,
+    }
 
 
 def test_eval_config_references_existing_dataset_and_trace_evidence() -> None:
