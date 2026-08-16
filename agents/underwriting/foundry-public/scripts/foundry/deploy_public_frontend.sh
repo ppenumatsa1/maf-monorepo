@@ -29,7 +29,6 @@ required_env() {
 
 require_bin az
 require_bin azd
-require_bin docker
 require_bin git
 
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
@@ -63,18 +62,21 @@ backend_fqdn="$(
     --query 'properties.configuration.ingress.fqdn' \
     --output tsv
 )"
-image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
-image="${registry_endpoint}/${image_repository}:${image_tag}"
-
-az acr login \
-  --subscription "$subscription_id" \
-  --name "$registry_name" \
-  --output none
-docker build \
-  --file "$ROOT_DIR/frontend/Dockerfile" \
-  --tag "$image" \
-  "$ROOT_DIR/frontend"
-docker push "$image"
+image="${PUBLIC_FRONTEND_PREBUILT_IMAGE:-}"
+if [[ -z "$image" ]]; then
+  require_bin docker
+  image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
+  image="${registry_endpoint}/${image_repository}:${image_tag}"
+  az acr login \
+    --subscription "$subscription_id" \
+    --name "$registry_name" \
+    --output none
+  docker build \
+    --file "$ROOT_DIR/frontend/Dockerfile" \
+    --tag "$image" \
+    "$ROOT_DIR/frontend"
+  docker push "$image"
+fi
 
 az containerapp update \
   --subscription "$subscription_id" \

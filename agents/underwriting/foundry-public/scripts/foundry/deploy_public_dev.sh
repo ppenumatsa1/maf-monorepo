@@ -154,9 +154,12 @@ case "$deploy_mode" in
       active_timing_stage=
       exit "$status"
     fi
-    release_stage=deploy_hosted_activation
-    run_timed_stage deploy_hosted_activation \
-      bash -c 'make -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready && make foundry-appinsights-connection'
+    release_stage=image_build
+    run_timed_stage image_build make foundry-release-build
+    release_stage=hosted_activation
+    run_timed_stage hosted_activation make foundry-release-hosted-activate
+    release_stage=aca_deployment
+    run_timed_stage aca_deployment make foundry-release-app-deploy
     ;;
   *)
     echo "Release router contract violation: deploy_mode must be app_only, got: $deploy_mode" >&2

@@ -49,8 +49,7 @@ foundry_project_name="$(required_env FOUNDRY_PROJECT_NAME)"
 agent_name="$(required_env HOSTED_AGENT_NAME)"
 runtime_connection_name="$(required_env FOUNDRY_RUNTIME_CONNECTION_NAME)"
 image_repository="underwriting-hosted"
-image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
-image="${registry_endpoint}/${image_repository}:${image_tag}"
+image="${HOSTED_AGENT_PREBUILT_IMAGE:-}"
 postgres_server_name="$(required_env POSTGRES_SERVER_NAME)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
 database_url="$(required_env DATABASE_URL)"
@@ -84,12 +83,16 @@ connection_category="$(
   exit 1
 }
 
-az acr build \
-  --subscription "$subscription_id" \
-  --registry "$registry_name" \
-  --image "${image_repository}:${image_tag}" \
-  --file "$FOUNDRY_DIR/agent/Dockerfile" \
-  "$FOUNDRY_DIR/agent"
+if [[ -z "$image" ]]; then
+  image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
+  image="${registry_endpoint}/${image_repository}:${image_tag}"
+  az acr build \
+    --subscription "$subscription_id" \
+    --registry "$registry_name" \
+    --image "${image_repository}:${image_tag}" \
+    --file "$FOUNDRY_DIR/agent/Dockerfile" \
+    "$FOUNDRY_DIR/agent"
+fi
 
 export AZURE_AI_PROJECT_ENDPOINT="$project_endpoint"
 export HOSTED_AGENT_NAME="$agent_name"

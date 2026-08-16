@@ -23,7 +23,7 @@ endif
 	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
 	foundry-postgres-credentials foundry-postgres-readiness foundry-backend-deploy foundry-frontend-deploy \
 	foundry-release-readiness foundry-model-preflight foundry-runtime-connection foundry-rbac foundry-package \
-	foundry-release-package \
+	foundry-release-package foundry-release-build foundry-release-hosted-activate foundry-release-app-deploy \
 	foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
 	foundry-backend-internalize foundry-verify foundry-evidence \
 	foundry-up foundry-smoke foundry-hosted-e2e foundry-eval \
@@ -256,6 +256,27 @@ foundry-release-package:
 >test -f infra/foundry-hosted/agent/Dockerfile
 >test -f infra/foundry-hosted/agent/backend/foundry/main.py
 
+foundry-release-build:
+>./scripts/foundry/build_release_images.sh
+
+foundry-release-hosted-activate:
+>@set -euo pipefail; \
+>source "$${FOUNDRY_RELEASE_EVIDENCE_DIR}/release-images.env"; \
+>export HOSTED_AGENT_PREBUILT_IMAGE; \
+>./scripts/foundry/deploy_hosted_container.sh
+
+foundry-release-app-deploy:
+>@set -euo pipefail; \
+>source "$${FOUNDRY_RELEASE_EVIDENCE_DIR}/release-images.env"; \
+>export PUBLIC_BACKEND_PREBUILT_IMAGE PUBLIC_FRONTEND_PREBUILT_IMAGE; \
+>./scripts/foundry/deploy_public_backend.sh & backend_pid=$$!; \
+>./scripts/foundry/deploy_public_frontend.sh & frontend_pid=$$!; \
+>status=0; \
+>wait "$$backend_pid" || status=1; \
+>wait "$$frontend_pid" || status=1; \
+>(( status == 0 )) || exit 1; \
+>./scripts/foundry/verify_project_appinsights_connection.sh
+
 foundry-provision:
 >./scripts/foundry/bootstrap_azd_env.sh
 >./scripts/foundry/ensure_foundry_azd_defaults.sh
@@ -315,7 +336,9 @@ foundry-deploy-ready:
 foundry-release-deploy:
 >$(MAKE) foundry-release-readiness
 >$(MAKE) foundry-release-package
->$(MAKE) -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready
+>$(MAKE) foundry-release-build
+>$(MAKE) foundry-release-hosted-activate
+>$(MAKE) foundry-release-app-deploy
 
 foundry-backend-internalize:
 >./scripts/foundry/internalize_backend_ingress.sh "$(CONFIRM)"

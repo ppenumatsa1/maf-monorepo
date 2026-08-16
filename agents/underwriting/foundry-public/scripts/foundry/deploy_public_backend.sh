@@ -86,15 +86,17 @@ backend_identity_client_id="$(
   echo "Backend managed identity did not return a client ID." >&2
   exit 1
 }
-image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
-image="${registry_endpoint}/${image_repository}:${image_tag}"
-
-az acr build \
-  --subscription "$subscription_id" \
-  --registry "$registry_name" \
-  --image "${image_repository}:${image_tag}" \
-  --file "$ROOT_DIR/backend/Dockerfile" \
-  "$ROOT_DIR"
+image="${PUBLIC_BACKEND_PREBUILT_IMAGE:-}"
+if [[ -z "$image" ]]; then
+  image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
+  image="${registry_endpoint}/${image_repository}:${image_tag}"
+  az acr build \
+    --subscription "$subscription_id" \
+    --registry "$registry_name" \
+    --image "${image_repository}:${image_tag}" \
+    --file "$ROOT_DIR/backend/Dockerfile" \
+    "$ROOT_DIR"
+fi
 
 az containerapp secret set \
   --subscription "$subscription_id" \

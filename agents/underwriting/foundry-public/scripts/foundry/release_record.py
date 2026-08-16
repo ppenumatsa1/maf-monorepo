@@ -19,7 +19,9 @@ TIMING_EXTENSION = "release_timing"
 MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
 TIMING_STAGES = (
     "package_build",
-    "deploy_hosted_activation",
+    "image_build",
+    "hosted_activation",
+    "aca_deployment",
     "smoke",
     "deployed_e2e",
     "evaluation",
@@ -28,8 +30,10 @@ TIMING_STAGES = (
     "final_evidence",
 )
 TIMING_PREREQUISITES = {
-    "deploy_hosted_activation": ("package_build",),
-    "smoke": ("deploy_hosted_activation",),
+    "image_build": ("package_build",),
+    "hosted_activation": ("image_build",),
+    "aca_deployment": ("hosted_activation",),
+    "smoke": ("aca_deployment",),
     "deployed_e2e": ("smoke",),
     "evaluation": ("smoke",),
     "telemetry": ("deployed_e2e",),

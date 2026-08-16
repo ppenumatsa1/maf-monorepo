@@ -64,21 +64,19 @@ class ReleaseRecordTests(unittest.TestCase):
     def record_successful_timing(self) -> None:
         intervals = (
             ("package_build", "2026-08-15T20:00:00.000Z", "2026-08-15T20:00:10.000Z"),
-            (
-                "deploy_hosted_activation",
-                "2026-08-15T20:00:10.000Z",
-                "2026-08-15T20:00:30.000Z",
-            ),
-            ("smoke", "2026-08-15T20:00:30.000Z", "2026-08-15T20:00:40.000Z"),
-            ("deployed_e2e", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:10.000Z"),
-            ("evaluation", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:20.000Z"),
-            ("telemetry", "2026-08-15T20:01:10.000Z", "2026-08-15T20:01:30.000Z"),
+            ("image_build", "2026-08-15T20:00:10.000Z", "2026-08-15T20:00:25.000Z"),
+            ("hosted_activation", "2026-08-15T20:00:25.000Z", "2026-08-15T20:00:35.000Z"),
+            ("aca_deployment", "2026-08-15T20:00:35.000Z", "2026-08-15T20:00:50.000Z"),
+            ("smoke", "2026-08-15T20:00:50.000Z", "2026-08-15T20:01:00.000Z"),
+            ("deployed_e2e", "2026-08-15T20:01:00.000Z", "2026-08-15T20:01:30.000Z"),
+            ("evaluation", "2026-08-15T20:01:00.000Z", "2026-08-15T20:01:40.000Z"),
+            ("telemetry", "2026-08-15T20:01:30.000Z", "2026-08-15T20:01:50.000Z"),
             (
                 "deployment_verification",
-                "2026-08-15T20:01:30.000Z",
-                "2026-08-15T20:01:40.000Z",
+                "2026-08-15T20:01:50.000Z",
+                "2026-08-15T20:02:00.000Z",
             ),
-            ("final_evidence", "2026-08-15T20:01:40.000Z", "2026-08-15T20:01:50.000Z"),
+            ("final_evidence", "2026-08-15T20:02:00.000Z", "2026-08-15T20:02:10.000Z"),
         )
         for index, (stage, started_at, ended_at) in enumerate(intervals):
             start_release_timing(
@@ -131,8 +129,8 @@ class ReleaseRecordTests(unittest.TestCase):
         ]
         self.assertEqual(timing["stages"]["package_build"]["duration_ms"], 10_000)
         self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 40_000)
-        self.assertEqual(timing["app_only_duration_ms"], 90_000)
-        self.assertEqual(timing["app_only"]["duration_ms"], 90_000)
+        self.assertEqual(timing["app_only_duration_ms"], 110_000)
+        self.assertEqual(timing["app_only"]["duration_ms"], 110_000)
         self.assertEqual(timing["app_only"]["status"], "succeeded")
         self.assertEqual(
             timing["telemetry_succeeded_at"],
@@ -192,7 +190,7 @@ class ReleaseRecordTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "prerequisite"):
             start_release_timing(
                 "test-release-001",
-                "deploy_hosted_activation",
+                "image_build",
                 at="2026-08-15T20:00:11.000Z",
                 releases_root=self.releases,
             )

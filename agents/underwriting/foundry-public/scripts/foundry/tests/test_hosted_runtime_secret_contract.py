@@ -44,19 +44,21 @@ class HostedRuntimeSecretContractTests(unittest.TestCase):
         self.assertNotIn("EXPECTED_RUNTIME_DATABASE_URL", verifier)
         self.assertIn("FOUNDRY_RUNTIME_CONNECTION_NAME", verifier)
 
-    def test_release_deploys_all_runtime_legs_in_parallel(self) -> None:
+    def test_release_builds_then_activates_hosted_before_apps(self) -> None:
         makefile = (ROOT / "Makefile").read_text()
         release = makefile.split("foundry-release-deploy:", 1)[1].split("\n\n", 1)[0]
 
         expected = [
             "$(MAKE) foundry-release-readiness",
             "$(MAKE) foundry-release-package",
-            "$(MAKE) -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready",
+            "$(MAKE) foundry-release-build",
+            "$(MAKE) foundry-release-hosted-activate",
+            "$(MAKE) foundry-release-app-deploy",
         ]
         offsets = [release.index(command) for command in expected]
         self.assertEqual(offsets, sorted(offsets))
 
-    def test_release_dry_run_preserves_parallel_deployment(self) -> None:
+    def test_release_dry_run_preserves_two_phase_deployment(self) -> None:
         result = subprocess.run(
             ["make", "-n", "foundry-release-deploy"],
             cwd=ROOT,
@@ -68,18 +70,31 @@ class HostedRuntimeSecretContractTests(unittest.TestCase):
         expected = [
             "make foundry-release-readiness",
             "make foundry-release-package",
-            "make -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready",
+            "make foundry-release-build",
+            "make foundry-release-hosted-activate",
+            "make foundry-release-app-deploy",
         ]
         offsets = [output.index(command) for command in expected]
         self.assertEqual(offsets, sorted(offsets))
 
     def test_frontend_build_uses_local_docker_capacity(self) -> None:
+        build = (ROOT / "scripts/foundry/build_release_images.sh").read_text()
         deploy = (ROOT / "scripts/foundry/deploy_public_frontend.sh").read_text()
 
-        self.assertIn("az acr login", deploy)
-        self.assertIn("docker build", deploy)
-        self.assertIn('docker push "$image"', deploy)
+        self.assertIn("az acr login", build)
+        self.assertIn("docker build", build)
+        self.assertIn('docker push "$frontend_image"', build)
         self.assertNotIn("az acr build", deploy)
+        self.assertIn("PUBLIC_FRONTEND_PREBUILT_IMAGE", deploy)
+
+    def test_backend_deploy_reads_hosted_version_after_activation(self) -> None:
+        makefile = (ROOT / "Makefile").read_text()
+        release = makefile.split("foundry-release-deploy:", 1)[1].split("\n\n", 1)[0]
+
+        self.assertLess(
+            release.index("$(MAKE) foundry-release-hosted-activate"),
+            release.index("$(MAKE) foundry-release-app-deploy"),
+        )
 
     def test_standalone_azure_scripts_select_subscription(self) -> None:
         scripts = [
