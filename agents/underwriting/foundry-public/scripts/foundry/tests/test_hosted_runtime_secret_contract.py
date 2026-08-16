@@ -44,20 +44,19 @@ class HostedRuntimeSecretContractTests(unittest.TestCase):
         self.assertNotIn("EXPECTED_RUNTIME_DATABASE_URL", verifier)
         self.assertIn("FOUNDRY_RUNTIME_CONNECTION_NAME", verifier)
 
-    def test_release_deploys_hosted_before_apps(self) -> None:
+    def test_release_deploys_all_runtime_legs_in_parallel(self) -> None:
         makefile = (ROOT / "Makefile").read_text()
         release = makefile.split("foundry-release-deploy:", 1)[1].split("\n\n", 1)[0]
 
         expected = [
             "$(MAKE) foundry-release-readiness",
-            "$(MAKE) foundry-package",
-            "$(MAKE) foundry-deploy-ready",
-            "$(MAKE) -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready",
+            "$(MAKE) foundry-release-package",
+            "$(MAKE) -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready",
         ]
         offsets = [release.index(command) for command in expected]
         self.assertEqual(offsets, sorted(offsets))
 
-    def test_release_dry_run_preserves_order(self) -> None:
+    def test_release_dry_run_preserves_parallel_deployment(self) -> None:
         result = subprocess.run(
             ["make", "-n", "foundry-release-deploy"],
             cwd=ROOT,
@@ -68,12 +67,19 @@ class HostedRuntimeSecretContractTests(unittest.TestCase):
         output = result.stdout
         expected = [
             "make foundry-release-readiness",
-            "make foundry-package",
-            "make foundry-deploy-ready",
-            "make -j2 foundry-backend-deploy-ready foundry-frontend-deploy-ready",
+            "make foundry-release-package",
+            "make -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready",
         ]
         offsets = [output.index(command) for command in expected]
         self.assertEqual(offsets, sorted(offsets))
+
+    def test_frontend_build_uses_local_docker_capacity(self) -> None:
+        deploy = (ROOT / "scripts/foundry/deploy_public_frontend.sh").read_text()
+
+        self.assertIn("az acr login", deploy)
+        self.assertIn("docker build", deploy)
+        self.assertIn('docker push "$image"', deploy)
+        self.assertNotIn("az acr build", deploy)
 
     def test_standalone_azure_scripts_select_subscription(self) -> None:
         scripts = [

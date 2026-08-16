@@ -160,7 +160,7 @@ revision_is_running() {
       --query properties.runningState \
       --output tsv
   )"
-  [[ "$state" == "Running" ]]
+  [[ "$state" == "Running" || "$state" == "RunningAtMaxScale" ]]
 }
 
 for attempt in $(seq 1 6); do
