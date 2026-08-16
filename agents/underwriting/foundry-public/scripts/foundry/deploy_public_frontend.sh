@@ -54,6 +54,19 @@ if [[ "$backend_external" != "false" && "${ALLOW_PUBLIC_BACKEND_FOR_MIGRATION:-0
   echo "Backend ingress must already be internal. Use the one-time foundry-backend-internalize command for migration." >&2
   exit 1
 fi
+frontend_external="$(
+  az containerapp show \
+    --subscription "$subscription_id" \
+    --resource-group "$resource_group" \
+    --name "$frontend_name" \
+    --query 'properties.configuration.ingress.external' \
+    --output tsv
+)"
+frontend_external="${frontend_external,,}"
+if [[ "$frontend_external" != "true" ]]; then
+  echo "Frontend ingress must already be external; routine app-only deployment does not mutate topology." >&2
+  exit 1
+fi
 backend_fqdn="$(
   az containerapp show \
     --subscription "$subscription_id" \
@@ -84,14 +97,6 @@ az containerapp update \
   --name "$frontend_name" \
   --image "$image" \
   --set-env-vars "NGINX_API_UPSTREAM=https://${backend_fqdn}" \
-  --output none
-
-az containerapp ingress update \
-  --subscription "$subscription_id" \
-  --resource-group "$resource_group" \
-  --name "$frontend_name" \
-  --type external \
-  --target-port 80 \
   --output none
 
 echo "PUBLIC_FRONTEND_IMAGE=$image"

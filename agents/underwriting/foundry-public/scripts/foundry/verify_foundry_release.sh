@@ -122,8 +122,10 @@ frontend_upstream="$(
   echo "Container Apps ready revisions/images are incomplete." >&2
   exit 1
 }
-[[ "$backend_image" == "${registry_endpoint}/${backend_repository}:"* &&
-  "$frontend_image" == "${registry_endpoint}/${frontend_repository}:"* ]] || {
+[[ ("$backend_image" == "${registry_endpoint}/${backend_repository}:"* ||
+    "$backend_image" == "${registry_endpoint}/${backend_repository}@"*) &&
+  ("$frontend_image" == "${registry_endpoint}/${frontend_repository}:"* ||
+    "$frontend_image" == "${registry_endpoint}/${frontend_repository}@"*) ]] || {
   echo "Container Apps ready images are not from the configured Underwriting repositories." >&2
   exit 1
 }
@@ -223,7 +225,8 @@ jq -e '
 }
 hosted_image="$(jq -r '.image' <<<"$hosted_json")"
 unset database_url runtime_database_url
-[[ "$hosted_image" == "${registry_endpoint}/underwriting-hosted:"* ]] || {
+[[ "$hosted_image" == "${registry_endpoint}/underwriting-hosted:"* ||
+  "$hosted_image" == "${registry_endpoint}/underwriting-hosted@"* ]] || {
   echo "Hosted agent image is not from the configured Underwriting repository." >&2
   exit 1
 }

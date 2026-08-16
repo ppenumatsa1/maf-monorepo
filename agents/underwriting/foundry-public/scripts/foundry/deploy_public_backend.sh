@@ -125,12 +125,4 @@ az containerapp update \
     "FRONTEND_ORIGIN=https://${frontend_fqdn}" \
   --output none
 
-az containerapp ingress update \
-  --subscription "$subscription_id" \
-  --resource-group "$resource_group" \
-  --name "$backend_name" \
-  --type internal \
-  --target-port 8000 \
-  --output none
-
 echo "PUBLIC_BACKEND_IMAGE=$image"

@@ -48,14 +48,16 @@ grep -Fq 'does not match the existing server location' "$root_dir/scripts/foundr
 ! grep -Fq -- '--rule-name' "$root_dir/scripts/foundry/provision_postgres_runtime_credentials.sh"
 ! grep -Fq -- '--database-name' "$root_dir/scripts/foundry/provision_postgres_runtime_credentials.sh"
 grep -Fq -- '--server-name "$server_name"' "$root_dir/scripts/foundry/provision_postgres_runtime_credentials.sh"
-grep -Fq 'az containerapp ingress update' "$root_dir/scripts/foundry/deploy_public_backend.sh"
-grep -A6 -F 'az containerapp ingress update' "$root_dir/scripts/foundry/deploy_public_backend.sh" | grep -Fq -- '--type internal'
+grep -Fq 'Backend ingress must already be internal' "$root_dir/scripts/foundry/deploy_public_backend.sh"
+! grep -Fq 'az containerapp ingress update' "$root_dir/scripts/foundry/deploy_public_backend.sh"
 ! grep -A20 'az containerapp update' "$root_dir/scripts/foundry/deploy_public_backend.sh" | grep -Fq -- '--target-port'
 grep -Fq 'required_env AGENT_UNDERWRITING_HOSTED_RESPONSES_ENDPOINT' "$root_dir/scripts/foundry/deploy_public_backend.sh"
 grep -Fq '"AZURE_CLIENT_ID=${backend_identity_client_id}"' "$root_dir/scripts/foundry/deploy_public_backend.sh"
 grep -Fq '"FOUNDRY_HOSTED_AGENT_VERSION=${hosted_agent_version}"' "$root_dir/scripts/foundry/deploy_public_backend.sh"
 grep -Fq '"DB_SCHEMA_MANAGED_EXTERNALLY=true"' "$root_dir/scripts/foundry/deploy_public_backend.sh"
 grep -Fq '"NGINX_API_UPSTREAM=https://${backend_fqdn}"' "$root_dir/scripts/foundry/deploy_public_frontend.sh"
+grep -Fq 'Frontend ingress must already be external' "$root_dir/scripts/foundry/deploy_public_frontend.sh"
+! grep -Fq 'az containerapp ingress update' "$root_dir/scripts/foundry/deploy_public_frontend.sh"
 ! grep -Fq 'VITE_API_BASE_URL=https://' "$root_dir/scripts/foundry/deploy_public_frontend.sh"
 grep -Fq 'location /api/' "$root_dir/frontend/nginx.conf.template"
 grep -Fq 'location = /backend-health' "$root_dir/frontend/nginx.conf.template"
