@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from evals.foundry_eval_runner import (
     _load_hosted_e2e_evidence,
     _load_telemetry_trace_ids,
     _parse_hosted_e2e_evidence,
+    _resolve_input_path,
     _should_retry_empty_evaluation,
     _validate_result_counts,
 )
@@ -122,6 +124,24 @@ def test_load_hosted_e2e_evidence_rejects_malformed_json() -> None:
             evidence_path,
             max_age_seconds=3600,
             now=_NOW,
+        )
+
+
+def test_resolve_input_path_prefers_release_evidence_environment() -> None:
+    configured = Path("/tmp/release/evidence/hosted-e2e-evidence.json")
+
+    with patch.dict(
+        os.environ,
+        {"HOSTED_E2E_EVIDENCE_FILE": str(configured)},
+        clear=False,
+    ):
+        assert (
+            _resolve_input_path(
+                Path("/workspace/backend"),
+                "HOSTED_E2E_EVIDENCE_FILE",
+                ".foundry/results/hosted-e2e-evidence.json",
+            )
+            == configured
         )
 
 

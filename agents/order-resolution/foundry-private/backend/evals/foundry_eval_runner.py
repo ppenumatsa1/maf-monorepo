@@ -244,6 +244,11 @@ def _build_exact_trace_data_source(
     }
 
 
+def _resolve_input_path(root: Path, environment_name: str, configured_uri: str) -> Path:
+    configured_path = os.getenv(environment_name, "").strip()
+    return Path(configured_path) if configured_path else root / configured_uri
+
+
 async def run_foundry_eval() -> None:
     root = Path(__file__).resolve().parents[1]
     foundry_root = root / ".foundry"
@@ -293,13 +298,13 @@ async def run_foundry_eval() -> None:
     )
     timeout = float(os.getenv("FOUNDRY_EVAL_TIMEOUT", foundry_cfg.get("timeout", 900)))
 
-    evidence_path = root / evidence_uri
+    evidence_path = _resolve_input_path(root, "HOSTED_E2E_EVIDENCE_FILE", evidence_uri)
     started_at, generated_at, conversation_ids = _load_hosted_e2e_evidence(
         evidence_path,
         max_age_seconds=max_evidence_age,
     )
     trace_ids = _load_telemetry_trace_ids(
-        root / telemetry_uri,
+        _resolve_input_path(root, "TELEMETRY_RESULT_FILE", telemetry_uri),
         required_count=len(conversation_ids),
     )
     configured_report = os.getenv("FOUNDRY_REPORT_FILE")
