@@ -124,12 +124,12 @@ make test-e2e
 For hosted release validation, run the authenticated lane and then record evidence in the delivery ledger:
 
 ```bash
-make foundry-package
-make foundry-smoke
-make foundry-eval
-make foundry-verify
-make foundry-evidence
+RELEASE_ID=<release-id> make foundry-release
 ```
+
+The orchestrator owns the two-phase immutable build, hosted activation, ACA
+deployment, smoke, E2E, evaluation, telemetry, verification, and evidence
+sequence. Use the individual targets only to diagnose or resume a failed stage.
 
 ## Canonical public release workflow
 

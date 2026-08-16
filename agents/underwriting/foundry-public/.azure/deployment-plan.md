@@ -79,13 +79,18 @@ summary reported no non-compliant policies or resources.
 
 1. Invoke the validated bootstrap deployment workflow.
 2. Provision runtime PostgreSQL credentials and schema.
-3. Package all declared services and run the app-only release workflow: deploy
-   and persist the hosted agent first, then deploy the internal backend and
-   external frontend concurrently.
-4. Run smoke, deployed same-origin E2E, Foundry evaluation, telemetry, and
+3. Validate all three service contexts; build backend and hosted images
+   concurrently in ACR and the frontend concurrently with local Docker.
+4. Activate the hosted agent from its exact digest and persist its version,
+   then deploy the digest-pinned internal backend and external frontend
+   concurrently without repeating ingress mutations.
+5. Run smoke, deployed same-origin E2E, Foundry evaluation, telemetry, and
    `foundry-verify`.
-5. Aggregate secret-free release-window evidence with `make foundry-evidence`
+6. Aggregate secret-free release-window evidence with `make foundry-evidence`
    and record the release in `docs/design/issues-changes-fixes.md`.
+
+Release `uw-public-51a8311-20260816140654` live-validated this flow and reached
+telemetry in 14m 10.0s. Finalization rejects totals above 15 minutes.
 
 No additional manual approval checkpoint is required. A deployment invocation
 is the execution trigger; destructive PostgreSQL rebuild remains separately

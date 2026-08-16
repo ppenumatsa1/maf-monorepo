@@ -187,5 +187,7 @@ build/lint, focused Playwright coverage, and the retained `make test-e2e`
 suite. Recorded local evidence is 133 passing tests, a 10/10 deterministic
 evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
 passing design review. Protected run `31911162673` activated hosted-agent
-version 6 and passed telemetry plus strict 3/3 evaluation. Future releases
-still require fresh evidence.
+version 6 and passed telemetry plus strict 3/3 evaluation. Workflow
+`31922650130` is the latest timing authority: 6m 36.8s to telemetry and
+6m 57.8s through strict evaluation. Future releases still require fresh
+evidence and must stay within the 15-minute budget.

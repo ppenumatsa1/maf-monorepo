@@ -98,8 +98,11 @@ preview-digest gate. Release
 claims require fresh smoke, hosted browser E2E, the three HTTP domain
 scenarios, a completed report-only evaluation with zero failed/errored rows,
 exact Application Insights correlation, and final evidence from the same
-release window. The project-local `deployment/profiles/azure-hosted.env` is the
-only target authority; do not introduce shared deployment components. Keep
+release window. The release record must also pass the 15-minute
+app-only-to-telemetry budget; the latest verified interval is 13m 24.6s. The
+shared `../deployment/profiles/azure-hosted.env` is the target authority;
+lane-local profiles are bootstrap/compatibility inputs. Do not introduce
+shared scripts or runtime components. Keep
 generated JSON under `.artifacts/releases/<release-id>/evidence/`, logs under
 `logs/`, and preserve final failed evidence when a gate stops the release.
 Retain the CFS package feed and Alpine/musl-compatible frontend build.

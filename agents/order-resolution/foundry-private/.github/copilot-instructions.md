@@ -62,6 +62,8 @@ The routine deploy workflow continues into evidence by default. Preserve the
 requirements-hash virtual-environment cache, concurrent hosted-image build,
 and adaptive zero-row evaluator-readiness retry. Do not reintroduce a fixed
 trace-age sleep or retry real evaluator/service failures.
+Keep the hard 15-minute app-only-to-telemetry budget; workflow `31922650130`
+completed that interval in 6m 36.8s.
 Do not add optional refresh, administrator-password, public-access, or
 firewall bypasses to any path.
 

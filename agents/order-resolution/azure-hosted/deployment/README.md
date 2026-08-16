@@ -42,6 +42,8 @@ Each release writes one gitignored directory:
 paths. A successful release requires deployment verification, three deployed
 domain scenarios, a completed evaluation with no failed or errored rows,
 exact-pair telemetry correlation, and zero relevant exceptions.
+It also requires the recorded app-only-to-telemetry interval to remain at or
+below 900,000 ms. The latest verified release completed in 13m 24.6s.
 
 Infrastructure remains separate from routine release execution:
 

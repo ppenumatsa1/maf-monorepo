@@ -23,8 +23,8 @@ Current hosted-validation note (2026-07-15):
 - `foundry/release_record.py`: atomically initializes/finalizes the strict
   `.artifacts/releases/<release-id>/` record and validates gates and evidence.
 - `foundry/migrate_release_history.py`: dry-run-only inventory for
-  `legacy_pending_cutover` singular release/history paths. The plural release
-  path remains `prepared_not_live_validated`.
+  singular release/history paths. The plural release path is live-validated by
+  workflow `31922650130` and remains the only current release authority.
 
 ## Run Playwright locally
 

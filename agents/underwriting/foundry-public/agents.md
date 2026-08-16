@@ -47,6 +47,10 @@ This file describes expected behavior for coding agents working in this reposito
    validate schema parity but must not create or alter tables or indexes.
 10. Routine release mode is always `app_only`. Never accept
     `FOUNDRY_DEPLOY_MODE` or add a public-ingress toggle.
+    Build backend and hosted images concurrently in ACR and the frontend with
+    local Docker, activate the exact hosted digest, then deploy backend and
+    frontend concurrently. Never deploy the backend before the new hosted
+    version is persisted. Keep the 15-minute app-only-to-telemetry budget.
 11. Hosted agent metadata must contain only
     `${{connections.underwritingruntimesecrets.credentials.database_url}}` for
     both database variables. The resolved value belongs only in the
@@ -59,7 +63,8 @@ Run the smallest existing applicable gate set and report what happened:
 - `make test`
 - `make quality` for backend/frontend code changes
 - `make test-e2e` for UI, API, AG-UI, CopilotKit, workflow, or durable-history changes
-- `make foundry-iac-build`, `make foundry-package`, and
+- `make foundry-iac-build`, `make foundry-release-package`,
+  `make foundry-release-build`, and
   `make foundry-postgres-readiness`, `make foundry-model-preflight`, and
   `make foundry-runtime-connection` for hosted release/IaC changes
 - `make foundry-backend-internalize CONFIRM=INTERNALIZE-<backend>` only for the

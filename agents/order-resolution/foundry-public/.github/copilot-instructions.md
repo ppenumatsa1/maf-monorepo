@@ -56,6 +56,8 @@ Release images are deployed by immutable digest, the hosted platform identity
 receives only account-scoped `Cognitive Services OpenAI User`, and
 `make foundry-verify` plus `make foundry-evidence` own live proof and
 secret-free release-window aggregation.
+The release authority must reject app-only-to-telemetry durations above 15
+minutes; the latest verified public release completed in 14m 01.1s.
 Hosted database variables must use the deterministic project `CustomKeys`
 connection placeholder; never put the resolved runtime URL in a hosted
 definition, agent metadata, deployment metadata, or evidence.

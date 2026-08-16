@@ -164,6 +164,7 @@ mutated.
 | --- | --- | --- |
 | Private infrastructure, preview, and PostgreSQL readiness | [`31906517820`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31906517820) | Passed |
 | Optimized app-only deployment and chained evidence, commit `a39ad24` | [`31911162673`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31911162673) | Passed; hosted agent version 6 active and 3/3 traces passed |
+| Latest 15-minute-budget authority | [`31922650130`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31922650130) | Passed; 6m 36.8s to telemetry and 6m 57.8s through strict evaluation |
 
 The final telemetry gate correlated 204 Application Insights rows and four
 eligible Foundry evaluation spans across all three fresh hosted E2E
@@ -176,7 +177,7 @@ conversations. The strict Foundry result was `passed=3`, `failed=0`,
 | --- | --- | --- | ---: |
 | Infrastructure/IaC to telemetry | Provision run `31906517820` at `20:22:38Z` | Evidence run `31906891692` at `20:36:15Z` | **13m 37s** |
 | App-only to telemetry, before optimization | Deployment run `31908682961` at `21:10:09Z` | Evidence run `31908858225` at `21:18:52Z` | **8m 43s** |
-| App-only to telemetry, optimized steady state | Chained run `31911162673` at `22:04:17Z` | Same run at `22:11:45Z` | **7m 29s** |
+| App-only to telemetry, optimized steady state | Workflow `31922650130` | Same workflow | **6m 36.8s** |
 
 The infrastructure measurement includes the workflow handoffs: 3m36s for
 preview/provision/readiness, 3m37s for app deployment, 5m18s from evidence
@@ -185,9 +186,9 @@ start to telemetry readiness, and 1m06s of dispatch gaps.
 The optimized app-only workflow preserves a requirements-hash-validated Python
 environment, overlaps the hosted-agent image build with ACA deployment,
 continues directly into evidence, and submits evaluation as soon as Foundry
-can read the exact traces. Telemetry improved by **1m14s** (14%). Complete
-strict evidence improved from **11m54s** to **7m48s**, a **4m06s** (34%)
-reduction.
+can read the exact traces. The latest authority improves app-only telemetry by **2m 06.2s** from the
+8m43s baseline. Complete strict evaluation finished in **6m 57.8s**, a
+**4m 56.2s** improvement from 11m54s. The 15-minute budget remains enforced.
 
 ## Role Assignment Verification
 

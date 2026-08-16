@@ -8,6 +8,13 @@ must prefer `agents/order-resolution/deployment/profiles/*.env`. Lane-local
 profile tooling remains only as `legacy_pending_cutover` compatibility and
 must not become a second source of truth.
 
+Each lane owns its generated release implementation and writes one secret-free
+bundle under `.artifacts/releases/<release-id>/`. The shared profiles do not
+create a shared runtime, script package, or evidence aggregator. All three
+Order Resolution lanes enforce a 15-minute app-only-start-to-telemetry budget;
+their lane-local `docs/design/deployment-flow.md` files contain the current
+commands and measured timings.
+
 Each profile defines only the values that identify a deployment target:
 
 - Azure subscription

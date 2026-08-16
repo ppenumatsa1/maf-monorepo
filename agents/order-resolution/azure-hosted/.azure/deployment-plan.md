@@ -87,12 +87,15 @@ reconcile infrastructure, recreate PostgreSQL, or reset the `maf_workflow`
 database. Preserve the approved CFS Python package feed and the frontend
 Alpine/musl-compatible image build.
 
-The release target is read from the project-local
-`deployment/profiles/azure-hosted.env`. One release ID owns `release.json`,
+The release target is read from the shared canonical
+`../deployment/profiles/azure-hosted.env`; lane-local profiles remain
+bootstrap/compatibility inputs. One release ID owns `release.json`,
 JSON evidence under `.artifacts/releases/<release-id>/evidence/`, and logs under
 the sibling `logs/` directory. Evaluation is report-only but release-blocking:
 it must complete with zero failed or errored rows. The validation wrapper writes
-failed final evidence when an intermediate gate fails.
+failed final evidence when an intermediate gate fails. Finalization also
+rejects app-only-to-telemetry durations above 15 minutes; release
+`final-20260816T024551Z-667e609-azure` passed in 13m 24.6s.
 
 The release validation must capture a fresh `release_run_id`,
 `release_started_at`, low/high-risk thread IDs, and workflow run IDs. In the

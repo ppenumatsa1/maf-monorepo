@@ -202,11 +202,13 @@ health, hosted agent version/image and literal connection placeholders, App
 Insights, backend database-secret parity, and
 `DB_SCHEMA_MANAGED_EXTERNALLY=true` before smoke, three-conversation hosted
 E2E, evaluation, telemetry, and one aggregate release-window report.
-Future execution writes the v1 authority record to
+Execution writes the v1 authority record to
 `.artifacts/releases/<release-id>/release.json`, detailed evidence below
-`evidence/`, and logs below `logs/`. This path is
-`prepared_not_live_validated`; `deployment-report/` and singular
-`.artifacts/release/` remain `legacy_pending_cutover`.
+`evidence/`, and logs below `logs/`. Release
+`final-isolated-20260816T025501Z-667e609-public` live-validated this path and
+reached telemetry in 14m 01.1s. Finalization rejects intervals above 15
+minutes. `deployment-report/` and singular `.artifacts/release/` remain
+historical inventory only.
 `make foundry-provision` is separate. In bootstrap mode it creates the complete
 lane; after output hydration the environment switches to non-mutating reuse
 mode. Bootstrap also requires the explicit schema, least-privilege runtime

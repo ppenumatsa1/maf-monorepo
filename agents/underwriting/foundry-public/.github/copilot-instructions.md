@@ -58,6 +58,11 @@ placeholder in hosted-agent metadata.
 - Keep routine deployment hard-enforced as `app_only`; reject
   `FOUNDRY_DEPLOY_MODE`. Keep the one-time backend internalization command
   fail-closed and never add a routine public-ingress toggle.
+- Preserve the two-phase release: build all three immutable images
+  concurrently, activate and persist the exact hosted digest/version, then
+  deploy backend and frontend concurrently without repeating ingress updates.
+  Finalization must reject app-only-to-telemetry durations above 15 minutes;
+  the latest verified interval is 14m 10.0s.
 - Never place the resolved `RUNTIME_DATABASE_URL` in
   `HostedAgentDefinition.environment_variables` or retrieve it from hosted
   agent metadata. Verify the placeholder and use readiness/smoke for
@@ -79,7 +84,10 @@ For hosted/public-lane or telemetry changes, also use applicable release gates:
 - `make foundry-postgres-readiness`
 - `make foundry-model-preflight`
 - `make foundry-runtime-connection`
-- `make foundry-package`
+- `make foundry-release-package`
+- `make foundry-release-build`
+- `make foundry-release-hosted-activate`
+- `make foundry-release-app-deploy`
 - `make foundry-smoke`
 - `make foundry-eval` (the report-only Foundry trace-evaluation gate)
 - `make foundry-verify`

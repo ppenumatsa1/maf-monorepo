@@ -36,8 +36,10 @@
 GitHub Actions runs only credential-free CI. Use `make foundry-release` from an
 authenticated local shell for Azure deployment and hosted validation.
 
-Release v1 is `prepared_not_live_validated`. Legacy evidence paths are
-`legacy_pending_cutover`.
+Release v1 is live-validated by
+`final-isolated-20260816T025501Z-667e609-public`; its app-only-to-telemetry
+interval was 14m 01.1s. Legacy evidence paths are inventory-only and are not
+release authority.
 
 Run the UI suite against the public frontend with
 `PLAYWRIGHT_BASE_URL="<frontend-url>" make test-e2e`; the internal backend

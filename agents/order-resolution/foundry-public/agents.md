@@ -18,7 +18,9 @@ This file describes expected behavior for coding agents working in this reposito
   RBAC is limited to account-scoped `Cognitive Services OpenAI User`, and
   `make foundry-verify`/`make foundry-evidence` produce the live secret-free
   deployment contract. The canonical stage and command mapping is
-  `docs/design/deployment-flow.md`.
+  `docs/design/deployment-flow.md`. Successful finalization enforces a
+  15-minute app-only-to-telemetry budget; the latest verified release completed
+  in 14m 01.1s.
 - Hosted database variables resolve through the Order-owned
   `orderresolutionruntimesecrets` project `CustomKeys` connection. Hosted
   definitions and GET metadata contain only the literal connection placeholder,

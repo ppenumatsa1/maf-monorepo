@@ -30,13 +30,16 @@ sole MAF host.
   logs, domain E2E, evaluation, telemetry, and final evidence files.
 
 This project owns its deployment contract independently:
-`deployment/profiles/azure-hosted.env` is the canonical secret-free target,
-`deployment/profile.sh` parses it as data, and `deployment/contracts/` defines
-the release evidence envelope. Generated evidence is separated into
+`../deployment/profiles/azure-hosted.env` is the canonical secret-free target;
+lane-local profiles remain bootstrap/compatibility inputs.
+`deployment/profile.sh` parses profiles as data, and `deployment/contracts/`
+defines the release evidence envelope. Generated evidence is separated into
 `.artifacts/releases/<release-id>/evidence/` and logs into
 `.artifacts/releases/<release-id>/logs/`.
 The sibling `release.json` records UTC stage intervals, integer millisecond
 durations, and the app-only-to-telemetry benchmark under `extensions.azure`.
+Successful finalization rejects an app-only-to-telemetry interval above 15
+minutes. Release `final-20260816T024551Z-667e609-azure` passed in 13m 24.6s.
 
 ## Quick start
 

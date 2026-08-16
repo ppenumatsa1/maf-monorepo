@@ -67,8 +67,8 @@ overlap.
 
 | Path | Status | Policy |
 | --- | --- | --- |
-| `.artifacts/release/` and relevant tracked `.foundry/results/` history | `legacy_pending_cutover` | Inventory only; no copy or deletion is authorized. |
-| `.artifacts/releases/<release-id>/` | `prepared_not_live_validated` | Future app release and same-context evidence retry write sanitized records, detailed `evidence/`, and `logs/`. |
+| `.artifacts/release/` and relevant tracked `.foundry/results/` history | Historical inventory | Inventory only; no copy or deletion is authorized. |
+| `.artifacts/releases/<release-id>/` | Live validated | App release and same-context evidence retry write sanitized records, detailed `evidence/`, and `logs/`; workflow `31922650130` is the latest timing authority. |
 
 `make release-history-migration-plan` is dry-run only. A later deletion design
 must require both live-release and durable-archive markers; this tooling never

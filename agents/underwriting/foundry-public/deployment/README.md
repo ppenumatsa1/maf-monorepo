@@ -5,9 +5,9 @@ profile identifies only the canonical subscription, resource group, location,
 AZD environment, name prefix, and `foundry-public` lane.
 
 Release-authority status: historical `deployment-report/` and singular
-`.artifacts/release/` paths are `legacy_pending_cutover`. Future release
-execution writes `.artifacts/releases/<release-id>/release.json`, evidence, and
-logs; this path is `prepared_not_live_validated`.
+`.artifacts/release/` paths are inventory only. Current release execution
+writes `.artifacts/releases/<release-id>/release.json`, evidence, and logs.
+Release `uw-public-51a8311-20260816140654` live-validated this path.
 
 The canonical profile is `deployment/profiles/foundry-public.env`. Both
 checked-in profiles select subscription
@@ -64,9 +64,11 @@ atomically, evidence is written under `evidence/`, command output is written
 under `logs/`, and success fails closed unless every declared gate is current,
 secret-free, release-local, and hashed. Its `extensions.release_timing` lane
 extension records UTC start/end timestamps and integer milliseconds for
-package/build, deploy/hosted activation, smoke, deployed E2E, evaluation,
-telemetry, deployment verification, and final evidence. The app-only total
-runs from the package/build start through `telemetry_succeeded_at`; concurrent
+package/context validation, immutable image build, hosted activation, ACA
+deployment, smoke, deployed E2E, evaluation, telemetry, deployment
+verification, and final evidence. The app-only total runs from package/context
+validation through `telemetry_succeeded_at`; concurrent
 evaluation, E2E, and telemetry intervals remain overlapping rather than being
-summed. `migrate_release_history.py` only inventories legacy paths; live copy
-and deletion remain disabled.
+summed. Finalization rejects totals above 900,000 ms; the latest verified total
+is 14m 10.0s. `migrate_release_history.py` only inventories legacy paths; live
+copy and deletion remain disabled.

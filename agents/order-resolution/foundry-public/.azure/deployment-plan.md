@@ -156,12 +156,16 @@ non-mutating by template construction.
 
 ### Standardized app-only release contract
 
-Future releases retain the approved target and do not accept
+Releases retain the approved target and do not accept
 `FOUNDRY_DEPLOY_MODE` overrides. Before application mutation,
 `make foundry-model-preflight` validates the existing Order Resolution chat,
 embeddings, and evaluator deployments plus regional quota without changing live
 SKU or capacity. Application scripts deploy immutable ACR digest references and
 persist only safe gitignored image/version metadata.
+
+Release `final-isolated-20260816T025501Z-667e609-public` live-validated the
+plural release bundle and reached telemetry in 14m 01.1s. Finalization rejects
+app-only-to-telemetry durations above 15 minutes.
 
 Hosted deployment reads the active version's platform principal and
 idempotently converges only `Cognitive Services OpenAI User` at the Foundry

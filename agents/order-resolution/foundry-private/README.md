@@ -157,10 +157,11 @@ standalone evidence retry attaches only to the same running source/release
 context. The lane-local `extensions.timing` object records UTC millisecond
 start/end timestamps, durations, retry attempts, overlap, and total
 app-only-start-to-telemetry-success elapsed time for every deployment and
-evidence stage. This path is
-`prepared_not_live_validated`. Singular
+evidence stage. Workflow `31922650130` live-validated this path at 6m 36.8s
+to telemetry and 6m 57.8s through strict evaluation. Finalization rejects an
+app-only-to-telemetry interval above 15 minutes. Singular
 `.artifacts/release/` and historical `backend/.foundry/results/` release output
-are `legacy_pending_cutover`; migration tooling is dry-run only and never
+are historical inventory; migration tooling is dry-run only and never
 copies or deletes history.
 
 The same source-of-truth target is available only from the private runner:
@@ -172,8 +173,10 @@ make foundry-release
 
 `make foundry-provision-preview` provides the required
 bootstrap/reconciliation evidence and must not be treated as an app-only
-preflight. `make foundry-release` is the full staged release path; do not use
-it to characterize a routine app-only release. Fresh bootstrap initializes the
+preflight. `make foundry-app-only-release` is the routine application deployment command;
+`make foundry-evidence` completes its hosted evidence gates.
+`make foundry-release` is the full bootstrap/reconciliation-plus-release path
+and must not be used for routine app-only changes. Fresh bootstrap initializes the
 schema and runtime role from the private runner, then
 `make foundry-postgres-readiness` verifies public access is disabled, the
 private endpoint and DNS are authoritative, and the runtime role remains

@@ -43,9 +43,12 @@ and database to be absent because steady-state IaC excludes PostgreSQL. Do not a
 caller-supplied digest gates. Require fresh smoke, hosted browser E2E, the
 three HTTP domain scenarios, a completed report-only evaluation with zero
 failed or errored rows, exact Application Insights correlation, and final
-evidence before claiming validation. Keep deployment ownership local to this
-project: `deployment/profiles/azure-hosted.env`, `deployment/profile.sh`, and
-`deployment/contracts/` must not depend on another lane. Generated release JSON
+evidence before claiming validation. Successful finalization must reject an
+app-only-to-telemetry interval above 15 minutes; the current verified record is
+13m 24.6s. Keep deployment ownership local to this
+project: use the shared `../deployment/profiles/azure-hosted.env` target while
+keeping `deployment/profile.sh`, `deployment/contracts/`, scripts, and runtime
+lane-local. Generated release JSON
 belongs under `.artifacts/releases/<release-id>/evidence/`; logs belong under
 the sibling `logs/` directory. Failed validation must still emit final failed
 evidence.
