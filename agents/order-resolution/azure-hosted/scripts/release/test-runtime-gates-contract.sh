@@ -84,6 +84,7 @@ for required in (
     'source "$ROOT_DIR/scripts/release/release-artifacts.sh"',
     "RELEASE_LOGS_DIR",
     'converge_ingress "$backend_app" internal 8000',
+    'NGINX_API_UPSTREAM=https://$backend_fqdn',
     'converge_ingress "$frontend_app" external 5173',
 ):
     require(deploy_app_only, required, "app-only release path")
@@ -96,6 +97,7 @@ for required in (
     'service_name.image-deploy.log',
     "--type internal",
     "--type external",
+    'NGINX_API_UPSTREAM=https://$backend_fqdn',
 ):
     require(deploy_ci_images, required, "CI image release path")
 

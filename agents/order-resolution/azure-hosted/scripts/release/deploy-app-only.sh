@@ -106,6 +106,25 @@ fi
 backend_app="$(resolve_app_name backend)"
 frontend_app="$(resolve_app_name frontend)"
 converge_ingress "$backend_app" internal 8000
+backend_fqdn="$(
+  az containerapp show \
+    --name "$backend_app" \
+    --resource-group "$resource_group" \
+    --subscription "$subscription_id" \
+    --query properties.configuration.ingress.fqdn \
+    --output tsv
+)"
+[[ "$backend_fqdn" == *.internal.* ]] || {
+  echo "Backend internal ingress did not produce an internal FQDN." >&2
+  exit 1
+}
+az containerapp update \
+  --name "$frontend_app" \
+  --resource-group "$resource_group" \
+  --subscription "$subscription_id" \
+  --set-env-vars "NGINX_API_UPSTREAM=https://$backend_fqdn" \
+  --only-show-errors \
+  --output none
 converge_ingress "$frontend_app" external 5173
 
 if [[ "$package_timed_here" == "true" ]]; then

@@ -145,6 +145,25 @@ az containerapp ingress enable \
   --allow-insecure false \
   --only-show-errors \
   --output none
+backend_fqdn="$(
+  az containerapp show \
+    --name "$backend_app" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --subscription "$AZURE_SUBSCRIPTION_ID" \
+    --query properties.configuration.ingress.fqdn \
+    --output tsv
+)"
+[[ "$backend_fqdn" == *.internal.* ]] || {
+  echo "Backend internal ingress did not produce an internal FQDN." >&2
+  exit 1
+}
+az containerapp update \
+  --name "$frontend_app" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --set-env-vars "NGINX_API_UPSTREAM=https://$backend_fqdn" \
+  --only-show-errors \
+  --output none
 az containerapp ingress enable \
   --name "$frontend_app" \
   --resource-group "$AZURE_RESOURCE_GROUP" \
