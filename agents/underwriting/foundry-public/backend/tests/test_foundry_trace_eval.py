@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from app.modules.underwriting.hosted import HOSTED_WORKFLOW_PROTOCOL, HostedWorkflowEnvelope
-from evals.foundry_trace_eval import _criteria, _load_evidence, _result_counts
+from evals.foundry_trace_eval import _criteria, _evidence_path, _load_evidence, _result_counts
 
 
 def _backend_root() -> Path:
@@ -67,6 +67,15 @@ def test_result_counts_normalizes_foundry_sdk_model() -> None:
         "total": 1,
         "skipped": 0,
     }
+
+
+def test_evidence_path_prefers_current_release_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    current = tmp_path / "release-smoke.json"
+    monkeypatch.setenv("FOUNDRY_SMOKE_EVIDENCE_FILE", str(current))
+
+    assert _evidence_path(tmp_path, "tracked-sample.json") == current
 
 
 def test_eval_config_references_existing_dataset_and_trace_evidence() -> None:

@@ -70,6 +70,10 @@ def _result_counts(value: object) -> dict[str, int]:
     }
 
 
+def _evidence_path(root: Path, configured: str) -> Path:
+    return Path(os.getenv("FOUNDRY_SMOKE_EVIDENCE_FILE", root / configured))
+
+
 def run() -> None:
     root = Path(__file__).resolve().parents[1]
     config = _read_config(root / "eval.yaml")
@@ -82,7 +86,8 @@ def run() -> None:
     evidence_uri = trace_config.get("evidence_file")
     if not isinstance(evidence_uri, str) or not evidence_uri:
         raise ValueError("foundry.trace_evaluation.evidence_file is required")
-    generated_at, conversation_ids = _load_evidence(root / evidence_uri)
+    evidence_path = _evidence_path(root, evidence_uri)
+    generated_at, conversation_ids = _load_evidence(evidence_path)
 
     minimum_age = float(trace_config.get("minimum_trace_age_seconds", 90))
     if minimum_age < 0:

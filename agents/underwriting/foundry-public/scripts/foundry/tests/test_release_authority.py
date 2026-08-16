@@ -71,7 +71,7 @@ class ReleaseRecordTests(unittest.TestCase):
             ),
             ("smoke", "2026-08-15T20:00:30.000Z", "2026-08-15T20:00:40.000Z"),
             ("deployed_e2e", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:10.000Z"),
-            ("evaluation", "2026-08-15T20:01:10.000Z", "2026-08-15T20:01:20.000Z"),
+            ("evaluation", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:20.000Z"),
             ("telemetry", "2026-08-15T20:01:10.000Z", "2026-08-15T20:01:30.000Z"),
             (
                 "deployment_verification",
@@ -130,7 +130,7 @@ class ReleaseRecordTests(unittest.TestCase):
             "release_timing"
         ]
         self.assertEqual(timing["stages"]["package_build"]["duration_ms"], 10_000)
-        self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 10_000)
+        self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 40_000)
         self.assertEqual(timing["app_only_duration_ms"], 90_000)
         self.assertEqual(timing["app_only"]["duration_ms"], 90_000)
         self.assertEqual(timing["app_only"]["status"], "succeeded")
@@ -138,7 +138,7 @@ class ReleaseRecordTests(unittest.TestCase):
             timing["telemetry_succeeded_at"],
             timing["stages"]["telemetry"]["ended_at"],
         )
-        self.assertEqual(
+        self.assertLess(
             timing["stages"]["evaluation"]["started_at"],
             timing["stages"]["deployed_e2e"]["ended_at"],
         )

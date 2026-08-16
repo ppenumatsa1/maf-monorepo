@@ -30,7 +30,7 @@ TIMING_PREREQUISITES = {
     "deploy_hosted_activation": ("package_build",),
     "smoke": ("deploy_hosted_activation",),
     "deployed_e2e": ("smoke",),
-    "evaluation": ("deployed_e2e",),
+    "evaluation": ("smoke",),
     "telemetry": ("deployed_e2e",),
     "deployment_verification": ("evaluation", "telemetry"),
     "final_evidence": ("deployment_verification",),
