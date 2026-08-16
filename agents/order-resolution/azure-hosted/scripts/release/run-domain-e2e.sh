@@ -44,6 +44,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -145,7 +146,7 @@ def scenario(
     expected_hitl: bool,
     decision: str | None = None,
 ) -> dict[str, object]:
-    thread_id = f"domain-e2e-{release_id}-{scenario_id}"
+    thread_id = f"domain-e2e-{release_id}-{scenario_id}-{uuid.uuid4().hex[:8]}"
     request_json(
         "POST",
         f"{api_url}/api/chat/run",
