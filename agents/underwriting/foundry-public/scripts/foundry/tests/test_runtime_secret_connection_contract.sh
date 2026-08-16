@@ -87,4 +87,5 @@ grep -Fq 'Converged Underwriting Foundry project CustomKeys runtime-secret conne
 ! grep -Fq "$runtime_password" <<<"$output"
 ! grep -Fq "$runtime_password" "$az_log"
 grep -Fq -- '--parameters @/dev/stdin' "$az_log"
+grep -Eq -- '--name underwriting-runtime-secret-[[:alnum:]._-]+' "$az_log"
 ! find "$scratch_dir" -type f ! -path "$bin_dir/*" -exec grep -Fq "$runtime_password" {} +

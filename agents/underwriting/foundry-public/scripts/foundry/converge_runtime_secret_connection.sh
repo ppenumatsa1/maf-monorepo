@@ -124,11 +124,15 @@ print(
 PY
 }
 
+deployment_suffix="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+deployment_suffix="$(printf '%s' "$deployment_suffix" | tr -c '[:alnum:]_.-' '-')"
+deployment_name="underwriting-runtime-secret-${deployment_suffix:0:35}"
+
 emit_parameters |
   az deployment group create \
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
-    --name underwriting-runtime-secret-connection \
+    --name "$deployment_name" \
     --template-file "$TEMPLATE" \
     --parameters @/dev/stdin \
     --mode Incremental \
