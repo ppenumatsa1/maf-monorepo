@@ -127,6 +127,10 @@ def _build_conversation_trace_testing_criteria(
     return criteria
 
 
+def _evidence_path(root: Path, configured: str) -> Path:
+    return Path(os.getenv("HOSTED_E2E_EVIDENCE_FILE", root / configured))
+
+
 async def run_foundry_eval() -> None:
     root = Path(__file__).resolve().parents[1]
     foundry_root = root / ".foundry"
@@ -162,7 +166,7 @@ async def run_foundry_eval() -> None:
     )
     timeout = float(os.getenv("FOUNDRY_EVAL_TIMEOUT", foundry_cfg.get("timeout", 900)))
 
-    evidence_path = root / evidence_uri
+    evidence_path = _evidence_path(root, evidence_uri)
     started_at, generated_at, conversation_ids, release_id = _load_hosted_e2e_evidence(
         evidence_path
     )

@@ -7,9 +7,19 @@ from pathlib import Path
 import pytest
 from evals.foundry_eval_runner import (
     _build_conversation_trace_testing_criteria,
+    _evidence_path,
     _load_hosted_e2e_evidence,
     _trace_materialization_delay,
 )
+
+
+def test_evidence_path_prefers_current_release_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    current = tmp_path / "release-hosted-e2e.json"
+    monkeypatch.setenv("HOSTED_E2E_EVIDENCE_FILE", str(current))
+
+    assert _evidence_path(tmp_path, "tracked-sample.json") == current
 
 
 def test_load_hosted_e2e_evidence_requires_all_release_conversations(
