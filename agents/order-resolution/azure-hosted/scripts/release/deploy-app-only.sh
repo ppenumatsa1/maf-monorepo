@@ -84,6 +84,47 @@ converge_ingress() {
     --output none
 }
 
+pin_active_image() {
+  local app_name="$1"
+  local image registry repository_tag repository digest pinned_image
+  image="$(
+    az containerapp show \
+      --name "$app_name" \
+      --resource-group "$resource_group" \
+      --subscription "$subscription_id" \
+      --query 'properties.template.containers[0].image' \
+      --output tsv
+  )"
+  if [[ "$image" == *@sha256:* ]]; then
+    printf '%s\n' "$image"
+    return
+  fi
+  registry="${image%%/*}"
+  repository_tag="${image#*/}"
+  repository="${repository_tag%:*}"
+  digest="$(
+    az acr repository show \
+      --name "${registry%%.*}" \
+      --image "$repository_tag" \
+      --subscription "$subscription_id" \
+      --query digest \
+      --output tsv
+  )"
+  [[ "$digest" == sha256:* ]] || {
+    echo "Unable to resolve immutable digest for $image." >&2
+    return 1
+  }
+  pinned_image="$registry/$repository@$digest"
+  az containerapp update \
+    --name "$app_name" \
+    --resource-group "$resource_group" \
+    --subscription "$subscription_id" \
+    --image "$pinned_image" \
+    --only-show-errors \
+    --output none
+  printf '%s\n' "$pinned_image"
+}
+
 deploy_service backend &
 backend_pid=$!
 deploy_service frontend &
@@ -105,6 +146,8 @@ fi
 
 backend_app="$(resolve_app_name backend)"
 frontend_app="$(resolve_app_name frontend)"
+pin_active_image "$backend_app" >/dev/null
+pin_active_image "$frontend_app" >/dev/null
 converge_ingress "$backend_app" internal 8000
 backend_fqdn="$(
   az containerapp show \
