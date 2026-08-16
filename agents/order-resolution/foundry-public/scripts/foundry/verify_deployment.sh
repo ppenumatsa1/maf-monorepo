@@ -18,15 +18,14 @@ require_bin() {
   }
 }
 
-get_env() {
-  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-    azd env get-value "$1" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
-}
-
 required_env() {
   local name="$1"
-  local value
-  value="$(get_env "$name")"
+  local line value
+  line="$(printf '%s\n' "$AZD_ENV_VALUES" | grep -E "^${name}=" | tail -n 1 || true)"
+  value="$(
+    printf '%s' "${line#*=}" |
+      python3 -c 'import shlex, sys; value=sys.stdin.read(); print(shlex.split(value)[0] if value else "")'
+  )"
   [[ -n "$value" ]] || {
     echo "Missing AZD environment value: $name" >&2
     exit 1
@@ -109,6 +108,10 @@ require_file "$FRONTEND_METADATA_FILE"
 require_file "$HOSTED_METADATA_FILE"
 require_file "$RUNTIME_CONNECTION_METADATA_FILE"
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
+AZD_ENV_VALUES="$(
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env get-values --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null
+)"
 
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
@@ -189,20 +192,38 @@ done
 }
 
 az account set --subscription "$subscription_id"
-backend_json="$(
+verification_temp_dir="$(mktemp -d)"
+trap 'rm -rf "$verification_temp_dir"' EXIT
+backend_json_file="$verification_temp_dir/backend.containerapp.json"
+frontend_json_file="$verification_temp_dir/frontend.containerapp.json"
+backend_revision_file="$verification_temp_dir/backend.revision.json"
+frontend_revision_file="$verification_temp_dir/frontend.revision.json"
+(
   az containerapp show \
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
     --name "$backend_name" \
-    --output json
-)"
-frontend_json="$(
+    --output json >"$backend_json_file"
+) &
+backend_show_pid=$!
+(
   az containerapp show \
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
     --name "$frontend_name" \
-    --output json
-)"
+    --output json >"$frontend_json_file"
+) &
+frontend_show_pid=$!
+backend_show_status=0
+frontend_show_status=0
+wait "$backend_show_pid" || backend_show_status=$?
+wait "$frontend_show_pid" || frontend_show_status=$?
+if (( backend_show_status != 0 || frontend_show_status != 0 )); then
+  echo "Unable to read both Container App resources." >&2
+  exit 1
+fi
+backend_json="$(cat "$backend_json_file")"
+frontend_json="$(cat "$frontend_json_file")"
 
 backend_external="$(jq -r '.properties.configuration.ingress.external' <<<"$backend_json")"
 frontend_external="$(jq -r '.properties.configuration.ingress.external' <<<"$frontend_json")"
@@ -214,8 +235,20 @@ frontend_revision_mode="$(jq -r '.properties.configuration.activeRevisionsMode /
   exit 1
 }
 
-backend_revision="$(active_revision "$backend_name" "$expected_backend_image")"
-frontend_revision="$(active_revision "$frontend_name" "$expected_frontend_image")"
+active_revision "$backend_name" "$expected_backend_image" >"$backend_revision_file" &
+backend_revision_pid=$!
+active_revision "$frontend_name" "$expected_frontend_image" >"$frontend_revision_file" &
+frontend_revision_pid=$!
+backend_revision_status=0
+frontend_revision_status=0
+wait "$backend_revision_pid" || backend_revision_status=$?
+wait "$frontend_revision_pid" || frontend_revision_status=$?
+if (( backend_revision_status != 0 || frontend_revision_status != 0 )); then
+  echo "Unable to verify both active Container App revisions." >&2
+  exit 1
+fi
+backend_revision="$(cat "$backend_revision_file")"
+frontend_revision="$(cat "$frontend_revision_file")"
 backend_latest_ready="$(jq -r '.properties.latestReadyRevisionName // empty' <<<"$backend_json")"
 frontend_latest_ready="$(jq -r '.properties.latestReadyRevisionName // empty' <<<"$frontend_json")"
 [[ "$(jq -r '.name' <<<"$backend_revision")" == "$backend_latest_ready" ]] || {

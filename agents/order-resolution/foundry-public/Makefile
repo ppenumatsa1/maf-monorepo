@@ -337,9 +337,7 @@ foundry-deploy-ready:
 	status=succeeded
 
 foundry-release-deploy:
-	$(MAKE) foundry-package
-	$(MAKE) foundry-model-preflight
-	$(MAKE) foundry-postgres-readiness
+	$(MAKE) -j3 foundry-package foundry-model-preflight foundry-postgres-readiness
 	$(MAKE) foundry-runtime-connection-ready
 	$(MAKE) -j3 foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready
 

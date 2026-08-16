@@ -24,21 +24,27 @@ require_azd_output() {
   printf '%s' "$value"
 }
 
-resolve_app_name() {
-  local service_name="$1"
-  local matching_apps
-  readarray -t matching_apps < <(
-    az containerapp list \
-      --resource-group "$APPROVED_AZURE_RESOURCE_GROUP" \
-      --subscription "$APPROVED_AZURE_SUBSCRIPTION_ID" \
-      --query "[?tags.\"azd-service-name\"=='$service_name'].name" \
-      --output tsv
-  )
-  [[ "${#matching_apps[@]}" == 1 ]] || {
-    echo "Expected exactly one Container App tagged azd-service-name=$service_name." >&2
-    exit 1
-  }
-  printf '%s\n' "${matching_apps[0]}"
+resolve_app_names() {
+  az containerapp list \
+    --resource-group "$APPROVED_AZURE_RESOURCE_GROUP" \
+    --subscription "$APPROVED_AZURE_SUBSCRIPTION_ID" \
+    --output json |
+    python3 -c '
+import json
+import sys
+
+apps = json.load(sys.stdin)
+by_service = {}
+for app in apps:
+    service = (app.get("tags") or {}).get("azd-service-name")
+    if service in {"backend", "frontend"}:
+        by_service.setdefault(service, []).append(app["name"])
+for service in ("backend", "frontend"):
+    matches = by_service.get(service, [])
+    if len(matches) != 1:
+        raise SystemExit(f"Expected exactly one Container App tagged azd-service-name={service}.")
+    print(matches[0])
+'
 }
 
 active_revision() {
@@ -119,22 +125,46 @@ web_url="$(require_azd_output WEB_URL)"
 require_selected_target "$environment" "$subscription_id" "$resource_group" "$location"
 require_azure_cli_target "$subscription_id"
 
-backend_app="$(resolve_app_name backend)"
-frontend_app="$(resolve_app_name frontend)"
-backend_json="$(
+readarray -t app_names < <(resolve_app_names)
+[[ "${#app_names[@]}" == 2 ]] || {
+  echo "Unable to resolve backend and frontend Container Apps." >&2
+  exit 1
+}
+backend_app="${app_names[0]}"
+frontend_app="${app_names[1]}"
+verification_temp_dir="$(mktemp -d)"
+trap 'rm -rf "$verification_temp_dir"' EXIT
+backend_json_file="$verification_temp_dir/backend.containerapp.json"
+frontend_json_file="$verification_temp_dir/frontend.containerapp.json"
+backend_revision_file="$verification_temp_dir/backend.revision.json"
+frontend_revision_file="$verification_temp_dir/frontend.revision.json"
+
+(
   az containerapp show \
     --name "$backend_app" \
     --resource-group "$resource_group" \
     --subscription "$subscription_id" \
-    --output json
-)"
-frontend_json="$(
+    --output json >"$backend_json_file"
+) &
+backend_show_pid=$!
+(
   az containerapp show \
     --name "$frontend_app" \
     --resource-group "$resource_group" \
     --subscription "$subscription_id" \
-    --output json
-)"
+    --output json >"$frontend_json_file"
+) &
+frontend_show_pid=$!
+backend_show_status=0
+frontend_show_status=0
+wait "$backend_show_pid" || backend_show_status=$?
+wait "$frontend_show_pid" || frontend_show_status=$?
+if (( backend_show_status != 0 || frontend_show_status != 0 )); then
+  echo "Unable to read both Container App resources." >&2
+  exit 1
+fi
+backend_json="$(cat "$backend_json_file")"
+frontend_json="$(cat "$frontend_json_file")"
 
 backend_external="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["properties"]["configuration"]["ingress"]["external"]).lower())' <<<"$backend_json")"
 frontend_external="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["properties"]["configuration"]["ingress"]["external"]).lower())' <<<"$frontend_json")"
@@ -143,8 +173,20 @@ frontend_external="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)
   exit 1
 }
 
-backend_revision="$(active_revision "$subscription_id" "$resource_group" "$backend_app")"
-frontend_revision="$(active_revision "$subscription_id" "$resource_group" "$frontend_app")"
+active_revision "$subscription_id" "$resource_group" "$backend_app" >"$backend_revision_file" &
+backend_revision_pid=$!
+active_revision "$subscription_id" "$resource_group" "$frontend_app" >"$frontend_revision_file" &
+frontend_revision_pid=$!
+backend_revision_status=0
+frontend_revision_status=0
+wait "$backend_revision_pid" || backend_revision_status=$?
+wait "$frontend_revision_pid" || frontend_revision_status=$?
+if (( backend_revision_status != 0 || frontend_revision_status != 0 )); then
+  echo "Unable to verify both active Container App revisions." >&2
+  exit 1
+fi
+backend_revision="$(cat "$backend_revision_file")"
+frontend_revision="$(cat "$frontend_revision_file")"
 images_file="$(release_artifact_path images.json)"
 deployment_file="$(release_artifact_path deployment.json)"
 backend_log_relative=""

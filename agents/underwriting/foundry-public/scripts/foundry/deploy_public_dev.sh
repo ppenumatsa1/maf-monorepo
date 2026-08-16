@@ -145,7 +145,7 @@ case "$deploy_mode" in
     release_stage=package_build
     active_timing_stage=package_build
     timing --stage package_build --action start --start-app-only
-    if make foundry-package; then
+    if make foundry-release-package; then
       timing --stage package_build --action succeed
       active_timing_stage=
     else

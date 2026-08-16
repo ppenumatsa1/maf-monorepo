@@ -51,21 +51,27 @@ deploy_service() {
     >"$RELEASE_LOGS_DIR/$service.deploy.log" 2>&1
 }
 
-resolve_app_name() {
-  local service_name="$1"
-  local matching_apps
-  readarray -t matching_apps < <(
-    az containerapp list \
-      --resource-group "$resource_group" \
-      --subscription "$subscription_id" \
-      --query "[?tags.\"azd-service-name\"=='$service_name'].name" \
-      --output tsv
-  )
-  [[ "${#matching_apps[@]}" == 1 ]] || {
-    echo "Expected exactly one Container App tagged azd-service-name=$service_name." >&2
-    return 1
-  }
-  printf '%s\n' "${matching_apps[0]}"
+resolve_app_names() {
+  az containerapp list \
+    --resource-group "$resource_group" \
+    --subscription "$subscription_id" \
+    --output json |
+    python3 -c '
+import json
+import sys
+
+apps = json.load(sys.stdin)
+by_service = {}
+for app in apps:
+    service = (app.get("tags") or {}).get("azd-service-name")
+    if service in {"backend", "frontend"}:
+        by_service.setdefault(service, []).append(app["name"])
+for service in ("backend", "frontend"):
+    matches = by_service.get(service, [])
+    if len(matches) != 1:
+        raise SystemExit(f"Expected exactly one Container App tagged azd-service-name={service}.")
+    print(matches[0])
+'
 }
 
 converge_ingress() {
@@ -144,10 +150,25 @@ if (( backend_status != 0 || frontend_status != 0 )); then
   exit 1
 fi
 
-backend_app="$(resolve_app_name backend)"
-frontend_app="$(resolve_app_name frontend)"
-pin_active_image "$backend_app" >/dev/null
-pin_active_image "$frontend_app" >/dev/null
+readarray -t app_names < <(resolve_app_names)
+[[ "${#app_names[@]}" == 2 ]] || {
+  echo "Unable to resolve backend and frontend Container Apps." >&2
+  exit 1
+}
+backend_app="${app_names[0]}"
+frontend_app="${app_names[1]}"
+pin_active_image "$backend_app" >/dev/null &
+backend_pin_pid=$!
+pin_active_image "$frontend_app" >/dev/null &
+frontend_pin_pid=$!
+backend_pin_status=0
+frontend_pin_status=0
+wait "$backend_pin_pid" || backend_pin_status=$?
+wait "$frontend_pin_pid" || frontend_pin_status=$?
+if (( backend_pin_status != 0 || frontend_pin_status != 0 )); then
+  echo "Unable to pin both deployed images to immutable digests." >&2
+  exit 1
+fi
 converge_ingress "$backend_app" internal 8000
 backend_fqdn="$(
   az containerapp show \

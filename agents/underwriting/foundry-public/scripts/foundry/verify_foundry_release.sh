@@ -141,36 +141,42 @@ frontend_upstream="$(
   exit 1
 }
 
-backend_revision_json="$(
-  az containerapp revision show \
-    --subscription "$subscription_id" \
-    --resource-group "$resource_group" \
-    --name "$backend_name" \
-    --revision "$backend_revision" \
-    --output json
-)"
-frontend_revision_json="$(
-  az containerapp revision show \
-    --subscription "$subscription_id" \
-    --resource-group "$resource_group" \
-    --name "$frontend_name" \
-    --revision "$frontend_revision" \
-    --output json
-)"
-[[ "$(jq -r '.properties.runningState // empty' <<<"$backend_revision_json")" == "Running" ]] || {
-  echo "Backend ready revision is not Running." >&2
-  exit 1
-}
-[[ "$(jq -r '.properties.runningState // empty' <<<"$frontend_revision_json")" == "Running" ]] || {
-  echo "Frontend ready revision is not Running." >&2
-  exit 1
-}
-
 frontend_url="https://${frontend_fqdn}"
 curl --fail --silent --show-error --max-time 60 "$frontend_url/healthz" >/dev/null
 curl --fail --silent --show-error --max-time 60 "$frontend_url/backend-health" >/dev/null
 curl --fail --silent --show-error --max-time 60 \
   "$frontend_url/api/v1/underwriting/runs?limit=1" >/dev/null
+
+revision_is_running() {
+  local app_name="$1"
+  local revision="$2"
+  local state
+  state="$(
+    az containerapp revision show \
+      --subscription "$subscription_id" \
+      --resource-group "$resource_group" \
+      --name "$app_name" \
+      --revision "$revision" \
+      --query properties.runningState \
+      --output tsv
+  )"
+  [[ "$state" == "Running" ]]
+}
+
+for attempt in $(seq 1 6); do
+  backend_running=false
+  frontend_running=false
+  revision_is_running "$backend_name" "$backend_revision" && backend_running=true
+  revision_is_running "$frontend_name" "$frontend_revision" && frontend_running=true
+  if [[ "$backend_running" == "true" && "$frontend_running" == "true" ]]; then
+    break
+  fi
+  [[ "$attempt" -lt 6 ]] || {
+    echo "Container Apps ready revisions did not reach Running state." >&2
+    exit 1
+  }
+  sleep 10
+done
 if curl --fail --silent --show-error --max-time 10 "https://${backend_fqdn}/health" >/dev/null 2>&1; then
   echo "Backend is still directly reachable from the public internet." >&2
   exit 1

@@ -23,6 +23,7 @@ endif
 	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
 	foundry-postgres-credentials foundry-postgres-readiness foundry-backend-deploy foundry-frontend-deploy \
 	foundry-release-readiness foundry-model-preflight foundry-runtime-connection foundry-rbac foundry-package \
+	foundry-release-package \
 	foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
 	foundry-backend-internalize foundry-verify foundry-evidence \
 	foundry-up foundry-smoke foundry-hosted-e2e foundry-eval \
@@ -248,6 +249,12 @@ foundry-package:
 >./scripts/foundry/sync_hosted_source.sh
 >cd infra/foundry-hosted && azd package --no-prompt
 
+foundry-release-package:
+>./scripts/foundry/sync_hosted_source.sh
+>test -f infra/foundry-hosted/src/backend/Dockerfile
+>test -f infra/foundry-hosted/src/hosted/Dockerfile.hosted
+>test -f frontend/Dockerfile
+
 foundry-provision:
 >./scripts/foundry/bootstrap_azd_env.sh
 >./scripts/foundry/ensure_foundry_azd_defaults.sh
@@ -306,7 +313,7 @@ foundry-deploy-ready:
 
 foundry-release-deploy:
 >$(MAKE) foundry-release-readiness
->$(MAKE) foundry-package
+>$(MAKE) foundry-release-package
 >$(MAKE) -j3 foundry-deploy-ready foundry-backend-deploy-ready foundry-frontend-deploy-ready
 
 foundry-backend-internalize:
