@@ -83,6 +83,7 @@ class AggregateReleaseEvidenceTests(unittest.TestCase):
         ):
             (evidence_dir / name).write_text(json.dumps({"generated_at": TIMESTAMP, "ok": True}))
         environment = os.environ.copy()
+        environment.pop("RELEASE_ID", None)
         environment.update(
             {
                 "DATABASE_URL": RUNTIME_URL,
