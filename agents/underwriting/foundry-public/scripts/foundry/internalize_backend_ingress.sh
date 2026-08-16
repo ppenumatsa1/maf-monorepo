@@ -129,6 +129,8 @@ az containerapp ingress update \
   --target-port 8000 \
   --output none
 
+"$ROOT_DIR/scripts/foundry/deploy_public_frontend.sh"
+
 for _attempt in $(seq 1 30); do
   if curl --fail --silent --show-error --max-time 20 "$frontend_url/backend-health" >/dev/null &&
     curl --fail --silent --show-error --max-time 20 \
