@@ -126,15 +126,25 @@ Application Insights correlation gate passed.
 | --- | --- | ---: |
 | Infrastructure/IaC to telemetry | Provision `31906517820`, deploy `31906717310`, evidence `31906891692` | **13m 37s** |
 | App-only to telemetry, before | Deploy `31908682961`, evidence `31908858225` | **8m 43s** |
-| App-only to telemetry, optimized | Chained deploy/evidence `31911162673` | **7m 29s** |
+| App-only to telemetry, optimized | Workflow `31922650130` | **6m 36.8s** |
 | App-only to complete strict evaluation, before | Deploy `31908682961`, evidence `31908858225` | **11m 54s** |
-| App-only to complete strict evaluation, optimized | Chained deploy/evidence `31911162673` | **7m 48s** |
+| App-only to complete strict evaluation, optimized | Workflow `31922650130` | **6m 57.8s** |
 
 The optimized steady-state run reused the requirements-hash-validated backend
 environment, reused the concurrently built hosted image, and reached strict
 3/3 evaluation on the first evaluator-readiness attempt. Telemetry remains the
 largest variable wait; no security, HITL, trace-correlation, or evaluator gate
 was removed.
+
+| Stage | Duration |
+| --- | ---: |
+| Hosted package and ACA deployment, overlapped | 1m 24s |
+| Verification and smoke | 6s |
+| Hosted-agent activation | 53s |
+| HITL E2E | 2m 07s |
+| Telemetry | 2m 03s |
+| Evaluation after telemetry | 21s |
+| **App-only to telemetry** | **6m 36.8s** |
 
 ## Stop conditions
 

@@ -59,8 +59,8 @@ The flow is grouped into four phases and 14 clear stages.
 | Step | Stage | Outcome |
 | ---: | --- | --- |
 | 8 | Shared release readiness | Runs PostgreSQL/schema readiness once, performs a read-only model deployment/SKU/capacity/regional-quota preflight, and idempotently converges the project `CustomKeys` runtime-secret connection by streaming the secure Bicep parameters to Azure CLI over stdin. The preflight never edits a live `GlobalStandard` deployment. |
-| 9 | Application packaging | `make foundry-package` synchronizes the canonical backend source into the hosted-agent context and packages the declared backend, frontend, and hosted services. Release scripts build immutable images in ACR. |
-| 10 | Hosted-agent then ACA deployment | Deploys the hosted agent, converges RBAC, and persists the active agent name/version/Responses endpoint. Only then does it deploy the internal backend and external proxy-capable frontend concurrently, so a clean bootstrap never requires metadata that does not yet exist. The frontend receives `NGINX_API_UPSTREAM=https://<internal-backend-fqdn>`; both Python runtimes receive `DB_SCHEMA_MANAGED_EXTERNALLY=true`. |
+| 9 | Immutable image build | Synchronizes the canonical hosted source, validates all three Docker contexts, builds backend and hosted-agent images concurrently in ACR, builds the frontend concurrently with local Docker, resolves all three digests, and writes release-local image inputs. |
+| 10 | Hosted-agent then ACA deployment | Activates the hosted agent from its prebuilt digest, converges RBAC, and persists the active agent name/version/Responses endpoint. It then deploys the digest-pinned internal backend and external frontend concurrently. Routine releases require the existing frontend-external/backend-internal topology and do not repeat ingress mutations. |
 
 ### Phase 4: Prove the release
 
@@ -68,7 +68,7 @@ The flow is grouped into four phases and 14 clear stages.
 | ---: | --- | --- |
 | 11 | Hosted smoke | Invokes the active Responses endpoint after the ordered deployment and proves the runtime can resolve its project connection and complete the selected smoke scenario. |
 | 12 | Recovery E2E | Uses only the frontend origin to run distinct happy, retry, and `medical_check` crash scenarios, verifies checkpoint resume, four-way fan-in, and idempotency-skip visibility, then runs deployed Playwright through the same `/api` proxy. |
-| 13 | Telemetry and evaluation | Correlates all fresh `workflow_run_id` values across internal-adapter requests, hosted Foundry invocation dependencies, workflow spans, and exceptions. It keeps Task Adherence, Intent Resolution, and Relevance as the evaluator set. |
+| 13 | Telemetry and evaluation | Correlates all fresh `workflow_run_id` values across internal-adapter requests, hosted Foundry invocation dependencies, workflow spans, and exceptions. Conversation evaluation uses the supported Task Completion and Coherence evaluators. |
 | 14 | Deployment verification and final evidence | Confirms ACA ready revisions/images, frontend-external/backend-internal ingress, same-origin frontend/backend health and API, direct-backend public denial, hosted version/image, Application Insights connection, external-schema mode, and the exact runtime connection placeholder. It then aggregates verification, smoke, E2E, telemetry, and evaluation artifacts into one machine-readable release window. |
 
 ## Command mapping
@@ -83,7 +83,11 @@ The flow is grouped into four phases and 14 clear stages.
 | `make foundry-postgres-schema` | 6 | Applies the administrator-owned canonical schema. |
 | `make foundry-postgres-credentials` | 6 | Creates or rotates the least-privilege runtime credential. |
 | `make foundry-postgres-readiness` | 6 | Validates PostgreSQL and the runtime permission boundary before deployment. |
-| `make foundry-package` | 9 | Packages all three services declared in `azure.yaml`. |
+| `make foundry-package` | 9 | Runs the full standalone AZD package path when explicitly requested. |
+| `make foundry-release-package` | 9 | Synchronizes and validates the three release contexts without rebuilding images. |
+| `make foundry-release-build` | 9 | Builds all three immutable images concurrently and records their digests in the current release directory. |
+| `make foundry-release-hosted-activate` | 10 | Activates the hosted agent from the prebuilt digest and persists its exact version. |
+| `make foundry-release-app-deploy` | 10 | Deploys the prebuilt backend and frontend digests concurrently without mutating ingress topology. |
 | `make foundry-model-preflight` | 8 | Verifies the existing model deployment and regional quota without changing SKU or capacity. |
 | `make foundry-runtime-connection` | 8 | Converges the deterministic project `CustomKeys` connection using an in-memory stdin parameter stream; the runtime URL is not written to disk or command arguments. |
 | `make foundry-release-readiness` | 6, 8 | Runs the one shared readiness gate before packaging and ordered deployment. |
@@ -103,10 +107,12 @@ Run all 14 stages:
 3. Provision the public platform and hydrate the resulting outputs.
 4. Apply the PostgreSQL schema, create the runtime credential, and pass
    readiness.
-5. Package all services, deploy and persist hosted-agent metadata, then deploy
-   backend and frontend concurrently.
-6. Run smoke, hosted recovery E2E, telemetry correlation, and evaluation.
-7. Verify the exact deployment contract and aggregate final evidence.
+5. Validate all service contexts, build the three immutable images
+   concurrently, and persist their digests in the release directory.
+6. Activate and persist hosted-agent metadata, then deploy backend and
+   frontend concurrently.
+7. Run smoke, hosted recovery E2E, telemetry correlation, and evaluation.
+8. Verify the exact deployment contract and aggregate final evidence.
 
 ### Routine app-only release
 
@@ -115,15 +121,59 @@ Do not reconcile infrastructure:
 1. Apply the reuse profile and hydrate the retained AZD environment.
 2. Run the selected validation lane and compile Bicep.
 3. Run the single database/model/runtime-connection readiness gate.
-4. Package all services, deploy and persist hosted-agent metadata, then build
-   and deploy the internal backend and external frontend concurrently.
-5. Verify the Application Insights connection and run the selected smoke mode.
-6. Run hosted recovery E2E, telemetry correlation, and evaluation.
-7. Verify the exact deployment contract and aggregate final evidence.
+4. Validate the service contexts and build all three immutable images
+   concurrently.
+5. Activate and persist the hosted-agent version from its prebuilt digest,
+   then deploy the digest-pinned backend and frontend concurrently.
+6. Verify the Application Insights connection and run the selected smoke mode.
+7. Run hosted recovery E2E, telemetry correlation, and evaluation.
+8. Verify the exact deployment contract and aggregate final evidence.
 
 `make foundry-release` accepts only the app-only route. Full provisioning and
 the guarded PostgreSQL rebuild remain explicit, separate operations.
 `FOUNDRY_DEPLOY_MODE` is rejected rather than treated as an override.
+
+## Measured app-only timing
+
+Release `uw-public-51a8311-20260816140654` from commit `51a8311` reached
+telemetry in **14m 10.0s**, 50.0 seconds inside the 15-minute budget. Compared
+with the prior complete 18m 07.4s run, the two-phase build/activation flow
+saved **3m 57.5s** without removing smoke, recovery E2E, evaluation, or
+telemetry coverage.
+
+| Stage | Duration |
+| --- | ---: |
+| Package/context validation | 0.1s |
+| Concurrent immutable image build | 4m 52.5s |
+| Hosted-agent activation and RBAC | 2m 08.3s |
+| Concurrent backend/frontend ACA deployment | 3m 00.9s |
+| Smoke | 53.4s |
+| Recovery E2E | 2m 28.3s |
+| Evaluation, overlapped with E2E | 1m 50.1s |
+| Telemetry | 46.2s |
+| **App-only to telemetry** | **14m 10.0s** |
+| Post-telemetry deployment verification | 2m 32.5s |
+| Final evidence aggregation | 0.3s |
+
+The deployment sequence is intentionally two-phase: build all immutable
+artifacts first, activate the exact hosted digest second, and only then deploy
+the backend that references the newly persisted hosted version. Backend and
+frontend deployment remain parallel. This avoids both ACR queue serialization
+and a race in which the backend could retain the previous hosted-agent version.
+
+## Four-lane app-only benchmark
+
+These are the latest verified lane-local release records. They were measured
+independently rather than as one simultaneous execution; if launched together,
+the critical wall-clock bound is the slowest lane, **14m 10.0s**.
+
+| Lane | App-only to telemetry | 15-minute result | Earlier baseline | Improvement |
+| --- | ---: | --- | ---: | ---: |
+| Order Resolution - Azure Hosted | 13m 24.6s | Passed | Not directly comparable | - |
+| Order Resolution - Foundry Public | 14m 01.1s | Passed | 16m 22.1s | 2m 21.0s |
+| Order Resolution - Foundry Private | 6m 36.8s | Passed | 8m 43.0s | 2m 06.2s |
+| Underwriting - Foundry Public | 14m 10.0s | Passed | 18m 07.4s | 3m 57.5s |
+| **Aggregate / average** | **48m 12.5s / 12m 03.1s** | **4/4 passed** | - | - |
 
 ### One-time migration for an existing public backend
 
@@ -176,8 +226,8 @@ Stop the release if:
   backend public-denial verification fails;
 - the happy path, injected retry, `medical_check` crash, checkpoint, resume,
   four-way fan-in, idempotency-skip, or deployed Playwright checks fail;
-- telemetry cannot correlate both fresh workflow runs across the required
+- telemetry cannot correlate all three fresh workflow runs across the required
   request, dependency, and workflow signals;
-- Task Adherence, Intent Resolution, or Relevance fails the configured
+- Task Completion or Coherence fails the configured
   threshold or returns an errored row; or
 - evidence is stale or spans multiple release windows.

@@ -1748,3 +1748,12 @@ private runner readiness, private database initialization/readiness, Foundry
 connection convergence, application/hosted-agent deployment, hosted E2E,
 telemetry correlation, and Foundry evaluation. Historical lockdown runs remain
 evidence of the former cutover only and are not an operating procedure.
+
+## 2026-08-16 - Fifteen-minute app-only release evidence
+
+Workflow `31922650130` completed the private app-only path through telemetry in
+**6m 36.8s** and through strict evaluation in approximately **6m 57.8s**.
+The run preserved private PostgreSQL readiness, hosted package/ACA overlap,
+hosted-agent activation, all three HITL conversations, telemetry correlation,
+and 3/3 Task Completion and Coherence evaluation. No network, database, HITL,
+telemetry, or evaluator gate was removed.

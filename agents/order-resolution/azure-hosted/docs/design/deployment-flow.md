@@ -104,6 +104,22 @@ Do not reprovision infrastructure:
 3. Build backend/frontend images, deploy the exact digests app-only, and gather
    fresh smoke, HTTP/durable E2E, telemetry, evaluation, and final evidence.
 
+## Measured app-only timing
+
+Release `final-20260816T024551Z-667e609-azure` reached telemetry in
+**13m 24.6s**, within the 15-minute release budget.
+
+| Stage | Duration |
+| --- | ---: |
+| Package/build and app deployment, overlapped | 3m 08.0s |
+| Deployment verification | 5m 33.7s |
+| Smoke | 43.6s |
+| Browser E2E | 1m 11.4s |
+| Domain E2E | 1m 00.0s |
+| Evaluation | 1m 23.1s |
+| Telemetry | 21.4s |
+| **App-only to telemetry** | **13m 24.6s** |
+
 ## Stop conditions
 
 Stop the release if:

@@ -886,3 +886,12 @@ checked-in `.npmrc` files require TLS validation and set
 bypass the approved feed. The frontend Docker build copies the policy before
 `npm ci`. This is a package-acquisition policy change only; no deployment or
 release evidence was rerun.
+
+## 2026-08-16 - Fifteen-minute app-only release evidence
+
+Release `final-isolated-20260816T025501Z-667e609-public` completed the
+app-only path through telemetry in **14m 01.1s**. Backend, frontend, and hosted
+deployment remained concurrent; exact deployment verification, smoke, three
+fresh HITL conversations, Task Completion and Coherence evaluation, telemetry,
+and final evidence all passed. The hard 900,000 ms release budget passed with
+58.9 seconds of margin.

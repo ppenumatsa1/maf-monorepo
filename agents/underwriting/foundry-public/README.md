@@ -149,10 +149,13 @@ Release governance expectations:
 1. Run local gates first.
 2. The release orchestrator runs validation and the Bicep build concurrently,
    then runs one shared database/model readiness gate, converges the runtime
-   connection, and packages all services. It deploys the hosted agent first and
-   persists its active metadata before deploying backend and frontend
-   concurrently. Bootstrap provisioning is separate; routine releases are
-   always `app_only`, and `FOUNDRY_DEPLOY_MODE` is rejected.
+   connection, and validates all service contexts. It concurrently builds
+   immutable backend and hosted images in ACR and the frontend with local
+   Docker, activates the hosted agent from its exact digest, persists its
+   active metadata, then deploys the digest-pinned backend and frontend
+   concurrently without repeating ingress mutations. Bootstrap provisioning is
+   separate; routine releases are always `app_only`, and
+   `FOUNDRY_DEPLOY_MODE` is rejected.
 3. It runs hosted smoke, then Foundry evaluation and deployed browser E2E in
    parallel, then validates Application Insights telemetry after E2E writes
    its evidence.
@@ -160,6 +163,9 @@ Release governance expectations:
    topology, same-origin health/API, hosted version/image, Application Insights,
    and external-schema mode, then aggregates secret-free JSON evidence.
 5. Record commands, results, run IDs, and any deferrals in [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md).
+
+The release record hard-fails when app-only start to telemetry success exceeds
+15 minutes. The latest verified release completed that interval in 14m 10.0s.
 
 Invoking a validated bootstrap or release workflow is the execution trigger;
 there is no additional manual approval checkpoint.

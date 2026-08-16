@@ -812,3 +812,26 @@ release evidence was rerun.
   already-created resources are reconciled rather than duplicated.
 - No PostgreSQL rebuild, data deletion, credential provisioning, app release,
   smoke, E2E, evaluation, or telemetry operation occurred before this fix.
+
+## 2026-08-16 - Two-phase release optimization and final evidence
+
+**Issue.** The prior complete app-only release required **18m 07.4s** to reach
+telemetry. Limited ACR task concurrency serialized one remote build, while
+deploying all three runtime legs together could let the backend read the
+previous hosted-agent version.
+
+**Fix.** Release `uw-public-51a8311-20260816140654` builds backend and hosted
+images concurrently in ACR and the frontend concurrently with local Docker.
+It resolves immutable digests, activates the hosted agent from its exact
+prebuilt digest, persists version 7, and only then deploys the backend and
+frontend concurrently. Routine app deployment now validates the existing
+frontend-external/backend-internal topology instead of repeating ingress
+updates. Verification accepts both tag- and digest-pinned repository
+references.
+
+**Evidence.** The release passed smoke, happy/retry/crash-and-resume E2E,
+deployed Playwright, Task Completion and Coherence evaluation, 89 correlated
+Application Insights rows across all three fresh workflow runs with zero
+exceptions, deployment verification, and strict final evidence. App-only to
+telemetry was **14m 10.0s**, 50.0 seconds inside the hard 15-minute budget and
+**3m 57.5s faster** than the prior complete run.

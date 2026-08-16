@@ -119,6 +119,23 @@ Do not reconcile infrastructure:
 `make foundry-release` enforces the app-only route and does not invoke
 `azd provision`.
 
+## Measured app-only timing
+
+Release `final-isolated-20260816T025501Z-667e609-public` reached telemetry in
+**14m 01.1s**, within the 15-minute release budget.
+
+| Stage | Duration |
+| --- | ---: |
+| Package preparation | 3.4s |
+| Readiness before deployment | 3m 23.2s |
+| Concurrent deployment critical leg | 5m 54.1s |
+| Deployment verification | 2m 34.0s |
+| Smoke | 31.1s |
+| Hosted E2E | 1m 25.2s |
+| Evaluation, overlapped | 3m 15.9s |
+| Telemetry | 9.7s |
+| **App-only to telemetry** | **14m 01.1s** |
+
 ## PostgreSQL security boundary
 
 | Identity | Allowed | Denied |

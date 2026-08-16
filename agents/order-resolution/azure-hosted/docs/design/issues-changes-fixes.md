@@ -617,6 +617,15 @@ validated local image is
 This validation did not deploy resources; fresh release evidence remains
 required.
 
+## 2026-08-16 - Fifteen-minute app-only release evidence
+
+Release `final-20260816T024551Z-667e609-azure` completed the app-only path
+through telemetry in **13m 24.6s**. It preserved digest-pinned backend/frontend
+deployment, exact deployment verification, smoke, browser E2E, three-scenario
+domain E2E, 3/3 evaluation, telemetry correlation, and strict final evidence.
+The hard 900,000 ms release-record budget passed; no infrastructure
+reconciliation or hosted-agent component was introduced.
+
 ## 2026-08-13 — App-only release completed through approved npm feeds
 
 **Deployment.** The validated app-only release deployed backend revision
