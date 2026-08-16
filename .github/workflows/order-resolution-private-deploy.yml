@@ -70,3 +70,10 @@ jobs:
         if: ${{ inputs.collect_evidence }}
         working-directory: agents/order-resolution/foundry-private
         run: make foundry-evidence
+      - name: Upload sanitized private release evidence
+        if: ${{ always() && inputs.collect_evidence }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-resolution-private-release-${{ github.run_id }}
+          path: agents/order-resolution/foundry-private/.artifacts/releases/
+          if-no-files-found: error

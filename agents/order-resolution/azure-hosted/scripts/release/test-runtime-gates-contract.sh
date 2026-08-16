@@ -20,6 +20,7 @@ def forbid(text: str, needle: str, label: str) -> None:
 
 run_domain_e2e = Path("scripts/release/run-domain-e2e.sh").read_text(encoding="utf-8")
 for required in (
+    'RELEASE_API_BASE_URL:-${WEB_URL:-$(get_azd_output WEB_URL)}',
     'scenario_id="low-risk-no-hitl"',
     'scenario_id="high-risk-approval-resume"',
     'scenario_id="damaged-item-approval-resume"',
@@ -70,6 +71,13 @@ for required in (
     'make --no-print-directory test-e2e',
 ):
     require(run_browser_e2e, required, "browser E2E release gate")
+
+release_smoke = Path("scripts/release/run-release-smoke.sh").read_text(encoding="utf-8")
+require(
+    release_smoke,
+    'release_api_url="${RELEASE_API_BASE_URL:-$web_url}"',
+    "same-origin smoke API base",
+)
 
 deploy_app_only = Path("scripts/release/deploy-app-only.sh").read_text(encoding="utf-8")
 for required in (

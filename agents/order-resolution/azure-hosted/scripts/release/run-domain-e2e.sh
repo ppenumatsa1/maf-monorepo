@@ -19,10 +19,10 @@ write_release_context \
   "$APPROVED_AZURE_RESOURCE_GROUP" \
   "$APPROVED_AZURE_LOCATION"
 
-api_url="${API_URL:-$(get_azd_output API_URL)}"
+api_url="${RELEASE_API_BASE_URL:-${WEB_URL:-$(get_azd_output WEB_URL)}}"
 
 if [[ ! "$api_url" =~ ^https?:// ]]; then
-  echo "Selected AZD environment does not contain a valid API_URL output." >&2
+  echo "Selected AZD environment does not contain a valid same-origin WEB_URL output." >&2
   exit 1
 fi
 

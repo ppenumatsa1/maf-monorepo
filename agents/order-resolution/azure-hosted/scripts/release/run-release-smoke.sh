@@ -26,7 +26,9 @@ if [[ ! "$api_url" =~ ^https?:// || ! "$web_url" =~ ^https?:// ]]; then
   exit 1
 fi
 
+release_api_url="${RELEASE_API_BASE_URL:-$web_url}"
+
 SMOKE_EVIDENCE_FILE="$(release_artifact_path smoke.json)" \
 RELEASE_ID="$RELEASE_ID" \
 RELEASE_STARTED_AT="$RELEASE_STARTED_AT" \
-infra/azure-apphosted/runtime/smoke-test.sh "$api_url" "$web_url"
+infra/azure-apphosted/runtime/smoke-test.sh "$release_api_url" "$web_url"
