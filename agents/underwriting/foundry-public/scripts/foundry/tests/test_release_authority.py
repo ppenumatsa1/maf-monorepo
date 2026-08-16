@@ -18,6 +18,7 @@ from release_record import (  # noqa: E402
     finish_release_timing,
     initialize_record,
     register_artifact,
+    resume_record,
     start_release_timing,
     utc_now,
 )
@@ -70,7 +71,7 @@ class ReleaseRecordTests(unittest.TestCase):
             ),
             ("smoke", "2026-08-15T20:00:30.000Z", "2026-08-15T20:00:40.000Z"),
             ("deployed_e2e", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:10.000Z"),
-            ("evaluation", "2026-08-15T20:00:40.000Z", "2026-08-15T20:01:20.000Z"),
+            ("evaluation", "2026-08-15T20:01:10.000Z", "2026-08-15T20:01:20.000Z"),
             ("telemetry", "2026-08-15T20:01:10.000Z", "2026-08-15T20:01:30.000Z"),
             (
                 "deployment_verification",
@@ -129,7 +130,7 @@ class ReleaseRecordTests(unittest.TestCase):
             "release_timing"
         ]
         self.assertEqual(timing["stages"]["package_build"]["duration_ms"], 10_000)
-        self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 40_000)
+        self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 10_000)
         self.assertEqual(timing["app_only_duration_ms"], 90_000)
         self.assertEqual(timing["app_only"]["duration_ms"], 90_000)
         self.assertEqual(timing["app_only"]["status"], "succeeded")
@@ -137,7 +138,7 @@ class ReleaseRecordTests(unittest.TestCase):
             timing["telemetry_succeeded_at"],
             timing["stages"]["telemetry"]["ended_at"],
         )
-        self.assertLess(
+        self.assertEqual(
             timing["stages"]["evaluation"]["started_at"],
             timing["stages"]["deployed_e2e"]["ended_at"],
         )
@@ -145,6 +146,32 @@ class ReleaseRecordTests(unittest.TestCase):
             timing["stages"]["evaluation"]["ended_at"],
             timing["stages"]["telemetry"]["started_at"],
         )
+
+    def test_resumes_failed_release_from_selected_stage(self) -> None:
+        self.record_successful_timing()
+        finalize_record(
+            "test-release-001",
+            "failed",
+            failed_stage="telemetry",
+            error="transient failure",
+            releases_root=self.releases,
+        )
+
+        resume_record(
+            "test-release-001",
+            "deployed_e2e",
+            at="2026-08-15T20:02:00.000Z",
+            releases_root=self.releases,
+        )
+
+        record = json.loads((self.release_dir / "release.json").read_text())
+        timing = record["extensions"]["release_timing"]
+        self.assertEqual(record["status"], "running")
+        self.assertIsNone(record["completed_at"])
+        self.assertEqual(timing["app_only"]["status"], "running")
+        self.assertIn("smoke", timing["stages"])
+        self.assertNotIn("deployed_e2e", timing["stages"])
+        self.assertNotIn("telemetry", timing["stages"])
 
     def test_rejects_invalid_ordering(self) -> None:
         start_release_timing(

@@ -30,7 +30,7 @@ TIMING_PREREQUISITES = {
     "deploy_hosted_activation": ("package_build",),
     "smoke": ("deploy_hosted_activation",),
     "deployed_e2e": ("smoke",),
-    "evaluation": ("smoke",),
+    "evaluation": ("deployed_e2e",),
     "telemetry": ("deployed_e2e",),
     "deployment_verification": ("evaluation", "telemetry"),
     "final_evidence": ("deployment_verification",),
@@ -222,6 +222,38 @@ def finish_release_timing(
                 }
             )
         record["updated_at"] = now
+        atomic_json_write(release_dir / "release.json", record)
+
+
+def resume_record(
+    release_id: str,
+    from_stage: str,
+    *,
+    at: str | None = None,
+    releases_root: Path = RELEASES_ROOT,
+) -> None:
+    release_dir = release_directory(release_id, releases_root)
+    with release_lock(release_dir):
+        record = load_record(release_dir)
+        if record["status"] != "failed":
+            raise ValueError("Only a failed release may be resumed.")
+        now = at or utc_now()
+        parse_timestamp(now)
+        timing = timing_extension(record)
+        from_index = TIMING_STAGES.index(from_stage)
+        for stage in TIMING_STAGES[from_index:]:
+            timing["stages"].pop(stage, None)
+        timing["telemetry_succeeded_at"] = None
+        timing["app_only_duration_ms"] = None
+        timing["app_only"].update(status="running", ended_at=None, duration_ms=None)
+        record.update(
+            status="running",
+            updated_at=now,
+            completed_at=None,
+            failed_stage=None,
+            error=None,
+            artifacts=[],
+        )
         atomic_json_write(release_dir / "release.json", record)
 
 
@@ -593,6 +625,10 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--status", choices=("succeeded", "failed"), required=True)
     finalize.add_argument("--failed-stage")
     finalize.add_argument("--error")
+    resume = commands.add_parser("resume")
+    resume.add_argument("--release-id", required=True)
+    resume.add_argument("--from-stage", choices=TIMING_STAGES, required=True)
+    resume.add_argument("--at", help=argparse.SUPPRESS)
     timing = commands.add_parser("timing")
     timing.add_argument("--release-id", required=True)
     timing.add_argument("--stage", choices=TIMING_STAGES, required=True)
@@ -627,6 +663,13 @@ def main() -> None:
             args.status,
             args.failed_stage,
             args.error,
+            releases_root=args.releases_root,
+        )
+    elif args.command == "resume":
+        resume_record(
+            args.release_id,
+            args.from_stage,
+            at=args.at,
             releases_root=args.releases_root,
         )
     elif args.action == "start":
