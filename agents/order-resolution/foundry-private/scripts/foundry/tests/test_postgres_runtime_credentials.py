@@ -35,6 +35,7 @@ def test_provision_sql_grants_only_required_runtime_access() -> None:
     assert 'REVOKE TEMPORARY ON DATABASE "order_resolution" FROM PUBLIC' in sql
     assert "REVOKE CREATE ON SCHEMA public FROM PUBLIC" in sql
     assert 'public."workflow_runs"' in sql
+    assert 'public."teams_card_actions"' in sql
     assert 'public."memory_items"' in sql
     assert 'public."rag_retrieval_results"' in sql
     assert 'public."eval_results" TO "order_resolution_runtime"' in sql

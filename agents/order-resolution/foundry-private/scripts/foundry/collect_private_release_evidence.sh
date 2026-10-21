@@ -188,17 +188,42 @@ fi
 
 cd "$ROOT_DIR"
 release_started_at="$(jq -r '.started_at' "${RELEASE_DIR}/release.json")"
-FOUNDRY_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
-  run_timed_stage hitl_e2e ./scripts/github/foundry_hosted_e2e.sh
-require_fresh_e2e_evidence "$release_started_at"
-APPLICATION_INSIGHTS_RESOURCE_ID="$application_insights_target" \
-FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}" \
-HOSTED_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
-TELEMETRY_RESULT_FILE="$TELEMETRY_RESULT_FILE" \
-run_timed_stage telemetry ./scripts/foundry/verify_telemetry.sh
-FOUNDRY_EVAL_ENFORCE_PASS=true \
-FOUNDRY_EVAL_MAX_ERRORED=0 \
-run_timed_stage evaluation make eval-foundry
+release_stage_status() {
+  jq -r --arg stage "$1" \
+    '.extensions.timing.stages[$stage].status // "pending"' \
+    "${RELEASE_DIR}/release.json"
+}
+
+if [[ "$(release_stage_status hitl_e2e)" == "succeeded" && -f "$HOSTED_E2E_EVIDENCE_FILE" ]]; then
+  require_fresh_e2e_evidence "$release_started_at"
+  echo "Reusing successful hosted E2E evidence from the active release."
+else
+  FOUNDRY_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
+    run_timed_stage hitl_e2e ./scripts/github/foundry_hosted_e2e.sh
+  require_fresh_e2e_evidence "$release_started_at"
+fi
+
+if [[ "$(release_stage_status telemetry)" == "succeeded" &&
+  -f "$TELEMETRY_RESULT_FILE" &&
+  "$(jq -r '.status // empty' "$TELEMETRY_RESULT_FILE")" == "passed" ]]; then
+  echo "Reusing successful telemetry evidence from the active release."
+else
+  APPLICATION_INSIGHTS_RESOURCE_ID="$application_insights_target" \
+  FOUNDRY_EVALUATION_AGENT_ID="${hosted_agent_name}:${hosted_agent_version}" \
+  HOSTED_E2E_EVIDENCE_FILE="$HOSTED_E2E_EVIDENCE_FILE" \
+  TELEMETRY_RESULT_FILE="$TELEMETRY_RESULT_FILE" \
+  run_timed_stage telemetry ./scripts/foundry/verify_telemetry.sh
+fi
+
+if [[ "$(release_stage_status evaluation)" == "succeeded" &&
+  -f "$FOUNDRY_REPORT_FILE" &&
+  "$(jq -r '.status // empty' "$FOUNDRY_REPORT_FILE")" == "completed" ]]; then
+  echo "Reusing successful Foundry evaluation evidence from the active release."
+else
+  FOUNDRY_EVAL_ENFORCE_PASS=true \
+  FOUNDRY_EVAL_MAX_ERRORED=0 \
+  run_timed_stage evaluation make eval-foundry
+fi
 python3 "$RELEASE_TOOL" timing-start --project-root "$ROOT_DIR" \
   --release-id "$PRIVATE_RELEASE_ID" --stage final_evidence
 FINAL_EVIDENCE_TIMING_RUNNING=true

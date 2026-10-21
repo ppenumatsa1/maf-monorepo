@@ -1,0 +1,26 @@
+flowchart LR
+    subgraph BG[" "]
+        direction LR
+        UI["React UI<br/>App coordinator + panels"] --> API["FastAPI routers"]
+        API --> SVC["OrderResolutionService"]
+
+        SVC -->|local_maf| RUN["Local MAF runner"]
+        SVC -->|responses_wrapper| RESP["Private Responses client"]
+        RESP --> FND["Foundry hosted adapter"]
+        RUN --> WF["Shared MAF workflow"]
+        FND --> WF
+
+        WF --> EXE["Triage / retrieval / resolution / HITL"]
+        EXE --> PORTS["Order, policy, MCP, RAG, and persistence ports"]
+        PORTS --> PG[("PostgreSQL")]
+        WF --> EVT["Stable native events"]
+        EVT --> PG
+        PG --> API
+
+        WF -.-> OTEL["OpenTelemetry"]
+        API -.-> OTEL
+        OTEL -.-> AI["Application Insights"]
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a

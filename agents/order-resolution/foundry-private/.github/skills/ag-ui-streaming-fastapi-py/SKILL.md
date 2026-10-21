@@ -67,4 +67,4 @@ bridge implementation changes:
 
 The local evidence is distinct from protected-release evidence. Protected run
 `31911162673` and its hosted E2E, telemetry, and strict 3/3 Foundry evaluation
-record are documented in `docs/design/issues-changes-fixes.md`.
+record are documented in `docs/issues-changes-fixes.md`.

@@ -11,6 +11,8 @@ deployment_profile_load "$PROFILE_FILE"
 deployment_profile_validate
 deployment_profile_export
 
+"$ROOT_DIR/scripts/foundry/preflight_private_release.sh"
+
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
   azd env select "$AZURE_ENV_NAME" --cwd "$FOUNDRY_DIR" --no-prompt
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \

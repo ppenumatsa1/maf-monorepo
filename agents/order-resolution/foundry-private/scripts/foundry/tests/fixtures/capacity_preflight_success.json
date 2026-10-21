@@ -1,0 +1,151 @@
+{
+  "locations": {
+    "target": "East US 2",
+    "foundry": "East US 2",
+    "search": "East US",
+    "cosmos": "East US 2",
+    "postgres": "East US 2"
+  },
+  "cognitive_skus": [
+    {
+      "name": "S0",
+      "locations": ["EASTUS2"],
+      "restrictions": []
+    }
+  ],
+  "search_usage": {
+    "value": [
+      {
+        "name": {"value": "basic", "localizedValue": "B - Basic"},
+        "currentValue": 0,
+        "limit": 12
+      }
+    ]
+  },
+  "postgres_skus": [
+    {
+      "name": "FlexibleServerCapabilities",
+      "supportedServerVersions": [{"name": "18"}],
+      "supportedServerEditions": [
+        {
+          "name": "Burstable",
+          "supportedServerSkus": [
+            {
+              "name": "Standard_B1ms",
+              "status": "Enabled",
+              "supportedZones": ["1", "2", "3"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "vm_skus": [
+    {
+      "name": "Standard_D4s_v7",
+      "resourceType": "virtualMachines",
+      "family": "StandardDsv7Family",
+      "capabilities": [
+        {"name": "vCPUs", "value": "4"},
+        {"name": "MemoryGB", "value": "16"}
+      ],
+      "restrictions": []
+    }
+  ],
+  "compute_usage": [
+    {
+      "name": {"value": "StandardDsv7Family", "localizedValue": "Standard Dsv7 Family vCPUs"},
+      "currentValue": 0,
+      "limit": 100
+    },
+    {
+      "name": {"value": "cores", "localizedValue": "Total Regional vCPUs"},
+      "currentValue": 0,
+      "limit": 100
+    }
+  ],
+  "container_quotas": [
+    {
+      "name": "ManagedEnvironmentCount",
+      "properties": {
+        "name": {"localizedValue": "Managed Environment Count"},
+        "limit": {"value": 50}
+      }
+    }
+  ],
+  "container_usage": [
+    {
+      "name": "ManagedEnvironmentCount",
+      "properties": {"usages": {"value": 1}}
+    }
+  ],
+  "cognitive_usage": [
+    {
+      "name": {"value": "OpenAI.S0.AccountCount"},
+      "currentValue": 0,
+      "limit": 30
+    },
+    {
+      "name": {"value": "OpenAI.GlobalStandard.gpt-4o"},
+      "currentValue": 0,
+      "limit": 450
+    },
+    {
+      "name": {"value": "OpenAI.GlobalStandard.text-embedding-3-small"},
+      "currentValue": 0,
+      "limit": 1000
+    }
+  ],
+  "models": [
+    {
+      "model": {
+        "format": "OpenAI",
+        "name": "gpt-4o",
+        "version": "2024-11-20",
+        "lifecycleStatus": "GenerallyAvailable",
+        "capabilities": {"chatCompletion": "true", "responses": "true"},
+        "skus": [
+          {
+            "name": "GlobalStandard",
+            "usageName": "OpenAI.GlobalStandard.gpt-4o",
+            "capacity": {"default": 10, "maximum": 1000000}
+          }
+        ]
+      }
+    },
+    {
+      "model": {
+        "format": "OpenAI",
+        "name": "text-embedding-3-small",
+        "version": "1",
+        "lifecycleStatus": "GenerallyAvailable",
+        "capabilities": {"embeddings": "true"},
+        "skus": [
+          {
+            "name": "GlobalStandard",
+            "usageName": "OpenAI.GlobalStandard.text-embedding-3-small",
+            "capacity": {"default": 120, "maximum": 1000000}
+          }
+        ]
+      }
+    }
+  ],
+  "model_capacities": {
+    "gpt-4o": {
+      "value": [
+        {
+          "location": "eastus2",
+          "properties": {"skuName": "GlobalStandard", "availableCapacity": 450}
+        }
+      ]
+    },
+    "text-embedding-3-small": {
+      "value": [
+        {
+          "location": "eastus2",
+          "properties": {"skuName": "GlobalStandard", "availableCapacity": 1000}
+        }
+      ]
+    }
+  }
+}

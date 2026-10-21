@@ -6,10 +6,48 @@ BACKEND_DIR="${ROOT_DIR}/backend"
 VENV_DIR="${BACKEND_DIR}/.venv"
 STAMP_FILE="${VENV_DIR}/.requirements.sha256"
 
+select_python() {
+  local candidate
+
+  if [[ -n "${BACKEND_PYTHON_BIN:-}" ]]; then
+    printf '%s' "$BACKEND_PYTHON_BIN"
+    return
+  fi
+  for candidate in python3.13 python3.12 python3.11; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return
+    fi
+  done
+  for candidate in \
+    "$HOME/.local/bin/python3.13" \
+    "$HOME/.local/bin/python3.12" \
+    "$HOME/.local/bin/python3.11"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+  command -v python3
+}
+
+PYTHON_BIN="$(select_python)"
+"$PYTHON_BIN" -c '
+import sys
+
+if sys.version_info < (3, 11):
+    raise SystemExit(
+        "Backend dependencies require Python 3.11 or newer. "
+        "Re-run scripts/github/bootstrap_vm_runner_host.sh on private runners."
+    )
+'
+
 requirements_hash="$(
   sha256sum \
     "${BACKEND_DIR}/requirements.txt" \
-    "${BACKEND_DIR}/requirements-dev.txt" |
+    "${BACKEND_DIR}/requirements.lock" \
+    "${BACKEND_DIR}/requirements-dev.txt" \
+    "${BACKEND_DIR}/requirements-dev.lock" |
     sha256sum |
     awk '{print $1}'
 )"
@@ -24,8 +62,11 @@ if [[ "${FORCE_BACKEND_VENV_REFRESH:-false}" != "true" &&
 fi
 
 rm -rf "$VENV_DIR"
-python3 -m venv "$VENV_DIR"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
 "${VENV_DIR}/bin/python" -m pip install --disable-pip-version-check \
-  -r "${BACKEND_DIR}/requirements-dev.txt"
+  --index-url "https://packagefeedproxy.microsoft.io/pypi/simple" \
+  --extra-index-url "https://pypi.org/simple" \
+  --require-hashes \
+  -r "${BACKEND_DIR}/requirements-dev.lock"
 printf '%s\n' "$requirements_hash" >"$STAMP_FILE"
 echo "Prepared backend virtual environment for requirements ${requirements_hash:0:12}."

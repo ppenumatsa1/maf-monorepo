@@ -70,6 +70,7 @@ class FakeWorkflowRunRepository:
         input_text: str,
         session_id: str | None = None,
         customer_id: str | None = None,
+        origin_channel: str = "api",
     ) -> None:
         self.created_runs.append(
             {
@@ -77,8 +78,15 @@ class FakeWorkflowRunRepository:
                 "input_text": input_text,
                 "session_id": session_id,
                 "customer_id": customer_id,
+                "origin_channel": origin_channel,
             }
         )
+
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None:
+        for run in reversed(self.created_runs):
+            if run["thread_id"] == thread_id:
+                return str(run["origin_channel"])
+        return None
 
     def append_workflow_event(self, _thread_id: str, event: WorkflowEvent) -> None:
         self.events.append(event)
@@ -223,6 +231,7 @@ async def test_order_resolution_service_starts_workflow_through_facade() -> None
             "input_text": "Order ORD-1001 arrived late.",
             "session_id": "session-123",
             "customer_id": "cust-123",
+            "origin_channel": "api",
         }
     ]
 

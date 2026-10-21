@@ -45,7 +45,10 @@ fi
 cd "$FOUNDRY_DIR"
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env select "$AZURE_ENV_NAME" --no-prompt
 get_env() {
-  AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" 2>/dev/null || true
+  local value
+  if value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$1" 2>/dev/null)"; then
+    printf '%s' "$value"
+  fi
 }
 
 resource_group="$(require_env AZURE_RESOURCE_GROUP "$(get_env AZURE_RESOURCE_GROUP)")"

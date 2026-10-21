@@ -51,6 +51,7 @@ class WorkflowRunRepository:
         input_text: str,
         session_id: str | None = None,
         customer_id: str | None = None,
+        origin_channel: str = "api",
     ) -> dict[str, Any]:
         now = _utc_now_iso()
         with self._pool.connection() as conn:
@@ -71,8 +72,8 @@ class WorkflowRunRepository:
                     """
                     INSERT INTO workflow_runs (
                         thread_id, session_id, status, input, input_summary,
-                        created_at, updated_at, started_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        created_at, updated_at, started_at, origin_channel
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (thread_id) DO NOTHING
                     """,
                     (
@@ -84,6 +85,7 @@ class WorkflowRunRepository:
                         now,
                         now,
                         now,
+                        origin_channel,
                     ),
                 )
                 cur.execute(
@@ -107,6 +109,23 @@ class WorkflowRunRepository:
                     "created_at": _as_iso(row["created_at"]),
                     "updated_at": _as_iso(row["updated_at"]),
                 }
+
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None:
+        with self._pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT origin_channel
+                    FROM workflow_runs
+                    WHERE thread_id = %s
+                    """,
+                    (thread_id,),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        value = str(row["origin_channel"] or "").strip()
+        return value or None
 
     def create_or_get_responses_dispatch(
         self,

@@ -15,6 +15,11 @@ from app.api.v1.schemas.chat import ChatRunRequest
 from app.api.v1.schemas.hitl import HitlResponseRequest
 from app.core import telemetry as _telemetry
 from app.core.telemetry import get_tracer
+from app.infrastructure.persistence.teams_card_action_repository import (
+    TeamsCardActionError,
+    TeamsCardActionRepository,
+)
+from foundry import teams_cards
 
 logger = logging.getLogger(__name__)
 _TRACE_EVALUATION_HEADER = "x-client-trace-evaluation-record-content"
@@ -57,9 +62,12 @@ _apply_runtime_database_url_override()
 
 if os.getenv("FOUNDRY_HOSTED_SKIP_APP_INIT_FOR_TESTS", "").strip().lower() == "true":
     order_resolution_service = None
+    teams_card_action_repository = None
     workflow_run_repository = None
 else:
     from app.core.container import order_resolution_service, workflow_run_repository
+
+    teams_card_action_repository = TeamsCardActionRepository()
 
 
 @dataclass(frozen=True)
@@ -71,7 +79,12 @@ class _ParsedInput:
 
 
 def _parse_debug_enabled() -> bool:
-    return os.getenv("FOUNDRY_DEBUG_PARSE_INPUT", "").strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("ORDER_RESOLUTION_DEBUG_PARSE_INPUT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _emit_parse_debug(payload: dict[str, Any], context: Any | None, parsed: _ParsedInput) -> None:
@@ -142,6 +155,32 @@ def _load_responses_types() -> tuple[type[Any], type[Any], type[Any], type[Any],
     )
 
 
+def _load_activity_types() -> tuple[
+    type[Any],
+    type[Any],
+    type[Any],
+    type[Any],
+    type[Any],
+]:
+    from azure.ai.agentserver.activity import (  # type: ignore[import-not-found]
+        ActivityAgentServerHost,
+    )
+    from microsoft_agents.activity import (  # type: ignore[import-not-found]
+        Activity,
+        ActivityTypes,
+        Attachment,
+        InvokeResponse,
+    )
+
+    return (
+        ActivityAgentServerHost,
+        Activity,
+        ActivityTypes,
+        Attachment,
+        InvokeResponse,
+    )
+
+
 def _coerce_payload(create_response: Any) -> dict[str, Any]:
     if isinstance(create_response, dict):
         return dict(create_response)
@@ -152,6 +191,19 @@ def _coerce_payload(create_response: Any) -> dict[str, Any]:
     if hasattr(create_response, "dict"):
         return create_response.dict()
     return {}
+
+
+def _request_payloads(create_response: Any, context: Any | None) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    primary_payload = _coerce_payload(create_response)
+    if primary_payload:
+        payloads.append(primary_payload)
+    if context is not None:
+        for key in ("request", "request_body", "body", "payload", "raw_request"):
+            payload = _coerce_payload(getattr(context, key, None))
+            if payload:
+                payloads.append(payload)
+    return payloads
 
 
 def _nested_text(value: Any) -> str:
@@ -181,21 +233,36 @@ def _nested_text(value: Any) -> str:
     return str(value).strip()
 
 
-def _coerce_conversation_id(payload: dict[str, Any], context: Any | None) -> str:
-    payload_conversation = payload.get("conversation")
-    if isinstance(payload_conversation, str) and payload_conversation.strip():
-        return payload_conversation.strip()
-    if isinstance(payload_conversation, dict):
-        payload_conversation_id = payload_conversation.get("id")
-        if isinstance(payload_conversation_id, str) and payload_conversation_id.strip():
-            return payload_conversation_id.strip()
+def _conversation_id_from_mapping(value: dict[str, Any]) -> str | None:
+    conversation = value.get("conversation")
+    if isinstance(conversation, str) and conversation.strip():
+        return conversation.strip()
+    if isinstance(conversation, dict):
+        conversation_id = conversation.get("id")
+        if isinstance(conversation_id, str) and conversation_id.strip():
+            return conversation_id.strip()
 
-    previous_response_id = payload.get("previous_response_id")
-    if isinstance(previous_response_id, str) and previous_response_id.strip():
-        return previous_response_id.strip()
+    for key in ("conversation_id", "conversationId"):
+        conversation_id = value.get(key)
+        if isinstance(conversation_id, str) and conversation_id.strip():
+            return conversation_id.strip()
+
+    metadata = value.get("metadata")
+    if isinstance(metadata, dict):
+        metadata_conversation_id = _conversation_id_from_mapping(metadata)
+        if metadata_conversation_id:
+            return metadata_conversation_id
+
+    return None
+
+
+def _coerce_conversation_id(payload: dict[str, Any], context: Any | None) -> str:
+    payload_conversation_id = _conversation_id_from_mapping(payload)
+    if payload_conversation_id:
+        return payload_conversation_id
 
     if context is not None:
-        for key in ("conversation_id", "conversation", "previous_response_id"):
+        for key in ("conversation_id", "conversation"):
             value = getattr(context, key, None)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -204,26 +271,24 @@ def _coerce_conversation_id(payload: dict[str, Any], context: Any | None) -> str
                 if isinstance(conversation_id, str) and conversation_id.strip():
                     return conversation_id.strip()
 
-        for key in ("request", "request_body", "body", "payload", "raw_request"):
+        for key in ("metadata", "request", "request_body", "body", "payload", "raw_request"):
             nested = getattr(context, key, None)
             if hasattr(nested, "model_dump"):
                 nested = nested.model_dump()
             elif hasattr(nested, "dict"):
                 nested = nested.dict()
             if isinstance(nested, dict):
-                nested_conversation = nested.get("conversation")
-                if isinstance(nested_conversation, str) and nested_conversation.strip():
-                    return nested_conversation.strip()
-                if isinstance(nested_conversation, dict):
-                    nested_conversation_id = nested_conversation.get("id")
-                    if isinstance(nested_conversation_id, str) and nested_conversation_id.strip():
-                        return nested_conversation_id.strip()
-                nested_previous_response_id = nested.get("previous_response_id")
-                if (
-                    isinstance(nested_previous_response_id, str)
-                    and nested_previous_response_id.strip()
-                ):
-                    return nested_previous_response_id.strip()
+                nested_conversation_id = _conversation_id_from_mapping(nested)
+                if nested_conversation_id:
+                    return nested_conversation_id
+
+        context_previous_response_id = getattr(context, "previous_response_id", None)
+        if isinstance(context_previous_response_id, str) and context_previous_response_id.strip():
+            return context_previous_response_id.strip()
+
+    previous_response_id = payload.get("previous_response_id")
+    if isinstance(previous_response_id, str) and previous_response_id.strip():
+        return previous_response_id.strip()
 
     payload_id = payload.get("id")
     if isinstance(payload_id, str) and payload_id.strip():
@@ -300,49 +365,75 @@ def _message_from_context(context: Any | None) -> str | None:
     return None
 
 
-def _decision_from_text(message: str | None) -> str | None:
+def _is_standalone_decision_command(message: str | None) -> bool:
     if not message:
-        return None
-    lowered = message.strip().lower()
-    if re.search(r"\b(approve|approved|yes)\b", lowered):
-        return "approve"
-    if re.search(r"\b(reject|rejected|no)\b", lowered):
-        return "reject"
-    return None
+        return False
+    normalized = re.sub(r"[^a-z]", "", message.casefold())
+    return normalized in {"approve", "approved", "yes", "reject", "rejected", "no"}
 
 
-def _pending_checkpoint_id(thread_id: str) -> str | None:
+def _pending_checkpoint_id(
+    thread_id: str,
+    requested_checkpoint_id: str | None = None,
+) -> str | None:
     details = workflow_run_repository.get_workflow_run(thread_id)
     if not details:
         return None
     for approval in details.pending_approvals:
-        if approval.status == "pending":
+        if approval.status == "pending" and (
+            requested_checkpoint_id is None or approval.checkpoint_id == requested_checkpoint_id
+        ):
             return approval.checkpoint_id
     return None
 
 
-def _parse_input(create_response: Any, context: Any | None) -> _ParsedInput:
+def _parse_input(
+    create_response: Any,
+    context: Any | None,
+    *,
+    input_items: Iterable[dict[str, Any]] = (),
+) -> _ParsedInput:
     payload = _coerce_payload(create_response)
-    metadata = payload.get("metadata")
-    message = _nested_text(payload.get("message")) or _nested_text(payload.get("input"))
+    request_payloads = _request_payloads(create_response, context)
+    message = next(
+        (
+            candidate
+            for request_payload in request_payloads
+            if (
+                candidate := (
+                    _nested_text(request_payload.get("message"))
+                    or _nested_text(request_payload.get("input"))
+                )
+            )
+        ),
+        "",
+    )
     message = message or _message_from_context(context)
     checkpoint_id: str | None = None
     decision: str | None = None
-    if isinstance(metadata, dict):
-        maybe_checkpoint = metadata.get("checkpoint_id")
-        if isinstance(maybe_checkpoint, str) and maybe_checkpoint.strip():
-            checkpoint_id = maybe_checkpoint.strip()
-        maybe_decision = metadata.get("decision")
-        if isinstance(maybe_decision, str):
-            lowered = maybe_decision.strip().lower()
-            if lowered in {"approve", "reject"}:
-                decision = lowered
-    input_checkpoint, input_decision = _parse_function_call_output(_iter_input_items(payload))
+    for request_payload in request_payloads:
+        metadata = request_payload.get("metadata")
+        if isinstance(metadata, dict):
+            maybe_checkpoint = metadata.get("checkpoint_id")
+            if isinstance(maybe_checkpoint, str) and maybe_checkpoint.strip():
+                checkpoint_id = maybe_checkpoint.strip()
+            maybe_decision = metadata.get("decision")
+            if isinstance(maybe_decision, str):
+                lowered = maybe_decision.strip().lower()
+                if lowered in {"approve", "reject"}:
+                    decision = lowered
+        input_checkpoint, input_decision = _parse_function_call_output(
+            _iter_input_items(request_payload)
+        )
+        if input_checkpoint:
+            checkpoint_id = input_checkpoint
+        if input_decision:
+            decision = input_decision
+    input_checkpoint, input_decision = _parse_function_call_output(input_items)
     if input_checkpoint:
         checkpoint_id = input_checkpoint
     if input_decision:
         decision = input_decision
-    decision = decision or _decision_from_text(message)
     parsed = _ParsedInput(
         conversation_id=_coerce_conversation_id(payload, context),
         message=message or None,
@@ -378,6 +469,289 @@ def _serialize_workflow(thread_id: str) -> dict[str, Any]:
     }
 
 
+def _teams_response_text(payload: dict[str, Any]) -> str:
+    message = payload.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+
+    if payload.get("status") == "waiting_approval":
+        return "Approval required. Submit the decision through the approval interface."
+
+    status = str(payload.get("status", "unknown")).strip() or "unknown"
+    return f"Workflow status: {status}."
+
+
+def _activity_conversation_id(activity: Any) -> str:
+    conversation = getattr(activity, "conversation", None)
+    return str(getattr(conversation, "id", "") or "").strip()
+
+
+def _activity_user_id(activity: Any) -> str:
+    sender = getattr(activity, "from_property", None)
+    if sender is None:
+        sender = getattr(activity, "from", None)
+    aad_object_id = str(getattr(sender, "aad_object_id", "") or "").strip()
+    if aad_object_id:
+        return aad_object_id
+    return str(getattr(sender, "id", "") or "").strip()
+
+
+def _pending_approval(payload: dict[str, Any]) -> dict[str, Any] | None:
+    approvals = payload.get("pending_approvals")
+    if not isinstance(approvals, list):
+        return None
+    for approval in approvals:
+        if isinstance(approval, dict) and approval.get("status") == "pending":
+            return approval
+    return None
+
+
+def _approval_status(
+    payload: dict[str, Any],
+    checkpoint_id: str,
+) -> str:
+    approvals = payload.get("pending_approvals")
+    if not isinstance(approvals, list):
+        return "unavailable"
+    for approval in approvals:
+        if not isinstance(approval, dict):
+            continue
+        if str(approval.get("checkpoint_id") or "") == checkpoint_id:
+            return str(approval.get("status") or "unavailable")
+    return "unavailable"
+
+
+def _card_action_ttl_seconds() -> int:
+    value = os.getenv("TEAMS_CARD_ACTION_TTL_SECONDS", "86400").strip()
+    try:
+        ttl_seconds = int(value)
+    except ValueError as exc:
+        raise RuntimeError("TEAMS_CARD_ACTION_TTL_SECONDS must be an integer.") from exc
+    if ttl_seconds <= 0:
+        raise RuntimeError("TEAMS_CARD_ACTION_TTL_SECONDS must be greater than zero.")
+    return ttl_seconds
+
+
+async def _send_activity_card(
+    context: Any,
+    *,
+    card: dict[str, Any],
+    text: str,
+    activity_type: type[Any],
+    activity_types: type[Any],
+    attachment_type: type[Any],
+) -> None:
+    attachment = attachment_type(
+        contentType=teams_cards.ADAPTIVE_CONTENT_TYPE,
+        content=card,
+    )
+    await context.send_activity(
+        activity_type(
+            type=activity_types.message,
+            text=text,
+            attachments=[attachment],
+        )
+    )
+
+
+async def _send_invoke_response(
+    context: Any,
+    *,
+    body: dict[str, Any],
+    activity_type: type[Any],
+    activity_types: type[Any],
+    invoke_response_type: type[Any],
+) -> None:
+    await context.send_activity(
+        activity_type(
+            type=activity_types.invoke_response,
+            value=invoke_response_type(status=200, body=body),
+        )
+    )
+
+
+async def _run_from_activity_message(
+    context: Any,
+    *,
+    activity_type: type[Any],
+    activity_types: type[Any],
+    attachment_type: type[Any],
+) -> None:
+    activity = context.activity
+    conversation_id = _activity_conversation_id(activity)
+    user_id = _activity_user_id(activity)
+    message = str(getattr(activity, "text", "") or "").strip()
+    if not conversation_id or not user_id or not message:
+        raise ValueError("Teams activity is missing conversation, user, or message context.")
+
+    if _is_standalone_decision_command(message) and _pending_checkpoint_id(conversation_id):
+        await context.send_activity("Use the pending approval card to submit a decision.")
+        return
+
+    tracer = get_tracer("foundry.activity")
+    agent_name, agent_version, agent_id = _foundry_agent_identity()
+    with tracer.start_as_current_span("foundry.activity.message") as span:
+        _set_span_attribute(span, "workflow.thread_id", conversation_id)
+        _set_span_attribute(span, "workflow.session_id", conversation_id)
+        _set_span_attribute(span, "foundry.protocol", "activity")
+        _set_span_attribute(span, "gen_ai.operation.name", "invoke_agent")
+        _set_span_attribute(span, "gen_ai.agent.name", agent_name)
+        _set_span_attribute(span, "gen_ai.agent.id", agent_id)
+        _set_span_attribute(span, "gen_ai.agent.version", agent_version)
+        _set_span_attribute(span, "gen_ai.conversation.id", conversation_id)
+        try:
+            await order_resolution_service.start_chat_run(
+                ChatRunRequest(
+                    message=message,
+                    thread_id=conversation_id,
+                    session_id=conversation_id,
+                    customer_id="foundry-teams",
+                ),
+                origin_channel="teams_activity",
+            )
+            payload = _serialize_workflow(conversation_id)
+            _set_span_attribute(span, "workflow.status", payload.get("status"))
+            pending = _pending_approval(payload)
+            if pending is None:
+                await context.send_activity(_teams_response_text(payload))
+                return
+
+            checkpoint_id = str(pending.get("checkpoint_id") or "").strip()
+            if not checkpoint_id:
+                raise RuntimeError("Pending approval is missing its checkpoint identifier.")
+            tokens = teams_card_action_repository.issue_actions(
+                thread_id=conversation_id,
+                checkpoint_id=checkpoint_id,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                ttl_seconds=_card_action_ttl_seconds(),
+            )
+            _set_span_attribute(span, "workflow.checkpoint_id", checkpoint_id)
+            card = teams_cards.build_pending_approval_card(
+                action=pending.get("action"),
+                approve_token=tokens["approve"],
+                reject_token=tokens["reject"],
+            )
+            await _send_activity_card(
+                context,
+                card=card,
+                text="Approval required.",
+                activity_type=activity_type,
+                activity_types=activity_types,
+                attachment_type=attachment_type,
+            )
+        except Exception as exc:
+            span.record_exception(exc)
+            raise
+
+
+def _card_action_error_status(code: str) -> int:
+    if code in {"conversation_mismatch", "user_mismatch"}:
+        return 403
+    if code in {"action_already_used", "action_expired", "approval_not_pending"}:
+        return 409
+    return 400
+
+
+async def _run_from_activity_invoke(
+    context: Any,
+    *,
+    activity_type: type[Any],
+    activity_types: type[Any],
+    invoke_response_type: type[Any],
+) -> None:
+    activity = context.activity
+    if getattr(activity, "name", None) != teams_cards.ADAPTIVE_ACTION_INVOKE:
+        return
+
+    conversation_id = _activity_conversation_id(activity)
+    user_id = _activity_user_id(activity)
+    parsed = teams_cards.parse_approval_action(activity)
+    if not conversation_id or not user_id or parsed is None:
+        await _send_invoke_response(
+            context,
+            body=teams_cards.error_invoke_response(
+                status_code=400,
+                code="InvalidApprovalAction",
+                message="The approval action is invalid.",
+            ),
+            activity_type=activity_type,
+            activity_types=activity_types,
+            invoke_response_type=invoke_response_type,
+        )
+        return
+
+    decision, token = parsed
+    tracer = get_tracer("foundry.activity")
+    with tracer.start_as_current_span("foundry.activity.approval") as span:
+        _set_span_attribute(span, "foundry.protocol", "activity")
+        _set_span_attribute(span, "gen_ai.operation.name", "execute_tool")
+        try:
+            action = teams_card_action_repository.claim_action(
+                token=token,
+                decision=decision,
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+            _set_span_attribute(span, "workflow.thread_id", action.thread_id)
+            _set_span_attribute(span, "workflow.checkpoint_id", action.checkpoint_id)
+            _set_span_attribute(span, "workflow.hitl.decision", action.decision)
+            try:
+                await order_resolution_service.respond_hitl(
+                    HitlResponseRequest(
+                        checkpoint_id=action.checkpoint_id,
+                        decision=action.decision,
+                        reviewer="teams-card",
+                        comments="decision received from Teams Adaptive Card",
+                    )
+                )
+            except Exception:
+                teams_card_action_repository.release_action(action.batch_id)
+                raise
+            teams_card_action_repository.complete_action(action.batch_id)
+            payload = _serialize_workflow(action.thread_id)
+            status = _approval_status(payload, action.checkpoint_id)
+            _set_span_attribute(span, "workflow.status", payload.get("status"))
+            message = payload.get("message")
+            card = teams_cards.build_resolved_approval_card(
+                status=status,
+                message=message if isinstance(message, str) and message.strip() else None,
+            )
+            await _send_invoke_response(
+                context,
+                body=teams_cards.card_invoke_response(card),
+                activity_type=activity_type,
+                activity_types=activity_types,
+                invoke_response_type=invoke_response_type,
+            )
+        except TeamsCardActionError as exc:
+            _set_span_attribute(span, "workflow.hitl.error_code", exc.code)
+            await _send_invoke_response(
+                context,
+                body=teams_cards.error_invoke_response(
+                    status_code=_card_action_error_status(exc.code),
+                    code=exc.code,
+                    message=str(exc),
+                ),
+                activity_type=activity_type,
+                activity_types=activity_types,
+                invoke_response_type=invoke_response_type,
+            )
+        except Exception as exc:
+            span.record_exception(exc)
+            await _send_invoke_response(
+                context,
+                body=teams_cards.error_invoke_response(
+                    status_code=500,
+                    code="ApprovalActionFailed",
+                    message="The approval action could not be completed.",
+                ),
+                activity_type=activity_type,
+                activity_types=activity_types,
+                invoke_response_type=invoke_response_type,
+            )
+
+
 def _set_span_attribute(span: Any, key: str, value: Any) -> None:
     if value is None:
         return
@@ -406,13 +780,7 @@ def _trace_evaluation_requested(create_response: Any, context: Any | None) -> bo
         }:
             return True
 
-    payloads = [_coerce_payload(create_response)]
-    if context is not None:
-        for key in ("request", "request_body", "body", "payload", "raw_request"):
-            payload = _coerce_payload(getattr(context, key, None))
-            if payload:
-                payloads.append(payload)
-    for payload in payloads:
+    for payload in _request_payloads(create_response, context):
         for container_name in ("structured_inputs", "metadata"):
             marker_container = payload.get(container_name)
             if not isinstance(marker_container, dict):
@@ -500,7 +868,12 @@ def _set_trace_evaluation_output(
 async def _run_from_responses(
     create_response: Any, context: Any | None, text_response: type[Any]
 ) -> Any:
-    parsed = _parse_input(create_response, context)
+    input_items: list[dict[str, Any]] = []
+    get_input_items = getattr(context, "get_input_items", None)
+    if callable(get_input_items):
+        resolved_items = await get_input_items(resolve_references=False)
+        input_items = [payload for item in resolved_items if (payload := _coerce_payload(item))]
+    parsed = _parse_input(create_response, context, input_items=input_items)
     tracer = get_tracer("foundry.responses")
     agent_name, agent_version, agent_id = _foundry_agent_identity()
     trace_evaluation_content_enabled = _trace_evaluation_content_enabled(create_response, context)
@@ -527,17 +900,30 @@ async def _run_from_responses(
         checkpoint_id_for_span: str | None = None
         try:
             if parsed.decision:
-                checkpoint_id = parsed.checkpoint_id or _pending_checkpoint_id(
+                origin_channel = workflow_run_repository.get_workflow_origin_channel(
                     parsed.conversation_id
+                )
+                checkpoint_id = (
+                    None
+                    if origin_channel == "teams_activity"
+                    else _pending_checkpoint_id(
+                        parsed.conversation_id,
+                        parsed.checkpoint_id,
+                    )
                 )
                 checkpoint_id_for_span = checkpoint_id
                 if checkpoint_id is None:
+                    message = (
+                        "Use the pending approval card to submit a decision."
+                        if origin_channel == "teams_activity"
+                        else "No pending approval found for this conversation."
+                    )
                     payload = {
                         "thread_id": parsed.conversation_id,
                         "status": "failed",
                         "events": [],
                         "pending_approvals": [],
-                        "message": "No pending approval found for this conversation.",
+                        "message": message,
                     }
                 else:
                     hitl_result = await order_resolution_service.respond_hitl(
@@ -557,7 +943,8 @@ async def _run_from_responses(
                         thread_id=parsed.conversation_id,
                         session_id=parsed.conversation_id,
                         customer_id="foundry-hosted",
-                    )
+                    ),
+                    origin_channel="responses",
                 )
                 payload = _serialize_workflow(parsed.conversation_id)
             else:
@@ -578,7 +965,7 @@ async def _run_from_responses(
                 payload,
                 enabled=trace_evaluation_content_enabled,
             )
-            response_text = json.dumps(payload)
+            response_text = _teams_response_text(payload)
             return text_response(context, create_response, text=response_text)
         except Exception as exc:
             span.record_exception(exc)
@@ -587,8 +974,22 @@ async def _run_from_responses(
 
 def _build_app() -> Any:
     ResponsesAgentServerHost, _, _, TextResponse, InMemoryResponseProvider = _load_responses_types()
+    (
+        ActivityAgentServerHost,
+        Activity,
+        ActivityTypes,
+        Attachment,
+        InvokeResponse,
+    ) = _load_activity_types()
+
+    class OrderResolutionAgentServerHost(
+        ActivityAgentServerHost,
+        ResponsesAgentServerHost,
+    ):
+        pass
+
     # Keep in-memory response storage for private-network hosted deployments.
-    host = ResponsesAgentServerHost(store=InMemoryResponseProvider())
+    host = OrderResolutionAgentServerHost(store=InMemoryResponseProvider())
 
     async def handler(
         create_response: Any,
@@ -598,6 +999,46 @@ def _build_app() -> Any:
         return await _run_from_responses(create_response, context, TextResponse)
 
     host.response_handler(handler)
+
+    agent_app = host.agent_app
+
+    @agent_app.activity("message")
+    async def activity_message_handler(context: Any, _state: Any) -> None:
+        await _run_from_activity_message(
+            context,
+            activity_type=Activity,
+            activity_types=ActivityTypes,
+            attachment_type=Attachment,
+        )
+
+    @agent_app.activity("invoke")
+    async def activity_invoke_handler(context: Any, _state: Any) -> None:
+        await _run_from_activity_invoke(
+            context,
+            activity_type=Activity,
+            activity_types=ActivityTypes,
+            invoke_response_type=InvokeResponse,
+        )
+
+    @agent_app.error
+    async def activity_error_handler(context: Any, error: Exception) -> None:
+        logger.error("Activity handler failed: %s", error, exc_info=True)
+        activity = getattr(context, "activity", None)
+        if getattr(activity, "type", None) == "invoke":
+            await _send_invoke_response(
+                context,
+                body=teams_cards.error_invoke_response(
+                    status_code=500,
+                    code="ActivityHandlerFailed",
+                    message="The request could not be completed.",
+                ),
+                activity_type=Activity,
+                activity_types=ActivityTypes,
+                invoke_response_type=InvokeResponse,
+            )
+            return
+        await context.send_activity("The request could not be completed.")
+
     return host
 
 

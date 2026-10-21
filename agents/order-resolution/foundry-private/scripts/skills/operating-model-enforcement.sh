@@ -22,7 +22,7 @@ require_changed() {
 }
 
 if grep -Eq '^(backend/app/maf/executors/hitl\.py|backend/app/modules/order_resolution/hitl\.py|backend/app/maf/workflows/order_resolution\.py)$' <<<"$changed_files"; then
-  require_changed "docs/design/hitl-approval-conditions.md" "HITL decision logic changed"
+  require_changed "docs/hitl-approval-conditions.md" "HITL decision logic changed"
   if ! grep -Eq '^(backend/tests/test_workflow\.py|backend/.foundry/datasets/order-resolution-hosted-cases\.jsonl)$' <<<"$changed_files"; then
     echo "[FAIL] operating-model: HITL changes require workflow tests or hosted eval dataset updates"
     exit 1
@@ -30,7 +30,7 @@ if grep -Eq '^(backend/app/maf/executors/hitl\.py|backend/app/modules/order_reso
 fi
 
 if grep -Eq '^(\.github/workflows/foundry-.*\.yml|infra/foundry-hosted/|backend/foundry/main\.py|backend/Dockerfile\.hosted|scripts/foundry/|scripts/github/foundry_hosted_e2e\.sh)' <<<"$changed_files"; then
-  require_changed "docs/design/issues-changes-fixes.md" "Hosted runtime/deploy surfaces changed"
+  require_changed "docs/issues-changes-fixes.md" "Hosted runtime/deploy surfaces changed"
 fi
 
 echo "[PASS] operating-model enforcement checks"

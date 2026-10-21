@@ -32,7 +32,7 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - **Copilot provides** implementation, tests, and infra/doc updates.
 - **Gates provide** release evidence for correctness, recovery, telemetry, and Foundry parity.
 
-Canonical contract: `docs/design/engineering-operating-model.md`.
+Canonical contract: `docs/engineering-operating-model.md`.
 
 Current hosted gate posture uses private Foundry for all hosted validation and
 deployment. Do not introduce an additional hosted deployment path without a
@@ -102,7 +102,7 @@ alter a workflow.
 - Do not add back removed legacy routes/modules such as `/api/foundry*` or
   `backend/app/foundry/*`.
 - Any change to HITL decision logic must update:
-  - `docs/design/hitl-approval-conditions.md`
+  - `docs/hitl-approval-conditions.md`
   - tests in `backend/tests/test_workflow.py` and/or eval cases in `backend/.foundry/datasets/order-resolution-hosted-cases.jsonl`
 - Do not remove or rename emitted event types without updating frontend/event consumers:
   - `workflow.stage`
@@ -187,7 +187,7 @@ repository-owned workflow/frontend-boundary skills:
 `microsoft-foundry` and `azure-monitor-query-py` were selectively vendored
 (not as a full catalog install) from `microsoft/skills` revision
 `e58528db9a006528a5fb0a2c029790fa6a9a7c0e`; see
-`docs/design/techstack.md` for their exact upstream paths.
+`docs/techstack.md` for their exact upstream paths.
 
 ## Baseline Test Inputs
 
@@ -200,16 +200,15 @@ When behavior changes, update these docs in the same PR:
 
 - `README.md`
 - `backend/README.md`
-- `docs/design/userflow.md`
-- `docs/design/hitl-approval-conditions.md`
-- `docs/design/engineering-operating-model.md`
+- `docs/userflow.md`
+- `docs/hitl-approval-conditions.md`
+- `docs/engineering-operating-model.md`
 - `.github/copilot-instructions.md`
 - `agents.md`
 
-The selected-thread frontend, strict TypeScript/lint scripts, and focused
-browser coverage are implemented and locally validated: 133 tests passed, the
-deterministic evaluation is 10/10, seven workflow and four selected-thread E2E
-cases passed, and design review passed. The current backend suite has 133
-passing tests. Protected run `31911162673` activated hosted-agent version 6
-and passed telemetry plus strict 3/3 evaluation; future releases still require
-fresh evidence.
+The selected-thread frontend and focused browser coverage are implemented.
+The current source tree uses TypeScript 7 for typechecking while retaining the
+TypeScript 6 compiler API only for `typescript-eslint`; Zod 4 and CopilotKit
+1.79 are deployed. The active hosted version and exact test, telemetry,
+evaluation, and timing evidence belong in
+`docs/issues-changes-fixes.md`. Future releases still require fresh evidence.

@@ -42,6 +42,7 @@ def test_persists_and_reloads_after_store_reinit() -> None:
     assert reloaded_run is not None
     assert reloaded_run.thread_id == thread_id
     assert any(item.id == event.id for item in reloaded_run.events)
+    assert reloaded_repo.get_workflow_origin_channel(thread_id) == "api"
 
     reloaded_messages = reloaded_memory.get_messages(thread_id)
     assert len(reloaded_messages) == 2

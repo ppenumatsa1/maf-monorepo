@@ -14,6 +14,7 @@ RUNTIME_TABLES = (
     "conversation_messages",
     "checkpoints",
     "approvals",
+    "teams_card_actions",
     "idempotency_keys",
     "sessions",
     "memory_items",

@@ -2,9 +2,21 @@
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
+
+## Frontend toolchain
+
+- `@typescript/native` provides the TypeScript 7 `tsc` executable used by
+  `npm run typecheck` and `npm run build`.
+- The `typescript` dependency aliases `@typescript/typescript6` because
+  `typescript-eslint` still requires the TypeScript 6 compiler API. Do not
+  replace the alias with TypeScript 7 until `typescript-eslint` supports the
+  TypeScript 7 API.
+- Zod 4 satisfies CopilotKit's `zod >=3.25` peer dependency. The application
+  does not currently import Zod directly.
+- Package installation uses the Microsoft npm proxy configured in `.npmrc`.
 
 The app defaults to backend `http://localhost:8000` during Vite development.
 The container runtime writes `env-config.js` from `API_BASE` and renders the

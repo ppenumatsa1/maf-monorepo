@@ -52,7 +52,7 @@ command -v "$azd_command" >/dev/null 2>&1 || {
       CONTRACT_VERSION|DEPLOYMENT_LANE|AZURE_ENV_NAME) continue ;;
     esac
     AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-      "$azd_command" env set "$key" "${DEPLOYMENT_PROFILE_VALUES[$key]}"
+      "$azd_command" env set "$key" "$(deployment_profile_value "$key")"
   done
 )
 

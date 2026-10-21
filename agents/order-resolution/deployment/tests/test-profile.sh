@@ -76,10 +76,21 @@ printf '%s|%s\n' "$PWD" "$*" >> "$AZD_LOG"
 EOF
 chmod +x "$azd_command"
 
-AZD_COMMAND="$azd_command" AZD_LOG="$azd_log" \
+env -u AZURE_SUBSCRIPTION_ID -u AZURE_TENANT_ID \
+  AZD_COMMAND="$azd_command" AZD_LOG="$azd_log" \
   bash "$script_dir/apply-azd-profile.sh" "$script_dir/profiles/foundry-public.env"
 
 grep -Fq 'foundry-public/infra/foundry-hosted|env set AZURE_SUBSCRIPTION_ID 00000000-0000-0000-0000-000000000000' "$azd_log"
 grep -Fq 'env set AZURE_RESOURCE_GROUP rg-order-resolution-public-dev' "$azd_log"
 grep -Fq 'env set AZURE_LOCATION eastus2' "$azd_log"
 grep -Fq 'env set NAME_PREFIX orderpub' "$azd_log"
+
+runtime_subscription="11111111-1111-4111-8111-111111111111"
+runtime_tenant="22222222-2222-4222-8222-222222222222"
+AZURE_SUBSCRIPTION_ID="$runtime_subscription" \
+AZURE_TENANT_ID="$runtime_tenant" \
+AZD_COMMAND="$azd_command" AZD_LOG="$azd_log" \
+  bash "$script_dir/apply-azd-profile.sh" "$script_dir/profiles/foundry-private.env"
+
+grep -Fq "foundry-private/infra/foundry-hosted|env set AZURE_SUBSCRIPTION_ID $runtime_subscription" "$azd_log"
+grep -Fq "env set AZURE_TENANT_ID $runtime_tenant" "$azd_log"

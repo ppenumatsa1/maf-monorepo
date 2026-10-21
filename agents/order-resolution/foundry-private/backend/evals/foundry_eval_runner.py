@@ -87,6 +87,60 @@ def _validate_result_counts(
         )
 
 
+def _validate_testing_criteria_results(
+    criteria_results: object,
+    *,
+    expected_evaluators: list[str],
+    expected_total: int,
+    enforce_pass: bool,
+    max_errored: int | None,
+) -> None:
+    if not enforce_pass and max_errored is None:
+        return
+    if not isinstance(criteria_results, list):
+        raise RuntimeError("Foundry trace eval did not return per-evaluator result counts")
+
+    results_by_name: dict[str, dict[str, object]] = {}
+    for result in criteria_results:
+        if not isinstance(result, dict):
+            raise RuntimeError("Foundry trace eval returned invalid per-evaluator results")
+        name = result.get("testing_criteria")
+        if not isinstance(name, str) or not name or name in results_by_name:
+            raise RuntimeError("Foundry trace eval returned invalid evaluator names")
+        results_by_name[name] = result
+
+    if set(results_by_name) != set(expected_evaluators):
+        raise RuntimeError(
+            "Foundry trace eval evaluator results do not match the configured evaluators"
+        )
+
+    for evaluator in expected_evaluators:
+        result = results_by_name[evaluator]
+        errored = int(result.get("errored", 0))
+        failed = int(result.get("failed", 0))
+        passed = int(result.get("passed", 0))
+        skipped = int(result.get("skipped", 0))
+        total = passed + failed + errored + skipped
+
+        if max_errored is not None and errored > max_errored:
+            raise RuntimeError(
+                f"Foundry evaluator {evaluator} produced {errored} errored results; "
+                f"maximum is {max_errored}"
+            )
+        if enforce_pass and (
+            total != expected_total
+            or passed != expected_total
+            or failed != 0
+            or errored != 0
+            or skipped != 0
+        ):
+            raise RuntimeError(
+                f"Foundry evaluator {evaluator} did not pass every selected E2E trace: "
+                f"passed={passed}, failed={failed}, errored={errored}, "
+                f"skipped={skipped}, total={total}, expected={expected_total}"
+            )
+
+
 def _parse_utc_timestamp(payload: dict[str, object], field: str) -> datetime:
     value = payload.get(field)
     if not isinstance(value, str) or not value:
@@ -196,6 +250,10 @@ def _should_retry_empty_evaluation(
     if isinstance(result_counts, dict):
         return int(result_counts.get("total", 0)) == 0
     return status in {"completed", "failed"}
+
+
+def _is_transient_eval_poll_error(error: Exception) -> bool:
+    return isinstance(error, json.JSONDecodeError)
 
 
 def _build_trace_testing_criteria(
@@ -375,10 +433,18 @@ async def run_foundry_eval() -> None:
                             f"Foundry trace evaluation timed out after {timeout} seconds"
                         )
                     await asyncio.sleep(poll_interval)
-                    eval_run = await openai_client.evals.runs.retrieve(
-                        run_id=eval_run.id,
-                        eval_id=eval_object.id,
-                    )
+                    try:
+                        eval_run = await openai_client.evals.runs.retrieve(
+                            run_id=eval_run.id,
+                            eval_id=eval_object.id,
+                        )
+                    except Exception as error:
+                        if not _is_transient_eval_poll_error(error):
+                            raise
+                        print(
+                            "Foundry evaluation polling returned an empty or malformed "
+                            "response; retrying."
+                        )
 
                 result_counts = _to_jsonable(getattr(eval_run, "result_counts", None))
                 run_error = _to_jsonable(getattr(eval_run, "error", None))
@@ -456,9 +522,19 @@ async def run_foundry_eval() -> None:
         payload.get("result_counts"),
         expected_total=len(trace_ids),
         enforce_pass=enforce_pass,
-        max_errored=(
-            int(max_errored_value) if max_errored_value is not None else None
+        max_errored=(int(max_errored_value) if max_errored_value is not None else None),
+    )
+    run_details = payload.get("run_details")
+    _validate_testing_criteria_results(
+        (
+            run_details.get("per_testing_criteria_results")
+            if isinstance(run_details, dict)
+            else None
         ),
+        expected_evaluators=evaluators,
+        expected_total=len(trace_ids),
+        enforce_pass=enforce_pass,
+        max_errored=(int(max_errored_value) if max_errored_value is not None else None),
     )
 
 

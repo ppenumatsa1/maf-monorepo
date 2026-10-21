@@ -11,7 +11,9 @@ require_bin() {
 require_env() {
   local key="$1"
   local value
-  value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null || true)"
+  if ! value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null)"; then
+    value=""
+  fi
   [[ -n "$value" ]] || {
     echo "AZD environment value $key is required." >&2
     exit 1

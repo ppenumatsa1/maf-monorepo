@@ -24,6 +24,21 @@ This branch keeps one hosted deployment lane:
   - Storage, Search, Cosmos, ACR, Log Analytics, App Insights, and PostgreSQL private endpoint/DNS
   - capability-host and connection modules
 
+## Upstream control baseline
+
+This stack is derived from the Microsoft Foundry sample
+[`15-private-network-standard-agent-setup`](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup).
+The current audit is pinned in
+[`upstream-reference.json`](upstream-reference.json) to commit
+[`ce52cffdbd91716723b06eb1bce39f964a23ed45`](https://github.com/microsoft-foundry/foundry-samples/commit/ce52cffdbd91716723b06eb1bce39f964a23ed45),
+dated 2026-09-15.
+
+`make test-foundry-portability` checks selected private-network controls rather
+than byte-for-byte parity. This repository's expanded PostgreSQL, Container
+Apps, private ACR, Bastion, private runner, and release topology remains
+authoritative. The audit leaves the existing monitoring topology unchanged;
+AMPLS and private Application Insights ingestion are not part of this contract.
+
 ## Parameter profiles
 
 - `iac/parameters.standard-ni.json`
@@ -111,13 +126,13 @@ IP, and the runtime role retains its exact least-privilege contract.
 
 ### Soft-deleted Foundry account recovery
 
-The current intentional teardown left
-`mafprv0722v3ai4aiw7fw5gjdo4` soft-deleted. The retained private AZD
-environment defaults `RESTORE_FOUNDRY_ACCOUNT=true`, which maps to
+If an intentional teardown leaves the profile-selected Foundry account
+soft-deleted, the retained private AZD environment defaults
+`RESTORE_FOUNDRY_ACCOUNT=true`, which maps to
 `restoreFoundryAccount` on the `Microsoft.CognitiveServices/accounts@2025-06-01`
-resource in `main.bicep`. Keep it true while recovering this account name; set
-it false only after purging the soft-deleted account name. This restore setting
-does not relax the private network, ACR, or PostgreSQL controls.
+resource in `main.bicep`. Keep it true while recovering the selected account
+name; set it false only after purging that soft-deleted name. This restore
+setting does not relax the private network, ACR, or PostgreSQL controls.
 
 ## Private runner bootstrap
 
@@ -161,12 +176,88 @@ release flow. Runner recovery is an explicit management-plane prerequisite,
 not a release deployment path. Do not dispatch provision or deploy until the
 runner readiness check reports `foundry-private-ora` online.
 
+## Teams Activity endpoint reconciliation
+
+After the hosted agent and declarative Bot Service/Teams channel exist, run the
+Foundry data-plane reconciliation from the private runner:
+
+```bash
+make foundry-activity-plan TEAMS_PUBLISH_SCOPE=Shared
+make foundry-activity-apply TEAMS_PUBLISH_SCOPE=Shared
+
+# Tenant-wide authorization:
+make foundry-activity-plan TEAMS_PUBLISH_SCOPE=Tenant
+make foundry-activity-apply TEAMS_PUBLISH_SCOPE=Tenant
+
+# Remove Activity and both Bot Service authorization schemes:
+make foundry-activity-rollback
+```
+
+The reconciler resolves the project endpoint and hosted-agent name from the
+existing environment/AZD conventions, acquires an in-memory
+`https://ai.azure.com` token through Azure CLI, and GETs before PATCHing. It
+preserves Responses, Entra, unrelated protocols, and non-Bot authorization
+schemes, uses `If-Match` when Foundry returns an ETag, and skips an already
+converged PATCH. Output contains only changed/no-change state and sanitized
+protocol/authorization names. The rollback has the same preservation and
+concurrency protections.
+
+## Versioned Microsoft 365 publication
+
+Publication metadata is reviewed in
+[`teams-publication.json`](teams-publication.json). Keep it non-secret and
+increment its semantic `appVersion` for every catalog update. From the private
+runner, use:
+
+```bash
+make foundry-teams-plan
+make foundry-teams-deploy-bot
+make foundry-teams-package
+make foundry-teams-publish
+make foundry-teams-verify-local-state
+make foundry-teams-rollback-plan
+```
+
+The Bot Service, `MsTeamsChannel`, and the `BotRequest`/`AllMetrics`
+diagnostic setting are deployed only with `az deployment group create` against
+`iac/teams/main.bicep`. The deployment resolves the resource group's single
+Log Analytics workspace and passes its ARM ID to the template. Package ZIPs,
+sanitized version/hash/status evidence, and a separate sensitive title ID state
+are written under ignored `.artifacts/teams-publication/`. The Bot ARM ID is
+captured from the Bicep deployment output and looked up in-memory for later
+operations; it is never persisted or printed. Only a returned `titleId` is
+kept in the separate sensitive state. Tokens and Azure/customer identifiers
+are never persisted in the sanitized state or printed.
+`foundry-teams-verify-local-state` verifies this local evidence only; it does
+not call or invent an undocumented remote publication-status endpoint.
+
+`Shared` publication requires an interactive Azure CLI user context.
+Validate Shared installation, typed HITL, replay prevention, and
+cross-conversation isolation before any tenant-wide promotion.
+`Tenant`/`BotServiceTenant` publication and Microsoft 365 administrator
+approval are later steps and remain external. Foundry documents package and
+publish APIs but no unpublish API. The rollback plan therefore uses the
+existing Activity reconciler, requires catalog removal through Microsoft 365
+governance, and leaves Bot deletion to a reviewed ARM/Bicep lifecycle action.
+
+This split is intentional: Bot Service and the Teams channel are ARM/Bicep;
+the Foundry Activity endpoint PATCH and Microsoft 365 catalog POST are data
+plane operations that cannot be pure Bicep today. The Activity endpoint is a
+source-IP-filtered public route, not anonymous access: Bot token, tenant, and
+RBAC authorization remain required. Responses and Entra are preserved.
+
+This document describes the supported process; it does not prove a new
+execution by itself. Current Shared publication and release evidence is kept
+in `../../docs/issues-changes-fixes.md`. For a fresh environment, follow
+[`../../docs/customer-demo-runbook.md`](../../docs/customer-demo-runbook.md)
+and record only fresh, sanitized evidence after execution.
+
 ## Runner readiness check
 
 Verify GitHub sees an online runner for the required label:
 
 ```bash
-REPO=ppenumatsa1/maf-order-resolution-agent \
+REPO=<owner>/<repository> \
 RUNNER_LABEL=foundry-private-ora \
 ./scripts/github/verify_foundry_runner_ready.sh
 ```
@@ -178,7 +269,7 @@ Run this on the active private runner VM via SSH/Bastion:
 ```bash
 cd /path/to/repo
 export GH_RUNNER_PAT=<github_pat_with_repo_workflow_scope>
-export REPO=ppenumatsa1/maf-order-resolution-agent
+export REPO=<owner>/<repository>
 export RUNNER_LABEL=foundry-private-ora
 
 ./scripts/github/bootstrap_vm_runner_host.sh
@@ -188,7 +279,7 @@ export RUNNER_LABEL=foundry-private-ora
 Then verify from your operator host:
 
 ```bash
-gh api repos/ppenumatsa1/maf-order-resolution-agent/actions/runners \
+gh api repos/<owner>/<repository>/actions/runners \
   --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'
 ```
 
@@ -229,4 +320,4 @@ continues directly into evidence. The standalone evidence workflow is reserved
 for retries. Foundry readiness is adaptive: only a zero-row, error-free
 ingestion miss is retried; evaluator and service failures remain terminal.
 
-Delivery ownership, required gate mapping, and evidence handoff expectations are documented in `docs/design/engineering-operating-model.md`.
+Delivery ownership, required gate mapping, and evidence handoff expectations are documented in `docs/engineering-operating-model.md`.

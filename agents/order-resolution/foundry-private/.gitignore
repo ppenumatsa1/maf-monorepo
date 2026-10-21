@@ -20,6 +20,7 @@ dist/
 # Env and local data
 .env
 backend/.env
+backend/.wheels/
 backend/.foundry/checkpoints/*.json
 backend/.foundry/memory/*.json
 backend/.foundry/results/*.json
@@ -30,6 +31,10 @@ backend/.foundry/results/*.json
 !.artifacts/releases/_history/
 !.artifacts/releases/_contract/release-v1.schema.json
 !.artifacts/releases/_history/**
+
+# Generated Microsoft 365 packages and publication evidence stay local.
+.artifacts/teams-publication/
+.artifacts/tests/
 
 # Logs
 *.log

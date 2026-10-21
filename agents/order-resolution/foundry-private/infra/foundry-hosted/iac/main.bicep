@@ -698,6 +698,16 @@ module runnerResourceGroupRbac './modules/runner-resource-group-rbac.bicep' = if
   ]
 }
 
+resource runnerFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enablePrivateRunnerAccess && createRunnerVm) {
+  name: guid(foundryAccount.id, runnerUamiName, 'runner-foundry-user')
+  scope: foundryAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: privateRunnerAccess!.outputs.runnerUamiPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 module privateDns './modules/private-dns.bicep' = if (enablePrivateDns) {
   name: 'private-network-dns'
   params: {

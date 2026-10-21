@@ -174,7 +174,7 @@ if [[ -n "$postgres_server_name" ]]; then
   expected_host="${postgres_server_name,,}.postgres.database.azure.com"
   runtime_host="$(url_host "$runtime_database_url_existing")"
   if [[ -n "$runtime_database_url_existing" && "$runtime_host" != "$expected_host" ]]; then
-    echo "RUNTIME_DATABASE_URL must target the canonical PostgreSQL server ${expected_host}."
+    echo "RUNTIME_DATABASE_URL must target the PostgreSQL server selected by the deployment profile."
     exit 1
   fi
   set_if_missing POSTGRES_SERVER_FQDN "$expected_host"

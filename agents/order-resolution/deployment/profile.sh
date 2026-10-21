@@ -27,6 +27,7 @@ DEPLOYMENT_PROFILE_KEYS=(
   HOSTED_AGENT_NAME
   POSTGRES_DATABASE_NAME
   POSTGRES_ADMIN_USERNAME
+  POSTGRES_RUNTIME_USERNAME
   VNET_ADDRESS_PREFIX
   AGENT_SUBNET_PREFIX
   PRIVATE_ENDPOINT_SUBNET_PREFIX
@@ -93,9 +94,24 @@ deployment_profile_error() {
 
 deployment_profile_value() {
   local key="$1"
+  local profile_value environment_value
 
   [[ -v "DEPLOYMENT_PROFILE_VALUES[$key]" ]] || return 1
-  printf '%s' "${DEPLOYMENT_PROFILE_VALUES[$key]}"
+  profile_value="${DEPLOYMENT_PROFILE_VALUES[$key]}"
+
+  case "$key" in
+    AZURE_SUBSCRIPTION_ID|AZURE_TENANT_ID)
+      environment_value="${!key-}"
+      if [[ "$profile_value" == "$DEPLOYMENT_PROFILE_PLACEHOLDER_GUID" &&
+        -n "$environment_value" &&
+        "$environment_value" != "$DEPLOYMENT_PROFILE_PLACEHOLDER_GUID" ]]; then
+        printf '%s' "$environment_value"
+        return
+      fi
+      ;;
+  esac
+
+  printf '%s' "$profile_value"
 }
 
 deployment_profile_load() {
@@ -293,7 +309,7 @@ deployment_profile_validate() {
       AZURE_TENANT_ID AZD_ENVIRONMENT_NAME PRIVATE_RUNNER_LABEL
       PRIVATE_RUNNER_VM_NAME FOUNDRY_LOCATION AI_SEARCH_LOCATION
       COSMOS_LOCATION POSTGRES_LOCATION FOUNDRY_PROJECT_NAME HOSTED_AGENT_NAME
-      POSTGRES_DATABASE_NAME POSTGRES_ADMIN_USERNAME VNET_ADDRESS_PREFIX
+      POSTGRES_DATABASE_NAME POSTGRES_ADMIN_USERNAME POSTGRES_RUNTIME_USERNAME VNET_ADDRESS_PREFIX
       AGENT_SUBNET_PREFIX PRIVATE_ENDPOINT_SUBNET_PREFIX RUNNER_SUBNET_PREFIX
       BASTION_SUBNET_PREFIX CONTAINER_APPS_SUBNET_PREFIX NETWORK_MODE
       DEPLOYMENT_MODE CREATE_PRIVATE_DNS_VNET_LINKS CREATE_PRIVATE_ENDPOINTS
@@ -326,14 +342,19 @@ deployment_profile_validate() {
       deployment_profile_error "AZD_ENVIRONMENT_NAME must match AZURE_ENV_NAME"
       return 1
     }
+    [[ "$(deployment_profile_value RUNNER_VM_SIZE)" =~ ^Standard_[A-Za-z0-9]+(_[A-Za-z0-9]+)*$ ]] || {
+      deployment_profile_error "RUNNER_VM_SIZE must be an explicit Standard_* Azure VM SKU"
+      return 1
+    }
   fi
 }
 
 deployment_profile_export() {
-  local key
+  local key value
 
   for key in "${!DEPLOYMENT_PROFILE_VALUES[@]}"; do
-    export "$key=${DEPLOYMENT_PROFILE_VALUES[$key]}"
+    value="$(deployment_profile_value "$key")"
+    export "$key=$value"
   done
 }
 

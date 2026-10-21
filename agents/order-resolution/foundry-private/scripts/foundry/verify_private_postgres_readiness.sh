@@ -23,9 +23,14 @@ deployment_profile_export
 }
 
 get_env_value() {
-  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-    azd env get-value "$1" --environment "$AZURE_ENV_NAME" \
-      --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
+  local value
+  if value="$(
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+      azd env get-value "$1" --environment "$AZURE_ENV_NAME" \
+        --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null
+  )"; then
+    printf '%s' "$value"
+  fi
 }
 
 resource_group="$(get_env_value AZURE_RESOURCE_GROUP)"

@@ -1,0 +1,22 @@
+flowchart LR
+    subgraph BG[" "]
+        direction LR
+        Operator["Operator"] --> Frontend["External React frontend"]
+        Frontend -->|same-origin API and SSE| API["Internal FastAPI API"]
+
+        API -->|local_maf start and resume| Local["Shared MAF workflow<br/>(FastAPI process)"]
+        API -->|responses_wrapper dispatch and resume| Foundry["Private Foundry Responses"]
+        Foundry --> Hosted["Shared MAF workflow<br/>(hosted process)"]
+
+        Local --> Tools["Order, policy, MCP, and RAG adapters"]
+        Hosted --> Tools
+        Local -->|runs, events, checkpoints| Store[("Private PostgreSQL")]
+        Hosted -->|runs, events, checkpoints| Store
+        API -->|dispatch idempotency and durable reads| Store
+
+        Frontend -.->|selected existing thread only| Projection["Redacted API projection"]
+        Projection -->|allowlisted durable events| Store
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a

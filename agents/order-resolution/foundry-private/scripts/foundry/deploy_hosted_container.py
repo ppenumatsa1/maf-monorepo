@@ -37,6 +37,9 @@ environment_variables = {
     "MEMORY_PROVIDER": require("MEMORY_PROVIDER"),
     "RAG_PROVIDER": require("RAG_PROVIDER"),
     "DB_SCHEMA_MANAGED_EXTERNALLY": require("DB_SCHEMA_MANAGED_EXTERNALLY"),
+    "DB_POOL_MIN_SIZE": "0",
+    "DB_POOL_MAX_SIZE": "2",
+    "DB_POOL_MAX_IDLE_SECONDS": "30",
     "ENABLE_TELEMETRY": require("ENABLE_TELEMETRY"),
     "ENABLE_INSTRUMENTATION": require("ENABLE_INSTRUMENTATION"),
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
@@ -50,6 +53,8 @@ environment_variables = {
         "FOUNDRY_TRACE_EVALUATION_RECORD_CONTENT"
     ),
 }
+if debug_parse_input := os.getenv("ORDER_RESOLUTION_DEBUG_PARSE_INPUT", "").strip():
+    environment_variables["ORDER_RESOLUTION_DEBUG_PARSE_INPUT"] = debug_parse_input
 
 
 def create_version_with_transient_retry(project: AIProjectClient) -> object:
@@ -58,7 +63,10 @@ def create_version_with_transient_retry(project: AIProjectClient) -> object:
         memory="1Gi",
         container_configuration=ContainerConfiguration(image=image),
         environment_variables=environment_variables,
-        protocol_versions=[ProtocolVersionRecord(protocol="responses", version="2.0.0")],
+        protocol_versions=[
+            ProtocolVersionRecord(protocol="responses", version="2.0.0"),
+            ProtocolVersionRecord(protocol="activity", version="2.0.0"),
+        ],
     )
     for attempt, retry_delay in enumerate((0, 30, 60), start=1):
         if retry_delay:

@@ -26,7 +26,12 @@ class OrderResolutionService:
         self._workflow_run_repository = workflow_run_repository
         self._responses_client = responses_client
 
-    async def start_chat_run(self, request: ChatRunRequest) -> ChatRunResponse:
+    async def start_chat_run(
+        self,
+        request: ChatRunRequest,
+        *,
+        origin_channel: str = "api",
+    ) -> ChatRunResponse:
         run_id = str(uuid4())
         thread_id = request.thread_id or str(uuid4())
         session_id = request.session_id or thread_id
@@ -88,6 +93,7 @@ class OrderResolutionService:
             input_text=request.message,
             session_id=session_id,
             customer_id=request.customer_id,
+            origin_channel=origin_channel,
         )
         await self._workflow.start(context)
 

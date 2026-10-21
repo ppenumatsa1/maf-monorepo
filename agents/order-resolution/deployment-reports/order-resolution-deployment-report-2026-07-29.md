@@ -36,7 +36,7 @@
 | Runner became unavailable | The existing private runner VM was deallocated after an earlier evidence cancellation. | Add a protected runner-start workflow that starts only the existing VM via the environment OIDC identity; the following protected release proves runner registration. |
 
 The authoritative detailed private RCA ledger is
-[`issues-changes-fixes.md`](../agents/order-resolution/foundry-private/docs/design/issues-changes-fixes.md).
+[`issues-changes-fixes.md`](../foundry-private/docs/issues-changes-fixes.md).
 
 ## Reproducibility and control posture
 

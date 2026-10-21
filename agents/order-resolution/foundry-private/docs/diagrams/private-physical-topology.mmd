@@ -1,0 +1,36 @@
+flowchart LR
+    subgraph BG[" "]
+        direction LR
+        Browser["Operator browser"] -->|HTTPS| Frontend["External frontend Container App"]
+        Teams["Microsoft Teams"] --> Bot["Azure Bot Service<br/>MsTeamsChannel"]
+        Bot -->|Bot token, tenant, and RBAC| Activity["Service-managed public<br/>Activity Protocol route"]
+
+        subgraph Environment["VNet-integrated Container Apps environment"]
+            Frontend -->|same-origin API and SSE| Wrapper["Internal FastAPI wrapper"]
+        end
+
+        subgraph PrivateServices["Private runtime and data dependencies"]
+            Foundry["Foundry hosted agent<br/>normal paths private"]
+            Database[("PostgreSQL workflow and HITL state")]
+            Registry["Private ACR"]
+            DNS["Private DNS"]
+        end
+
+        Monitor["Azure Monitor / Application Insights<br/>managed ingestion; AMPLS out of scope"]
+
+        Wrapper -->|managed identity; private Responses| Foundry
+        Activity -->|Activity only| Foundry
+        Wrapper -->|durable reads and dispatch state| Database
+        Foundry -->|workflow state| Database
+        Registry -->|private image pull| Frontend
+        Registry -->|private image pull| Wrapper
+        Wrapper -.->|correlated telemetry| Monitor
+        Foundry -.->|workflow and model telemetry| Monitor
+        Wrapper -.->|private resolution| DNS
+        Foundry -.->|private resolution| DNS
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a
+    style PrivateServices fill:#ffffff,stroke:#2563eb,color:#0f172a
+    style Environment fill:#ffffff,stroke:#2563eb,color:#0f172a

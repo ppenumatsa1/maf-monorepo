@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from app.api.v1.routers.chat import router as chat_router
 from app.api.v1.routers.copilotkit import router as copilotkit_router
 from app.api.v1.routers.health import router as health_router
@@ -14,7 +17,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 setup_observability()
 
-app = FastAPI(title="MAF Multi-Agent Orchestration Demo", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    if config.rag_provider == "pgvector":
+        await PolicyKnowledgeIngestion(rag_provider).ingest_defaults_safe()
+    yield
+
+
+app = FastAPI(
+    title="MAF Multi-Agent Orchestration Demo",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 instrument_fastapi_app(app)
 
 app.add_middleware(
@@ -30,9 +45,3 @@ app.include_router(hitl_router)
 app.include_router(workflows_router)
 app.include_router(sessions_router)
 app.include_router(health_router)
-
-
-@app.on_event("startup")
-async def startup_rag_ingestion() -> None:
-    if config.rag_provider == "pgvector":
-        await PolicyKnowledgeIngestion(rag_provider).ingest_defaults_safe()

@@ -1,0 +1,40 @@
+sequenceDiagram
+    autonumber
+    box rgb(255,255,255) User experience
+        actor Operator
+        participant UI as React UI
+        participant API as FastAPI wrapper
+    end
+    box rgb(255,255,255) Private execution and state
+        participant Host as Foundry Responses
+        participant WF as Shared MAF workflow
+        participant DB as PostgreSQL
+    end
+
+    Operator->>UI: Submit order issue
+    UI->>API: POST /api/chat/run
+    API->>DB: Record dispatch idempotency
+    API->>Host: Managed-identity conversation request
+    Host->>WF: Invoke hosted workflow
+    WF->>DB: Persist run, messages, events, and evidence
+
+    alt Approval required
+        WF->>DB: Persist checkpoint and pending approval
+    else Automatic resolution
+        WF->>DB: Submit once and persist completed output
+    end
+
+    API-->>UI: Accepted run and thread IDs
+    loop Timeline and history
+        UI->>API: SSE/history request
+        API->>DB: Read durable projection
+        API-->>UI: Native events and current state
+    end
+
+    opt Human decision
+        Operator->>UI: Approve or reject
+        UI->>API: POST /api/hitl/respond
+        API->>Host: Checkpoint-keyed response
+        Host->>WF: Resume same conversation
+        WF->>DB: Persist one terminal outcome
+    end

@@ -51,5 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m json.tool agents/order-resolution/foundry-private/infra/foundry-hosted/iac/main.parameters.json >/dev/null
+          python3 -m json.tool agents/order-resolution/foundry-private/infra/foundry-hosted/upstream-reference.json >/dev/null
+      - name: Validate private deployment contracts
+        run: make -C agents/order-resolution/foundry-private test-foundry-portability
       - name: Compile private Bicep
         run: az bicep build --file agents/order-resolution/foundry-private/infra/foundry-hosted/iac/main.bicep --stdout >/dev/null

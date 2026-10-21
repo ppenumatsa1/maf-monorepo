@@ -1,0 +1,45 @@
+sequenceDiagram
+    autonumber
+    box rgb(255,255,255) Browser and private wrapper
+        actor Operator
+        participant UI as External frontend
+        participant API as Internal FastAPI wrapper
+    end
+    box rgb(255,255,255) Private hosted runtime
+        participant Host as Foundry Responses
+        participant WF as Hosted shared MAF workflow
+        participant DB as Private PostgreSQL
+    end
+
+    Operator->>UI: Submit order issue
+    UI->>API: POST /api/chat/run
+    API->>DB: Record responses_dispatches only
+    API->>Host: Create/reuse conversation and invoke
+    Host->>WF: Start shared workflow
+    WF->>DB: Create run and persist messages/events
+
+    alt Low-risk resolution
+        WF->>DB: Submit once and persist completed output
+    else Approval required
+        WF->>DB: Persist checkpoint and pending approval
+    end
+
+    Host-->>API: Return conversation/result
+    API-->>UI: Accepted run and thread IDs
+
+    loop Poll history and consume native SSE
+        UI->>API: Read selected thread
+        API->>DB: Read/tail durable projection
+        API-->>UI: Events, status, approval, and output
+    end
+
+    opt Pending approval
+        Operator->>UI: Approve or reject
+        UI->>API: POST /api/hitl/respond
+        API->>DB: Locate exact pending checkpoint
+        API->>Host: function_call_output in same conversation
+        Host->>WF: Resume checkpoint-keyed workflow
+        WF->>DB: Resolve once and persist terminal output
+        Host-->>API: Return resumed result
+        API-->>UI: Accepted and stream supplies final state
+    end

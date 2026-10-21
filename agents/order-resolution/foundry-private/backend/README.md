@@ -5,7 +5,7 @@
 | Stage | Status | Runtime behavior |
 | --- | --- | --- |
 | Local FastAPI host | Implemented | Runs the shared MAF workflow and exposes stable API/SSE/HITL contracts. |
-| Foundry hosted agent | Implemented (private VNet lane retained) | `backend/foundry/main.py` hosts the same workflow with Responses protocol in the ACR-built `Dockerfile.hosted` image. |
+| Foundry hosted agent | Implemented (private VNet lane retained) | `backend/foundry/main.py` hosts the same workflow with private Responses plus native Activity protocol in the ACR-built `Dockerfile.hosted` image. |
 | Private ACA wrapper | Implemented and validated in the private release | Internal FastAPI Container App uses managed identity to dispatch to private Foundry Responses and tails persisted workflow events for SSE. |
 
 There is one business workflow path rooted at `backend/app/maf/workflows/order_resolution.py`,
@@ -47,7 +47,7 @@ canonical MAF executor and PostgreSQL remains the durable event/checkpoint
 projection. The external frontend proxies same-origin `/api` and SSE to this
 internal app; browser configuration contains neither a backend nor Foundry URL.
 
-## Foundry hosted agent (Responses)
+## Foundry hosted agent (Responses and Activity)
 
 Deploy and run from repository root:
 
@@ -60,11 +60,18 @@ azd ai agent invoke order-resolution-hosted "Why was that resolution selected?" 
 
 The hosted deploy source is configured in `infra/foundry-hosted/azure.yaml` as `./agent`; `make foundry-deploy` automatically syncs `backend/` into that folder before `azd deploy`.
 
-For high-risk turns that request approval, continue the same conversation with `Approve` or `Reject`.
+Private Responses clients can resume HITL with the checkpoint-keyed programmatic
+decision contract. In Teams, high-risk turns render an Adaptive Card and only
+the **Approve** or **Reject** button can resume the checkpoint; typed decisions
+do not resolve Teams approvals.
 
-Latest hosted-tracing status (2026-07-18):
+Latest hosted status (2026-10-21):
 
-- Private Foundry lane deploy + smoke + E2E validation is active.
+- Private Foundry hosted-agent version 17 is active. Responses, native
+  Activity, Adaptive Card approve/reject and isolation checks, telemetry
+  correlation, and strict exact-trace evaluation are release-verified.
+- The evidence ledger records retained historical versions and rollback
+  context.
 
 Telemetry:
 
@@ -96,9 +103,9 @@ Evaluation:
   applies only when Foundry returns zero rows without a service error;
   evaluator failures and service/authorization errors fail immediately.
 
-Protected run `31911162673` activated hosted-agent version 6, correlated 204
-telemetry rows and four eligible spans, and passed all three selected traces on
-the first evaluator-readiness attempt.
+The current deployment, telemetry, evaluation, database-pool, and rollback
+evidence is recorded in
+[`docs/issues-changes-fixes.md`](../docs/issues-changes-fixes.md#review-remediation-release-2026-10-21).
 
 ## APIs
 
@@ -123,7 +130,7 @@ the first evaluator-readiness attempt.
 
 Legacy shims and `app/foundry/*` adapter paths are removed.
 
-Delivery ownership and verification gate authority are defined in `docs/design/engineering-operating-model.md`.
+Delivery ownership and verification gate authority are defined in `docs/engineering-operating-model.md`.
 
 ## Event contract (SSE)
 

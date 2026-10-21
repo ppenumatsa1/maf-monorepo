@@ -1,18 +1,21 @@
 SHELL := /bin/bash
 COMPOSE_ENV_FILE ?= backend/.env
 PROJECT_ROOT := $(CURDIR)
-PRIVATE_DEPLOYMENT_PROFILE := ../deployment/profiles/foundry-private.env
+PRIVATE_DEPLOYMENT_PROFILE := $(if $(strip $(DEPLOYMENT_PROFILE_FILE)),$(DEPLOYMENT_PROFILE_FILE),../deployment/profiles/foundry-private.env)
 SHARED_PROFILE_APPLICATOR := ../deployment/apply-azd-profile.sh
 
 .PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-foundry-deploy-env ensure-test-postgres \
 	run-backend run-frontend format lint test test-backend eval-backend eval-foundry eval-all test-e2e test-e2e-selected-thread manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test \
 	validate-quick validate-full clean \
-	foundry-up foundry-preflight foundry-iac-validate foundry-release-preflight foundry-package \
+	foundry-up foundry-preflight foundry-iac-validate foundry-release-preflight foundry-python-wheelhouse foundry-package \
 	foundry-profile test-foundry-portability \
 	foundry-provision-preview foundry-provision foundry-project-connections foundry-deploy \
 	foundry-app-deploy foundry-app-images-verify foundry-app-only-preflight foundry-hosted-app-deploy \
 	foundry-postgres-bootstrap foundry-postgres-readiness foundry-app-only-release \
+	foundry-activity-plan foundry-activity-apply foundry-activity-rollback test-foundry-activity-endpoint \
+	foundry-teams-plan foundry-teams-deploy-bot foundry-teams-package foundry-teams-publish \
+	foundry-teams-verify-local-state foundry-teams-rollback-plan test-foundry-teams-publishing \
 	foundry-evidence foundry-release foundry-smoke foundry-access-path release-history-migration-plan
 
 help:
@@ -41,11 +44,12 @@ help:
 	@echo "  validate-full   - Full validation (test + eval + e2e + design-review)"
 	@echo "  foundry-up      - Self-contained Foundry hosted-agent azd up (BYO VNET + private deps)"
 	@echo "  foundry-profile - Validate and apply the canonical secret-free private target profile"
-	@echo "  test-foundry-portability - Validate private release/profile portability contracts"
+	@echo "  test-foundry-portability - Validate private release/profile and upstream baseline contracts"
 	@echo "  foundry-preflight - Verify private release inputs without changing Azure"
 	@echo "  foundry-iac-validate - Compile private IaC without writing a generated template"
 	@echo "  foundry-release-preflight - Run independent read-only release checks concurrently"
 	@echo "  foundry-package - Freshly sync hosted source and validate AZD packaging"
+	@echo "  foundry-python-wheelhouse - Download hash-verified Python 3.13 runtime wheels"
 	@echo "  foundry-provision-preview - Preview private infrastructure changes without applying them"
 	@echo "  foundry-provision - Provision private core infrastructure without Foundry secret connections"
 	@echo "  foundry-project-connections - Provision Foundry connections after project identity propagation"
@@ -57,6 +61,17 @@ help:
 	@echo "  foundry-postgres-bootstrap - Apply schema and least-privilege runtime credentials from the private runner"
 	@echo "  foundry-postgres-readiness - Verify private-only PostgreSQL networking and runtime privileges"
 	@echo "  foundry-app-only-release - Deploy only ACA revisions and a hosted-agent image/version"
+	@echo "  foundry-activity-plan - Preview the Foundry Activity endpoint reconciliation"
+	@echo "  foundry-activity-apply - Enable Activity for TEAMS_PUBLISH_SCOPE=Shared|Tenant"
+	@echo "  foundry-activity-rollback - Remove Activity and Bot Service authorization"
+	@echo "  test-foundry-activity-endpoint - Run credential-free endpoint reconciler tests"
+	@echo "  foundry-teams-plan - Validate the versioned Teams publication plan"
+	@echo "  foundry-teams-deploy-bot - Deploy Bot Service and Teams channel through Bicep"
+	@echo "  foundry-teams-package - Apply Activity state and download the generated app package"
+	@echo "  foundry-teams-publish - Apply Activity state and publish the explicit app version"
+	@echo "  foundry-teams-verify-local-state - Verify sanitized local publication evidence"
+	@echo "  foundry-teams-rollback-plan - Show documented rollback and external catalog-removal boundaries"
+	@echo "  test-foundry-teams-publishing - Run credential-free Teams publication tests"
 	@echo "  foundry-evidence - Collect hosted E2E, evaluation, and telemetry evidence"
 	@echo "  foundry-release - Test, provision private PostgreSQL, deploy, and collect evidence"
 	@echo "  foundry-smoke   - Invoke hosted agent health check via responses protocol"
@@ -107,7 +122,7 @@ eval-backend: ensure-backend-env ensure-test-postgres
 
 eval-foundry: ensure-backend-env
 	cd backend && . .venv/bin/activate && \
-		foundry_env_name="$$(bash -c 'source ../../deployment/profile.sh; deployment_profile_load "$$1"; deployment_profile_validate; deployment_profile_export; printf "%s" "$$AZURE_ENV_NAME"' _ "../$(PRIVATE_DEPLOYMENT_PROFILE)")"; \
+		foundry_env_name="$$(bash -c 'source ../../deployment/profile.sh; deployment_profile_load "$$1"; deployment_profile_validate; deployment_profile_export; printf "%s" "$$AZURE_ENV_NAME"' _ "$(abspath $(PRIVATE_DEPLOYMENT_PROFILE))")"; \
 		foundry_env_file="../infra/foundry-hosted/.azure/$${foundry_env_name}/.env"; \
 		if [[ -f "$$foundry_env_file" ]]; then \
 			set -a; . "$$foundry_env_file"; set +a; \
@@ -198,7 +213,7 @@ parity-all:
 run-mock-mcp: ensure-backend-env
 	. backend/.venv/bin/activate && uvicorn scripts.mcp.mock_mcp_server:app --reload --port 8011
 
-up:
+up: foundry-python-wheelhouse
 	@set -euo pipefail; \
 	workflow_mode="$$(grep -E '^[[:space:]]*WORKFLOW_MODE=' $(COMPOSE_ENV_FILE) | tail -1 | cut -d= -f2- | tr -d '"' || true)"; \
 	hosted_key="$$(grep -E '^[[:space:]]*FOUNDRY_HOSTED_API_KEY=' $(COMPOSE_ENV_FILE) | tail -1 | cut -d= -f2- | tr -d '"' || true)"; \
@@ -231,7 +246,7 @@ logs:
 ps:
 	docker compose --env-file $(COMPOSE_ENV_FILE) ps
 
-docker-test:
+docker-test: foundry-python-wheelhouse
 	@set -euo pipefail; \
 	project="maf-order-resolution-agent-test"; \
 	backend_port="$$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"; \
@@ -269,6 +284,16 @@ foundry-profile:
 
 test-foundry-portability:
 	bash ./scripts/foundry/tests/test_release_portability_contract.sh
+	python3 -m unittest discover -s scripts/foundry/tests -p 'test_upstream_baseline_contract.py'
+	$(MAKE) test-foundry-activity-endpoint
+	$(MAKE) test-foundry-teams-publishing
+
+test-foundry-activity-endpoint:
+	python3 -m unittest discover -s scripts/foundry/tests -p 'test_activity_endpoint_reconciler.py'
+
+test-foundry-teams-publishing:
+	python3 -m unittest discover -s scripts/foundry/tests -p 'test_teams_publishing.py'
+	python3 -m unittest discover -s infra/foundry-hosted/iac/teams/tests -p 'test_teams_iac_contract.py'
 
 foundry-preflight: foundry-profile
 	./scripts/foundry/preflight_private_release.sh
@@ -279,7 +304,10 @@ foundry-iac-validate:
 foundry-release-preflight:
 	@$(MAKE) -j2 foundry-preflight foundry-iac-validate
 
-foundry-package:
+foundry-python-wheelhouse: ensure-backend-env
+	./scripts/foundry/build_python_wheelhouse.sh
+
+foundry-package: foundry-python-wheelhouse
 	./scripts/foundry/sync_hosted_source.sh
 	cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt
 
@@ -304,7 +332,7 @@ foundry-deploy: ensure-foundry-deploy-env
 	@$(MAKE) foundry-package
 	@./scripts/foundry/deploy_hosted_container.sh
 
-foundry-app-deploy:
+foundry-app-deploy: foundry-python-wheelhouse
 	@test -f backend/Dockerfile
 	@test -f frontend/Dockerfile
 	@set -euo pipefail; \
@@ -341,16 +369,47 @@ foundry-postgres-bootstrap:
 foundry-postgres-readiness:
 	./scripts/foundry/verify_private_postgres_readiness.sh
 
-foundry-hosted-app-deploy: ensure-foundry-deploy-env
+foundry-hosted-app-deploy: ensure-foundry-deploy-env foundry-python-wheelhouse
 	@test -f backend/Dockerfile.hosted
 	@test -f backend/foundry/main.py
 	@./scripts/foundry/sync_hosted_source.sh
 	@./scripts/foundry/deploy_hosted_container.sh
 
-foundry-app-only-release:
+foundry-app-only-release: foundry-python-wheelhouse
 	$(MAKE) foundry-app-only-preflight
 	$(MAKE) foundry-postgres-readiness
 	PRIVATE_RELEASE_PREREQUISITES_PASSED=true ./scripts/foundry/deploy_private_app_release.sh
+
+TEAMS_PUBLISH_SCOPE ?= Shared
+TEAMS_PUBLICATION_MANIFEST ?= infra/foundry-hosted/teams-publication.json
+TEAMS_PUBLICATION_ARGS ?=
+
+foundry-activity-plan:
+	@python3 ./scripts/foundry/reconcile_activity_endpoint.py plan --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-activity-apply:
+	@python3 ./scripts/foundry/reconcile_activity_endpoint.py apply --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-activity-rollback:
+	@python3 ./scripts/foundry/reconcile_activity_endpoint.py rollback --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-teams-plan:
+	@python3 ./scripts/foundry/publish_teams_agent.py plan --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-deploy-bot:
+	@python3 ./scripts/foundry/publish_teams_agent.py deploy-bot --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-package:
+	@python3 ./scripts/foundry/publish_teams_agent.py package --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-publish:
+	@python3 ./scripts/foundry/publish_teams_agent.py publish --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-verify-local-state:
+	@python3 ./scripts/foundry/publish_teams_agent.py verify-local-state --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-rollback-plan:
+	@python3 ./scripts/foundry/publish_teams_agent.py rollback-plan --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
 
 foundry-evidence: ensure-backend-env
 	./scripts/foundry/collect_private_release_evidence.sh

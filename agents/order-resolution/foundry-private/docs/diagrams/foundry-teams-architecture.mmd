@@ -1,0 +1,58 @@
+%%{init: {"theme":"base","themeVariables":{"background":"#ffffff","primaryColor":"#ffffff","primaryTextColor":"#0f172a","primaryBorderColor":"#334155","lineColor":"#475569","secondaryColor":"#ffffff","tertiaryColor":"#ffffff"}}}%%
+flowchart LR
+    subgraph BG[" "]
+        direction LR
+
+        subgraph M365["Microsoft 365 boundary"]
+            direction TB
+            User["Authorized user<br/>Shared titleId launcher"]
+            Teams["Microsoft Teams<br/>OAuth when required<br/>complete replies only"]
+            Bot["Azure Bot Service<br/>single tenant<br/>public network access disabled"]
+            User --> Teams
+            Teams --> Bot
+        end
+
+        subgraph PublicRoute["Controlled public route"]
+            direction TB
+            Activity["Foundry Activity Protocol<br/>api-version 2025-05-15-preview<br/>M365 public endpoint enabled"]
+            Gates["Security gates<br/>Microsoft source IP<br/>signed token and audience<br/>tenant validation<br/>BotServiceRbac"]
+            Activity --> Gates
+        end
+
+        subgraph PrivateRuntime["Private Foundry runtime and data"]
+            direction TB
+            Agent["Hosted order-resolution agent<br/>active session version"]
+            Model["Private model and tools"]
+            Database[("Private PostgreSQL<br/>workflow and HITL state")]
+            PrivateApis["Responses and management APIs<br/>remain private"]
+            Agent --> Model
+            Agent --> Database
+            PrivateApis -.-> Agent
+        end
+
+        subgraph Observability["Operational visibility"]
+            direction TB
+            BotLogs["Log Analytics<br/>BotRequest and AllMetrics"]
+            AppInsights["Application Insights<br/>request, workflow, model,<br/>and PostgreSQL client spans"]
+            Correlation["Correlate timestamp, operation,<br/>conversation, session, and workflow IDs<br/>not one edge-to-database trace"]
+            BotLogs -.-> Correlation
+            AppInsights -.-> Correlation
+        end
+
+        Bot -->|signed activity| Activity
+        Gates -->|authorized activity| Agent
+        Agent -->|complete final text| Activity
+        Activity --> Bot
+        Bot --> Teams
+
+        Bot -.->|diagnostics| BotLogs
+        Agent -.->|OpenTelemetry| AppInsights
+        Database -.->|safe client dependencies| AppInsights
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a
+    style M365 fill:#ffffff,stroke:#2563eb,color:#0f172a
+    style PublicRoute fill:#ffffff,stroke:#f59e0b,color:#0f172a
+    style PrivateRuntime fill:#ffffff,stroke:#16a34a,color:#0f172a
+    style Observability fill:#ffffff,stroke:#7c3aed,color:#0f172a

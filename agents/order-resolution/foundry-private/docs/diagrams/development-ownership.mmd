@@ -1,0 +1,27 @@
+flowchart TD
+    subgraph BG[" "]
+        direction TD
+        Frontend["React frontend and panels"] --> Routes["FastAPI routes and schemas"]
+        Routes --> Service["Order resolution service"]
+
+        Service -->|local_maf| LocalRunner["Local MAF runner"]
+        Service -->|responses_wrapper| Client["Foundry Responses client"]
+        Client --> Host["Foundry hosted entrypoint"]
+        LocalRunner --> Workflow["Shared order-resolution workflow"]
+        Host --> Workflow
+
+        Workflow --> Stages["Triage, retrieval, resolution, and HITL stages"]
+        Stages --> Adapters["PostgreSQL, order/policy, MCP, and RAG adapters"]
+        Workflow --> Events["Stable native workflow events"]
+        Events --> Projector["Event bus and durable projector"]
+        Adapters --> Store[("Private PostgreSQL")]
+        Projector --> Store
+
+        Store --> Reads["History, native SSE, and read models"]
+        Reads --> Routes
+        Store --> Projection["Redacted selected-thread projection"]
+        Projection --> Routes
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a

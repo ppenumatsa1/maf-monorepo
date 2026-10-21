@@ -14,13 +14,23 @@ FOUNDRY_DIR="${POSTGRES_AZD_PROJECT_DIR:-$ROOT_DIR/infra/foundry-hosted}"
 AZD_PROFILE="${POSTGRES_AZD_ENVIRONMENT:-${AZD_ENVIRONMENT_NAME:-}}"
 CREDENTIAL_HELPER="$SCRIPT_DIR/postgres_runtime_credentials.py"
 
+get_azd_value() {
+  local name="$1"
+  local value
+  if value="$(
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$name" \
+      --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null
+  )"; then
+    printf '%s' "$value"
+  fi
+}
+
 get_input() {
   local name="$1"
   local value
   value="$(printenv "$name" 2>/dev/null || true)"
   if [[ -z "$value" && -n "$AZD_PROFILE" ]]; then
-    value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$name" \
-      --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true)"
+    value="$(get_azd_value "$name")"
   fi
   [[ -n "$value" ]] || {
     echo "Missing required PostgreSQL input: $name" >&2
@@ -36,12 +46,8 @@ get_input_alias() {
   value="$(printenv "$primary" 2>/dev/null || true)"
   [[ -n "$value" ]] || value="$(printenv "$fallback" 2>/dev/null || true)"
   if [[ -z "$value" && -n "$AZD_PROFILE" ]]; then
-    value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$primary" \
-      --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true)"
-    [[ -n "$value" ]] || value="$(
-      AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$fallback" \
-        --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
-    )"
+    value="$(get_azd_value "$primary")"
+    [[ -n "$value" ]] || value="$(get_azd_value "$fallback")"
   fi
   [[ -n "$value" ]] || {
     echo "Missing required PostgreSQL input: $primary (or $fallback)" >&2
@@ -57,12 +63,8 @@ get_optional_alias() {
   value="$(printenv "$primary" 2>/dev/null || true)"
   [[ -n "$value" ]] || value="$(printenv "$fallback" 2>/dev/null || true)"
   if [[ -z "$value" && -n "$AZD_PROFILE" ]]; then
-    value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$primary" \
-      --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true)"
-    [[ -n "$value" ]] || value="$(
-      AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$fallback" \
-        --environment "$AZD_PROFILE" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
-    )"
+    value="$(get_azd_value "$primary")"
+    [[ -n "$value" ]] || value="$(get_azd_value "$fallback")"
   fi
   printf '%s' "$value"
 }

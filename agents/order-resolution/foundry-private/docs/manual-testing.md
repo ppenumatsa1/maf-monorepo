@@ -78,10 +78,10 @@ includes:
 5. Make an optional projection unavailable or malformed and confirm the native
    SSE timeline, durable history, and HITL controls remain available.
 
-The recorded local evidence is 133 passing tests, a 10/10 deterministic
-evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. Protected run `31911162673` provides the current hosted
-deployment, E2E, telemetry, and strict 3/3 Foundry evaluation evidence.
+The TypeScript 7/Zod 4/CopilotKit 1.79 frontend graph passes the four focused
+selected-thread browser scenarios and is deployed. Current hosted Responses,
+Activity, telemetry, evaluation, and rollback evidence is in the
+[review remediation release](issues-changes-fixes.md#review-remediation-release-2026-10-21).
 
 ## ORD-1001 to ORD-1010 Cross-Use-Case Matrix
 

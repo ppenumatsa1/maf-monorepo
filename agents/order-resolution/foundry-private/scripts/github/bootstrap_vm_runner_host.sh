@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Installs/verifies required packages and tools for Foundry workflows:
 # - core tools: git, curl, jq, tar, unzip, make, ca-certificates
-# - runtime tools: python3, pip, docker
+# - runtime tools: Python 3.13, pip, docker
 # - azure tools: az CLI, azd
 
 require_root_or_sudo() {
@@ -32,7 +32,50 @@ install_base_packages() {
   run_privileged apt-get update -y
   run_privileged apt-get install -y \
     git curl jq tar unzip make ca-certificates gnupg lsb-release \
-    python3 python3-pip postgresql-client
+    python3 python3-pip python3-venv postgresql-client
+}
+
+install_python_runtime() {
+  local candidate
+  for candidate in python3.13 python3.12 python3.11; do
+    if have_cmd "$candidate"; then
+      return
+    fi
+  done
+  for candidate in \
+    "$HOME/.local/bin/python3.13" \
+    "$HOME/.local/bin/python3.12" \
+    "$HOME/.local/bin/python3.11"; do
+    if [[ -x "$candidate" ]]; then
+      return
+    fi
+  done
+
+  python3 -m pip install --user --disable-pip-version-check \
+    --index-url "https://packagefeedproxy.microsoft.io/pypi/simple" \
+    --extra-index-url "https://pypi.org/simple" \
+    uv
+  "$HOME/.local/bin/uv" python install 3.13
+}
+
+find_python_runtime() {
+  local candidate
+  for candidate in python3.13 python3.12 python3.11; do
+    if have_cmd "$candidate"; then
+      command -v "$candidate"
+      return
+    fi
+  done
+  for candidate in \
+    "$HOME/.local/bin/python3.13" \
+    "$HOME/.local/bin/python3.12" \
+    "$HOME/.local/bin/python3.11"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+  return 1
 }
 
 install_docker_if_missing() {
@@ -87,11 +130,14 @@ post_verify() {
       exit 1
     fi
   done
+  python_runtime="$(find_python_runtime)"
+  "$python_runtime" -c 'import sys; assert sys.version_info >= (3, 11)'
 
   run_privileged systemctl enable docker >/dev/null 2>&1 || true
   run_privileged systemctl start docker
   run_privileged usermod -aG docker "${RUNNER_USER}" || true
   run_privileged docker version >/dev/null
+  az extension add --name quota --yes --only-show-errors
   AZD_CONFIG_DIR=/mnt/.azd AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
     azd ext install azure.ai.agents --no-prompt
   AZD_CONFIG_DIR=/mnt/.azd AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
@@ -105,6 +151,7 @@ require_root_or_sudo
 RUNNER_USER="${RUNNER_USER:-${SUDO_USER:-$USER}}"
 
 install_base_packages
+install_python_runtime
 install_docker_if_missing
 install_az_if_missing
 install_azd_if_missing

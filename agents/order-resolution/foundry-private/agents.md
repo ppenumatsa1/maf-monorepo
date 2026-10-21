@@ -12,7 +12,7 @@ This file describes expected behavior for coding agents working in this reposito
   its frontend implementation and focused modern frontend gates are complete
   and locally validated. Protected deployment, hosted E2E, Foundry evaluation,
   and telemetry evidence are recorded in
-  `docs/design/issues-changes-fixes.md`.
+  `docs/issues-changes-fixes.md`.
 - CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
   `GET /api/copilotkit/info` (or `GET /api/copilotkit`) is static discovery.
   `POST /api/copilotkit` selects one existing `threadId` and ignores compatible
@@ -157,7 +157,7 @@ repository-owned workflow/frontend-boundary skills:
 `microsoft-foundry` and `azure-monitor-query-py` were selectively vendored
 (not as a full catalog install) from `microsoft/skills` revision
 `e58528db9a006528a5fb0a2c029790fa6a9a7c0e`; see
-`docs/design/techstack.md` for their exact upstream paths.
+`docs/techstack.md` for their exact upstream paths.
 
 Legacy shim paths have been removed. Do not add code that imports or recreates `app/models.py`, `app/config.py`, `app/db.py`, `app/state.py`, `app/workflow_run_repository.py`, `app/rag_repository.py`, `workflows/*`, `tools/*`, or root `app/api/*` router shims.
 Also do not reintroduce removed Foundry adapter/proxy surfaces such as `/api/foundry*` or `backend/app/foundry/*`.
@@ -172,7 +172,7 @@ Use these baseline scenarios:
 
 Reference details:
 
-- `docs/design/hitl-approval-conditions.md`
+- `docs/hitl-approval-conditions.md`
 
 ## Documentation Update Contract
 
@@ -180,14 +180,13 @@ When architecture or execution policies change, update these instruction files i
 
 - `.github/copilot-instructions.md`
 - `agents.md`
-- `docs/design/engineering-operating-model.md`
+- `docs/engineering-operating-model.md`
 
 The selected-thread implementation includes strict type checking, frontend
 build/lint, focused Playwright coverage, and the retained `make test-e2e`
-suite. Recorded local evidence is 133 passing tests, a 10/10 deterministic
-evaluation, seven workflow E2E cases, four selected-thread E2E cases, and a
-passing design review. Protected run `31911162673` activated hosted-agent
-version 6 and passed telemetry plus strict 3/3 evaluation. Workflow
-`31922650130` is the latest timing authority: 6m 36.8s to telemetry and
-6m 57.8s through strict evaluation. Future releases still require fresh
-evidence and must stay within the 15-minute budget.
+suite. The current source tree uses TypeScript 7 for `tsc` and keeps the
+TypeScript 6 API only for `typescript-eslint`; Zod 4 and CopilotKit 1.79 are
+deployed. The active hosted version and exact deployment, telemetry,
+evaluation, and timing authority are recorded in
+`docs/issues-changes-fixes.md`. Future releases still require fresh evidence
+and must stay within the 15-minute budget.

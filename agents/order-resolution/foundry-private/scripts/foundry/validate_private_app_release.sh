@@ -11,7 +11,9 @@ require_bin() {
 require_env() {
   local key="$1"
   local value
-  value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null || true)"
+  if ! value="$(AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env get-value "$key" 2>/dev/null)"; then
+    value=""
+  fi
   [[ -n "$value" ]] || {
     echo "AZD environment value $key is required." >&2
     exit 1
@@ -232,6 +234,7 @@ expected_postgres_fqdn="${postgres_server_name,,}.postgres.database.azure.com"
 container_environment_name="$(require_env CONTAINER_APPS_ENVIRONMENT_NAME)"
 backend_app_name="$(require_env BACKEND_CONTAINER_APP_NAME)"
 frontend_app_name="$(require_env FRONTEND_CONTAINER_APP_NAME)"
+runner_vm_name="$(require_env PRIVATE_RUNNER_VM_NAME)"
 hosted_agent_name="$(require_env HOSTED_AGENT_NAME)"
 foundry_model_deployment_name="$(require_env FOUNDRY_MODEL_DEPLOYMENT_NAME)"
 foundry_project_id="$(require_env FOUNDRY_PROJECT_ID)"
@@ -329,6 +332,34 @@ foundry_project_principal_id="$(
 )"
 [[ -n "$foundry_project_principal_id" ]] || {
   echo "The selected Foundry project does not have a managed identity." >&2
+  exit 1
+}
+
+foundry_account_id="$(
+  az cognitiveservices account show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$foundry_account_name" \
+    --query id \
+    --output tsv
+)"
+runner_principal_id="$(
+  az vm show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$runner_vm_name" \
+    --query 'identity.userAssignedIdentities.*.principalId | [0]' \
+    --output tsv
+)"
+[[ -n "$runner_principal_id" ]] || {
+  echo "The private runner VM does not have a user-assigned managed identity." >&2
+  exit 1
+}
+az role assignment list \
+  --assignee-object-id "$runner_principal_id" \
+  --scope "$foundry_account_id" \
+  --include-inherited \
+  --query '[].roleDefinitionName' \
+  --output tsv | grep -Fxq "Foundry User" || {
+  echo "The private runner identity is missing model inference access on the Foundry account." >&2
   exit 1
 }
 

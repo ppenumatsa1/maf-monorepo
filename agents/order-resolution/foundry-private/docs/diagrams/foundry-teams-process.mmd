@@ -1,0 +1,52 @@
+%%{init: {"theme":"base","themeVariables":{"background":"#ffffff","primaryColor":"#ffffff","primaryTextColor":"#0f172a","primaryBorderColor":"#334155","lineColor":"#475569","secondaryColor":"#ffffff","tertiaryColor":"#ffffff","actorBkg":"#ffffff","actorBorder":"#334155","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a","noteBkgColor":"#ffffff","noteBorderColor":"#7c3aed","noteTextColor":"#0f172a","labelBoxBkgColor":"#ffffff","labelBoxBorderColor":"#334155","labelTextColor":"#0f172a"}}}%%
+sequenceDiagram
+    box rgb(255,255,255) Operations and user
+        participant Operator
+        participant User
+    end
+    box rgb(255,255,255) Microsoft 365
+        participant Teams
+        participant Bot as Azure Bot Service
+        participant BotLogs as Bot diagnostics
+    end
+    box rgb(255,255,255) Foundry and private data
+        participant Activity as Activity Protocol
+        participant Agent as Hosted agent
+        participant Database as PostgreSQL
+    end
+    box rgb(255,255,255) Application telemetry
+        participant Insights as Application Insights
+    end
+
+    rect rgb(255,255,255)
+        Note over Operator,Activity: One-time, versioned setup
+        Operator->>Bot: Deploy Bot, Teams channel, and diagnostics with Bicep
+        Operator->>Activity: Retain Responses and Entra, add Activity and BotServiceRbac
+        Operator->>Activity: Publish with Shared scope using an interactive user
+        Activity-->>Operator: Return publication titleId
+        Operator-->>User: Share the titleId launcher
+    end
+
+    rect rgb(255,255,255)
+        Note over User,Insights: Each Teams conversation
+        User->>Teams: Open launcher and send a message
+        alt Fresh Foundry authentication is required
+            Teams-->>User: Present the newest one-time sign-in link
+            User->>Teams: Complete OAuth
+        end
+        Teams->>Bot: Send channel activity
+        Bot-->>BotLogs: Record BotRequest and AllMetrics
+        Bot->>Activity: Forward signed activity
+        Activity->>Agent: Validate source IP, token, tenant, and RBAC
+        Note over Agent: The conversation stays pinned to its creation-time agent version
+        Agent->>Database: Read and write workflow and HITL state privately
+        Database-->>Agent: Return state
+        Agent-->>Insights: Export request, workflow, model, and safe database spans
+        Agent-->>Activity: Return final customer-facing text
+        Activity-->>Bot: Return one complete Activity response
+        Bot-->>Teams: Deliver complete response
+        Teams-->>User: Display final text
+    end
+
+    Note over Teams,Agent: Published Teams agents do not support token streaming or citations
+    Note over BotLogs,Insights: Correlate timestamp and operation, conversation, session, and workflow IDs<br/>This is not one uninterrupted distributed trace

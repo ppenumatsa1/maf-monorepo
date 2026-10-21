@@ -58,11 +58,25 @@ backend_app_name="$(resource_value Microsoft.App/containerApps "[?contains(name,
 frontend_app_name="$(resource_value Microsoft.App/containerApps "[?contains(name, 'frontend')].name | [0]")"
 postgres_server_name="$(resource_value Microsoft.DBforPostgreSQL/flexibleServers "[0].name")"
 postgres_private_endpoint_name="$(resource_value Microsoft.Network/privateEndpoints "[?contains(name, 'postgres')].name | [0]")"
+postgres_private_dns_zone_name="$(
+  resource_value Microsoft.Network/privateDnsZones \
+    "[?name=='privatelink.postgres.database.azure.com'].name | [0]"
+)"
+runner_vm_name="$(resource_value Microsoft.Compute/virtualMachines "[0].name")"
+runner_vm_ssh_public_key="$(
+  az vm show \
+    --subscription "$AZURE_SUBSCRIPTION_ID" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$runner_vm_name" \
+    --query 'osProfile.linuxConfiguration.ssh.publicKeys[0].keyData' \
+    --output tsv
+)"
 
 for required_value in \
   "$foundry_account_name" "$acr_name" "$container_environment_name" \
   "$backend_app_name" "$frontend_app_name" "$postgres_server_name" \
-  "$postgres_private_endpoint_name"; do
+  "$postgres_private_endpoint_name" "$postgres_private_dns_zone_name" \
+  "$runner_vm_name" "$runner_vm_ssh_public_key"; do
   [[ -n "$required_value" ]] || {
     echo "Unable to discover all provisioned private release resources." >&2
     exit 1
@@ -82,6 +96,30 @@ foundry_project_endpoint="$(
   python3 -c 'import json,sys; print(json.loads(sys.argv[1])["properties"]["endpoints"]["AI Foundry API"])' \
     "$foundry_project_json"
 )"
+foundry_connections_json="$(
+  az rest \
+    --method get \
+    --url "https://management.azure.com${foundry_project_id}/connections?api-version=2025-04-01-preview"
+)"
+connection_names="$(
+  jq -c '
+    def connection($category):
+      [.value[] | select(.properties.category == $category) | .name][0] // "";
+    {
+      cosmos: connection("CosmosDb"),
+      storage: connection("AzureStorageAccount"),
+      aiSearch: connection("CognitiveSearch"),
+      applicationInsights: connection("AppInsights"),
+      runtimeSecrets: connection("CustomKeys")
+    }
+  ' <<<"$foundry_connections_json"
+)"
+if jq -e 'all(.[]; length > 0)' <<<"$connection_names" >/dev/null; then
+  :
+else
+  echo "Unable to discover all Foundry project connections." >&2
+  exit 1
+fi
 acr_endpoint="${acr_name}.azurecr.io"
 postgres_server_fqdn="${postgres_server_name}.postgres.database.azure.com"
 
@@ -93,6 +131,7 @@ AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set \
   FOUNDRY_PROJECT_ID="$foundry_project_id" \
   FOUNDRY_PROJECT_ENDPOINT="$foundry_project_endpoint" \
   FOUNDRY_PROJECTS_ENDPOINT="$foundry_project_endpoint" \
+  connectionNames="$connection_names" \
   AZURE_CONTAINER_REGISTRY_NAME="$acr_name" \
   AZURE_CONTAINER_REGISTRY_ENDPOINT="$acr_endpoint" \
   containerRegistryLoginServer="$acr_endpoint" \
@@ -105,7 +144,13 @@ AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set \
   POSTGRES_SERVER_NAME="$postgres_server_name" \
   POSTGRES_SERVER_FQDN="$postgres_server_fqdn" \
   POSTGRES_PRIVATE_ENDPOINT_NAME="$postgres_private_endpoint_name" \
+  POSTGRES_PRIVATE_DNS_ZONE_NAME="$postgres_private_dns_zone_name" \
+  PRIVATE_RUNNER_VM_NAME="$runner_vm_name" \
+  RUNNER_VM_SSH_PUBLIC_KEY="$runner_vm_ssh_public_key" \
   DB_SCHEMA_MANAGED_EXTERNALLY=true
+
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env config set \
+  infra.parameters.runnerVmSshPublicKey "$runner_vm_ssh_public_key"
 
 if [[ -n "${RUNTIME_DATABASE_URL:-}" ]]; then
   AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set \
@@ -115,4 +160,4 @@ if [[ -n "${RUNTIME_DATABASE_URL:-}" ]]; then
     infra.parameters.runtimeDatabaseUrl "$RUNTIME_DATABASE_URL"
 fi
 
-echo "Bootstrapped the private AZD environment from the canonical profile and live resource outputs."
+echo "Bootstrapped the private AZD environment from the selected profile and live resource outputs."

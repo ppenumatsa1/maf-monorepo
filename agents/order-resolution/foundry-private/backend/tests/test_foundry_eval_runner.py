@@ -11,12 +11,14 @@ from evals.foundry_eval_runner import (
     _TERMINAL_EVAL_STATUSES,
     _build_exact_trace_data_source,
     _build_trace_testing_criteria,
+    _is_transient_eval_poll_error,
     _load_hosted_e2e_evidence,
     _load_telemetry_trace_ids,
     _parse_hosted_e2e_evidence,
     _resolve_input_path,
     _should_retry_empty_evaluation,
     _validate_result_counts,
+    _validate_testing_criteria_results,
 )
 
 _NOW = datetime(2026, 7, 23, 15, 0, tzinfo=timezone.utc)
@@ -169,6 +171,13 @@ def test_evaluation_service_error_is_not_retried() -> None:
     )
 
 
+def test_empty_json_evaluation_poll_response_is_retryable() -> None:
+    assert _is_transient_eval_poll_error(
+        json.JSONDecodeError("empty response", "", 0)
+    )
+    assert not _is_transient_eval_poll_error(RuntimeError("service failure"))
+
+
 def test_trace_criteria_use_trace_query_response_mapping() -> None:
     criteria = _build_trace_testing_criteria(
         ["task_completion", "coherence"],
@@ -195,7 +204,7 @@ def test_trace_criteria_use_trace_query_response_mapping() -> None:
                 "query": "{{item.query}}",
                 "response": "{{item.response}}",
             },
-        }
+        },
     ]
 
 
@@ -266,6 +275,57 @@ def test_enforced_result_counts_accept_complete_pass() -> None:
             "skipped": 0,
             "total": 3,
         },
+        expected_total=3,
+        enforce_pass=True,
+        max_errored=0,
+    )
+
+
+def test_enforced_testing_criteria_rejects_masked_evaluator_errors() -> None:
+    with pytest.raises(RuntimeError, match="coherence produced 2 errored results"):
+        _validate_testing_criteria_results(
+            [
+                {
+                    "testing_criteria": "task_completion",
+                    "passed": 3,
+                    "failed": 0,
+                    "errored": 0,
+                    "skipped": 0,
+                },
+                {
+                    "testing_criteria": "coherence",
+                    "passed": 1,
+                    "failed": 0,
+                    "errored": 2,
+                    "skipped": 0,
+                },
+            ],
+            expected_evaluators=["task_completion", "coherence"],
+            expected_total=3,
+            enforce_pass=True,
+            max_errored=0,
+        )
+
+
+def test_enforced_testing_criteria_accepts_every_evaluator_pass() -> None:
+    _validate_testing_criteria_results(
+        [
+            {
+                "testing_criteria": "task_completion",
+                "passed": 3,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+            },
+            {
+                "testing_criteria": "coherence",
+                "passed": 3,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+            },
+        ],
+        expected_evaluators=["task_completion", "coherence"],
         expected_total=3,
         enforce_pass=True,
         max_errored=0,

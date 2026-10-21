@@ -7,7 +7,7 @@
 - **Copilot provides** implementation, tests, and infra/doc updates.
 - **Gates provide** release evidence for correctness, recovery, telemetry, and Foundry parity.
 
-Canonical contract: `docs/design/engineering-operating-model.md`.
+Canonical contract: `docs/engineering-operating-model.md`.
 
 ## Agent Types and Kinds
 

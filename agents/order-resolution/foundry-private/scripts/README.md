@@ -1,6 +1,6 @@
 # Scripts
 
-Current hosted-validation note (2026-07-15):
+Current hosted-validation note (2026-10-20):
 
 - `scripts/github/foundry_hosted_e2e.sh` and `make foundry-smoke` are the primary hosted regressions used after each Foundry deploy.
 - Private-lane smoke/probe diagnostics are still in active use for intermittent upstream `HTTP 500 server_error`.
@@ -24,14 +24,16 @@ Current hosted-validation note (2026-07-15):
   `.artifacts/releases/<release-id>/` record and validates gates and evidence.
 - `foundry/migrate_release_history.py`: dry-run-only inventory for
   singular release/history paths. The plural release path is live-validated by
-  workflow `31922650130` and remains the only current release authority.
+  the current review remediation release and remains the current release
+  authority. See
+  [`../docs/issues-changes-fixes.md`](../docs/issues-changes-fixes.md#review-remediation-release-2026-10-21).
 
 ## Run Playwright locally
 
 ```bash
 cd scripts/playwright
-npm install
-npx playwright install
+npm ci
+npx playwright install chromium
 PLAYWRIGHT_BASE_URL=http://localhost:5173 npm run test:e2e
 ```
 

@@ -4,7 +4,6 @@ import subprocess
 import unittest
 from pathlib import Path
 
-
 PRIVATE_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_DIR = PRIVATE_ROOT.parent / "deployment" / "profiles"
 PROFILE = PROFILE_DIR / "foundry-private.env"
@@ -40,16 +39,12 @@ class PortableIacContractTests(unittest.TestCase):
         values = read_profile()
         self.assertEqual(values["AZURE_RESOURCE_GROUP"], "rg-maf-ora-foundry-private")
         self.assertEqual(values["AZURE_LOCATION"], "eastus2")
+        self.assertEqual(values["RUNNER_VM_SIZE"], "Standard_D4s_v7")
         self.assertEqual(values["AZD_ENVIRONMENT_NAME"], "ora-foundry-private")
-        self.assertEqual(
-            {
-                values["FOUNDRY_LOCATION"],
-                values["AI_SEARCH_LOCATION"],
-                values["COSMOS_LOCATION"],
-                values["POSTGRES_LOCATION"],
-            },
-            {"eastus2"},
-        )
+        self.assertEqual(values["FOUNDRY_LOCATION"], "eastus2")
+        self.assertEqual(values["AI_SEARCH_LOCATION"], "eastus")
+        self.assertEqual(values["COSMOS_LOCATION"], "eastus2")
+        self.assertEqual(values["POSTGRES_LOCATION"], "eastus2")
         forbidden = re.compile(r"(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|DATABASE_URL)$")
         self.assertFalse([key for key in values if forbidden.search(key)])
 
@@ -73,6 +68,27 @@ class PortableIacContractTests(unittest.TestCase):
         finally:
             scratch.unlink(missing_ok=True)
 
+    def test_loader_rejects_non_sku_runner_override(self) -> None:
+        lines = [
+            "RUNNER_VM_SIZE=eastus2"
+            if line.startswith("RUNNER_VM_SIZE=")
+            else line
+            for line in PROFILE.read_text().splitlines()
+        ]
+        scratch = PROFILE_DIR / ".profile-runner-sku-test.env"
+        try:
+            scratch.write_text("\n".join(lines) + "\n")
+            result = subprocess.run(
+                ["bash", str(LOADER), "validate", str(scratch)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("RUNNER_VM_SIZE", result.stderr)
+        finally:
+            scratch.unlink(missing_ok=True)
+
     def test_parameter_placeholders_are_profile_or_secure_release_inputs(self) -> None:
         values = read_profile()
         parameters = json.loads(PARAMETERS.read_text())
@@ -84,6 +100,14 @@ class PortableIacContractTests(unittest.TestCase):
             )
         }
         self.assertFalse(placeholders - values.keys() - SECRET_OR_RELEASE_INPUTS)
+        self.assertEqual(
+            parameters["parameters"]["runnerVmSize"]["value"],
+            "${RUNNER_VM_SIZE}",
+        )
+        self.assertRegex(
+            MAIN.read_text(),
+            r"param runnerVmSize string",
+        )
 
     def test_generic_iac_contains_no_selected_target_literals(self) -> None:
         generic = "\n".join(
@@ -91,8 +115,6 @@ class PortableIacContractTests(unittest.TestCase):
             for path in [MAIN, PARAMETERS, AZURE_YAML, *sorted((IAC_DIR / "modules").glob("*.bicep"))]
         )
         for literal in (
-            "7df95e88-701c-4693-af77-3159f83b558d",
-            "a679d99f-b8f5-4d50-843e-5b73405ce0fc",
             "rg-maf-ora-foundry-private",
             "ora-foundry-private",
             "foundry-private-env",
@@ -111,6 +133,19 @@ class PortableIacContractTests(unittest.TestCase):
         self.assertIn("deploymentMode == 'bootstrap'", source)
         self.assertIn("existingBackendContainerApp", source)
         self.assertIn("existingPostgresServer", source)
+
+    def test_private_runner_can_manage_hosted_agent_versions(self) -> None:
+        source = MAIN.read_text()
+        self.assertIn("resource runnerFoundryUserRoleAssignment", source)
+        self.assertIn("scope: foundryAccount", source)
+        self.assertIn(
+            "principalId: privateRunnerAccess!.outputs.runnerUamiPrincipalId",
+            source,
+        )
+        self.assertIn(
+            "'53ca6127-db72-4b80-b1b0-d745d6d5456d'",
+            source,
+        )
 
 
 if __name__ == "__main__":

@@ -7,6 +7,9 @@
 !**/.env.*.sample
 !**/.env.template
 !**/.env.*.template
+# Customer-specific deployment profiles stay local. Commit only sanitized examples.
+agents/order-resolution/deployment/profiles/*.local.env
+!agents/order-resolution/deployment/profiles/*.local.env.example
 # Keep only non-secret deployment plans; all AZD environment state remains local.
 **/.azure/**
 !**/.azure/
