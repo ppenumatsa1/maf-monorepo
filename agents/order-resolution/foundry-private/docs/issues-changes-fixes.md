@@ -92,9 +92,10 @@ replacement operation was performed.
 
 - The repository catalog now links directly to each deployable project instead
   of routing Order Resolution through an intermediate catalog.
-- The private project README is a concise human-and-agent entrypoint for goals,
-  local development, private deployment, troubleshooting, documentation, and
-  coding-agent guidance.
+- The private project README is a self-contained human-and-agent operator
+  guide for prerequisites, local installation, Azure deployment paths, Teams,
+  CI/CD, routine operations, rollback, troubleshooting, and deeper
+  documentation.
 - The redundant PRD was removed after its requirements were confirmed in the
   functional specification, business rules, and technical specification.
 - Current-state documents now point to this release record rather than
