@@ -17,9 +17,13 @@ safe identifiers and aggregate outcomes here.
   creating `backend/.wheels`, so the offline image build failed before E2E.
   `test-e2e` now depends on `foundry-python-wheelhouse`, and the release-script
   contract test prevents that build prerequisite from being removed.
+- Quick validation installed the browser revision used by the standalone
+  Playwright harness but not the revision pinned by the frontend selected-thread
+  suite. The workflow now installs Chromium from both package roots before
+  running the combined gate.
 - The focused release-script contract and a local hash-verified wheelhouse
-  build pass. The authoritative GitHub quick-validation rerun is required
-  before this CI follow-up is considered complete.
+  build pass. Authoritative GitHub quick validation is rerun after each
+  correction before this CI follow-up is considered complete.
 
 ## 2026-10-22 - Public parity deployed and release evidence finalized
 
