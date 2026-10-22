@@ -21,9 +21,8 @@ safe identifiers and aggregate outcomes here.
   Playwright harness but not the revision pinned by the frontend selected-thread
   suite. The workflow now installs Chromium from both package roots before
   running the combined gate.
-- The focused release-script contract and a local hash-verified wheelhouse
-  build pass. Authoritative GitHub quick validation is rerun after each
-  correction before this CI follow-up is considered complete.
+- The focused release-script contract, local hash-verified wheelhouse build,
+  and authoritative GitHub quick-validation workflow pass.
 
 ## 2026-10-22 - Public parity deployed and release evidence finalized
 
