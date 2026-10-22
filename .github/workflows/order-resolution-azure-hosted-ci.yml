@@ -79,10 +79,17 @@ jobs:
         run: agents/order-resolution/azure-hosted/scripts/skills/operating-model-enforcement.sh "${{ needs.routing.outputs.base_ref }}"
 
   release-assets:
-    name: Release asset and credential-free reconciliation mock
+    name: Release asset and read-only capacity preflight
     runs-on: ubuntu-latest
+    environment: maf-ora-azure
     needs: [routing, operating-model-enforcement]
     env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       RELEASE_ID: ${{ needs.routing.outputs.release_id }}
       RELEASE_RUN_ID: ${{ needs.routing.outputs.release_id }}
       RELEASE_STARTED_AT: ${{ needs.routing.outputs.release_started_at }}
@@ -91,6 +98,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Authenticate the read-only preflight identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Generate ignored target profile
+        working-directory: agents/order-resolution/azure-hosted
+        run: |
+          set -euo pipefail
+          mkdir -p .azure
+          cp deployment/profiles/azure-hosted-bootstrap.env.example .azure/azure-hosted.env
+          python3 - .azure/azure-hosted.env "${AZURE_ENV_NAME//-/}" <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          replacements = {
+              "AZURE_ENV_NAME": os.environ["AZURE_ENV_NAME"],
+              "AZURE_TENANT_ID": os.environ["AZURE_TENANT_ID"],
+              "AZURE_SUBSCRIPTION_ID": os.environ["AZURE_SUBSCRIPTION_ID"],
+              "AZURE_RESOURCE_GROUP": os.environ["AZURE_RESOURCE_GROUP"],
+              "AZURE_LOCATION": os.environ["AZURE_LOCATION"],
+              "NAME_PREFIX": sys.argv[2],
+          }
+          output = []
+          for line in path.read_text(encoding="utf-8").splitlines():
+              key = line.split("=", 1)[0]
+              output.append(f"{key}={replacements[key]}" if key in replacements else line)
+          path.write_text("\n".join(output) + "\n", encoding="utf-8")
+          PY
       - name: Ensure Bicep CLI
         run: |
           set -euo pipefail
@@ -123,7 +165,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Install backend dependencies
         working-directory: agents/order-resolution/azure-hosted/backend
         run: |
@@ -164,7 +206,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -352,7 +394,7 @@ jobs:
       - uses: actions/setup-python@v5
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: Azure/setup-azd@v2
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Install release-validation dependencies
@@ -387,7 +429,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -416,7 +458,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

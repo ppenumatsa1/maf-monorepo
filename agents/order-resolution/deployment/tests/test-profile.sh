@@ -7,18 +7,54 @@ for profile in "$script_dir"/profiles/*.env; do
   bash "$script_dir/profile.sh" validate "$profile"
 done
 
-grep -Fq 'DEPLOYMENT_LANE=azure-hosted' "$script_dir/profiles/azure-hosted.env"
-grep -Fq 'AZURE_ENV_NAME=maf-ora-azure' "$script_dir/profiles/azure-hosted.env"
-grep -Fq 'AZURE_LOCATION=northcentralus' "$script_dir/profiles/azure-hosted.env"
-grep -Fq 'agents/order-resolution/deployment/profiles/azure-hosted.env' \
-  "$script_dir/../azure-hosted/deployment/profiles/azure-hosted-bootstrap.env"
+azure_hosted_example="$script_dir/profiles/azure-hosted.env.example"
+bash "$script_dir/profile.sh" validate-example "$azure_hosted_example"
+if bash "$script_dir/profile.sh" validate "$azure_hosted_example" >/dev/null 2>&1; then
+  printf 'expected placeholder Azure-hosted example to fail normal validation\n' >&2
+  exit 1
+fi
+grep -Fq 'AZURE_TENANT_ID=00000000-0000-0000-0000-000000000000' \
+  "$azure_hosted_example"
+grep -Fq 'AZURE_LOCATION=examplelocation' "$azure_hosted_example"
 
 test_dir="$script_dir/.test-artifacts/profile-$$"
 mkdir -p "$test_dir"
 invalid_profile="$test_dir/invalid.env"
+valid_hosted_profile="$test_dir/azure-hosted.env"
+duplicate_profile="$test_dir/duplicate.env"
+unknown_profile="$test_dir/unknown.env"
+symlink_profile="$test_dir/symlink.env"
 azd_command="$test_dir/azd"
 azd_log="$test_dir/azd.log"
 trap 'rm -rf "$test_dir"' EXIT
+sed \
+  -e 's/example-azure-hosted/portable-azure-hosted/g' \
+  -e 's/00000000-0000-0000-0000-000000000000/11111111-1111-4111-8111-111111111111/' \
+  -e 's/rg-example-azure-hosted/rg-portable-azure-hosted/' \
+  -e 's/examplelocation/regionone/' \
+  -e 's/exampleazure/portableazure/' \
+  "$azure_hosted_example" >"$valid_hosted_profile"
+bash "$script_dir/profile.sh" validate "$valid_hosted_profile"
+
+cat "$valid_hosted_profile" >"$duplicate_profile"
+printf 'AZURE_LOCATION=regiontwo\n' >>"$duplicate_profile"
+if bash "$script_dir/profile.sh" validate "$duplicate_profile" >/dev/null 2>&1; then
+  printf 'expected duplicate Azure-hosted key to fail\n' >&2
+  exit 1
+fi
+
+cat "$valid_hosted_profile" >"$unknown_profile"
+printf 'UNKNOWN_TARGET_VALUE=value\n' >>"$unknown_profile"
+if bash "$script_dir/profile.sh" validate "$unknown_profile" >/dev/null 2>&1; then
+  printf 'expected unknown Azure-hosted key to fail\n' >&2
+  exit 1
+fi
+
+ln -s "$valid_hosted_profile" "$symlink_profile"
+if bash "$script_dir/profile.sh" validate "$symlink_profile" >/dev/null 2>&1; then
+  printf 'expected symlink Azure-hosted profile to fail\n' >&2
+  exit 1
+fi
 cat > "$invalid_profile" <<'EOF'
 CONTRACT_VERSION=1
 DEPLOYMENT_LANE=foundry-public

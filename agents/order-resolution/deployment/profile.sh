@@ -56,6 +56,7 @@ DEPLOYMENT_PROFILE_KEYS=(
   RUNNER_VM_SIZE
   RUNNER_VM_ADMIN_USERNAME
   FOUNDRY_MODEL_DEPLOYMENT_NAME
+  FOUNDRY_CHAT_DEPLOYMENT_NAME
   FOUNDRY_CHAT_MODEL_FORMAT
   FOUNDRY_CHAT_MODEL_NAME
   FOUNDRY_CHAT_MODEL_VERSION
@@ -67,6 +68,12 @@ DEPLOYMENT_PROFILE_KEYS=(
   FOUNDRY_EMBEDDINGS_MODEL_VERSION
   FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME
   FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY
+  FOUNDRY_EVALUATOR_DEPLOYMENT_NAME
+  FOUNDRY_EVALUATOR_MODEL_FORMAT
+  FOUNDRY_EVALUATOR_MODEL_NAME
+  FOUNDRY_EVALUATOR_MODEL_VERSION
+  FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME
+  FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY
   FOUNDRY_RAI_POLICY_NAME
   AI_SEARCH_SKU_NAME
   POSTGRES_SKU_NAME
@@ -77,6 +84,7 @@ DEPLOYMENT_PROFILE_KEYS=(
 )
 
 declare -A DEPLOYMENT_PROFILE_VALUES=()
+DEPLOYMENT_PROFILE_PLACEHOLDER_GUID="00000000-0000-0000-0000-000000000000"
 
 deployment_profile_error() {
   printf 'deployment profile error: %s\n' "$1" >&2
@@ -135,8 +143,20 @@ deployment_profile_load() {
   done < "$profile_path"
 }
 
+deployment_profile_is_placeholder() {
+  local normalized="${1,,}"
+  [[ "$normalized" == "$DEPLOYMENT_PROFILE_PLACEHOLDER_GUID" ||
+    "$normalized" == *unknown* ||
+    "$normalized" == *example* ||
+    "$normalized" == *replace* ||
+    "$normalized" == *changeme* ||
+    "$normalized" == *change-me* ||
+    "$normalized" == "todo" ||
+    "$normalized" == "tbd" ]]
+}
+
 deployment_profile_validate() {
-  local key lane
+  local key lane allow_placeholders="${1:-false}"
 
   for key in "${DEPLOYMENT_PROFILE_REQUIRED_KEYS[@]}"; do
     [[ -n "${DEPLOYMENT_PROFILE_VALUES[$key]-}" ]] || {
@@ -174,6 +194,99 @@ deployment_profile_validate() {
     deployment_profile_error "NAME_PREFIX must be 3-15 lowercase alphanumeric/hyphen characters"
     return 1
   }
+  if [[ "$lane" == "azure-hosted" ]]; then
+    local hosted_key value
+    local -a hosted_required_keys=(
+      AZURE_TENANT_ID POSTGRES_DATABASE_NAME POSTGRES_SKU_NAME
+      POSTGRES_SKU_TIER POSTGRES_VERSION FOUNDRY_PROJECT_NAME
+      FOUNDRY_CHAT_DEPLOYMENT_NAME FOUNDRY_CHAT_MODEL_FORMAT FOUNDRY_CHAT_MODEL_NAME
+      FOUNDRY_CHAT_MODEL_VERSION FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME
+      FOUNDRY_CHAT_DEPLOYMENT_CAPACITY FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME
+      FOUNDRY_EMBEDDINGS_MODEL_FORMAT FOUNDRY_EMBEDDINGS_MODEL_NAME
+      FOUNDRY_EMBEDDINGS_MODEL_VERSION
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY
+      FOUNDRY_EVALUATOR_DEPLOYMENT_NAME FOUNDRY_EVALUATOR_MODEL_FORMAT
+      FOUNDRY_EVALUATOR_MODEL_NAME FOUNDRY_EVALUATOR_MODEL_VERSION
+      FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME
+      FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY FOUNDRY_RAI_POLICY_NAME
+    )
+    local -a hosted_allowed_keys=(
+      CONTRACT_VERSION DEPLOYMENT_LANE AZURE_ENV_NAME AZURE_TENANT_ID
+      AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION NAME_PREFIX
+      POSTGRES_DATABASE_NAME POSTGRES_SKU_NAME POSTGRES_SKU_TIER
+      POSTGRES_VERSION FOUNDRY_PROJECT_NAME FOUNDRY_CHAT_MODEL_FORMAT
+      FOUNDRY_CHAT_DEPLOYMENT_NAME FOUNDRY_CHAT_MODEL_NAME FOUNDRY_CHAT_MODEL_VERSION
+      FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME FOUNDRY_CHAT_DEPLOYMENT_CAPACITY
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME FOUNDRY_EMBEDDINGS_MODEL_FORMAT
+      FOUNDRY_EMBEDDINGS_MODEL_NAME FOUNDRY_EMBEDDINGS_MODEL_VERSION
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY
+      FOUNDRY_EVALUATOR_DEPLOYMENT_NAME FOUNDRY_EVALUATOR_MODEL_FORMAT
+      FOUNDRY_EVALUATOR_MODEL_NAME FOUNDRY_EVALUATOR_MODEL_VERSION
+      FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME
+      FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY FOUNDRY_RAI_POLICY_NAME
+    )
+    for hosted_key in "${hosted_required_keys[@]}"; do
+      [[ -n "${DEPLOYMENT_PROFILE_VALUES[$hosted_key]-}" ]] || {
+        deployment_profile_error "required azure-hosted key is missing: $hosted_key"
+        return 1
+      }
+    done
+    for hosted_key in "${!DEPLOYMENT_PROFILE_VALUES[@]}"; do
+      [[ " ${hosted_allowed_keys[*]} " == *" $hosted_key "* ]] || {
+        deployment_profile_error "key is not valid for azure-hosted: $hosted_key"
+        return 1
+      }
+      value="${DEPLOYMENT_PROFILE_VALUES[$hosted_key]}"
+      if [[ "$allow_placeholders" != "true" ]] &&
+        deployment_profile_is_placeholder "$value"; then
+        deployment_profile_error "$hosted_key contains a placeholder or unknown value"
+        return 1
+      fi
+    done
+    [[ "${DEPLOYMENT_PROFILE_VALUES[AZURE_TENANT_ID]}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || {
+      deployment_profile_error "AZURE_TENANT_ID must be a GUID"
+      return 1
+    }
+    [[ "$(deployment_profile_value POSTGRES_DATABASE_NAME)" =~ ^[A-Za-z0-9_-]+$ ]] || {
+      deployment_profile_error "POSTGRES_DATABASE_NAME is invalid"
+      return 1
+    }
+    [[ "$(deployment_profile_value POSTGRES_SKU_NAME)" =~ ^Standard_[A-Za-z0-9]+(_[A-Za-z0-9]+)*$ ]] || {
+      deployment_profile_error "POSTGRES_SKU_NAME must be an explicit Standard_* SKU"
+      return 1
+    }
+    [[ "$(deployment_profile_value POSTGRES_SKU_TIER)" =~ ^[A-Za-z]+$ ]] || {
+      deployment_profile_error "POSTGRES_SKU_TIER is invalid"
+      return 1
+    }
+    [[ "$(deployment_profile_value POSTGRES_VERSION)" =~ ^[0-9]{1,2}$ ]] || {
+      deployment_profile_error "POSTGRES_VERSION is invalid"
+      return 1
+    }
+    for hosted_key in \
+      FOUNDRY_CHAT_DEPLOYMENT_CAPACITY \
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_CAPACITY \
+      FOUNDRY_EVALUATOR_DEPLOYMENT_CAPACITY; do
+      [[ "$(deployment_profile_value "$hosted_key")" =~ ^[1-9][0-9]*$ ]] || {
+        deployment_profile_error "$hosted_key must be a positive integer"
+        return 1
+      }
+    done
+    for hosted_key in \
+      FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME \
+      FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME \
+      FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME; do
+      case "$(deployment_profile_value "$hosted_key")" in
+        Standard|DataZoneStandard|GlobalStandard) ;;
+        *)
+          deployment_profile_error "$hosted_key is not supported"
+          return 1
+          ;;
+      esac
+    done
+  fi
   if [[ "$lane" == "foundry-private" ]]; then
     local private_key
     local -a private_required_keys=(
@@ -225,10 +338,14 @@ deployment_profile_export() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  [[ $# -eq 2 && "$1" == "validate" ]] || {
-    printf 'Usage: %s validate <profile-path>\n' "$0" >&2
+  [[ $# -eq 2 && ( "$1" == "validate" || "$1" == "validate-example" ) ]] || {
+    printf 'Usage: %s <validate|validate-example> <profile-path>\n' "$0" >&2
     exit 2
   }
   deployment_profile_load "$2"
-  deployment_profile_validate
+  if [[ "$1" == "validate-example" ]]; then
+    deployment_profile_validate true
+  else
+    deployment_profile_validate
+  fi
 fi
