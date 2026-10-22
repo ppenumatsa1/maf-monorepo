@@ -9,6 +9,18 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-10-22 - CI parity follow-up
+
+- Public backend and design-review jobs now install Python 3.13, matching the
+  locked runtime and backend environment contract.
+- The quick-validation path reached the backend Docker build without first
+  creating `backend/.wheels`, so the offline image build failed before E2E.
+  `test-e2e` now depends on `foundry-python-wheelhouse`, and the release-script
+  contract test prevents that build prerequisite from being removed.
+- The focused release-script contract and a local hash-verified wheelhouse
+  build pass. The authoritative GitHub quick-validation rerun is required
+  before this CI follow-up is considered complete.
+
 ## 2026-10-22 - Public parity deployed and release evidence finalized
 
 **Deployed state.** The reviewed public resource graph is operational:
