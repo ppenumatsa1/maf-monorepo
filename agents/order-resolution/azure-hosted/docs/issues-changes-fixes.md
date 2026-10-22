@@ -39,6 +39,10 @@ and correlation identifiers remain in ignored/generated release evidence.
   production app-only releases, causing them to request Azure OIDC before any
   deployable application changed. They now run full validation without Azure
   authentication or mutation.
+- Full validation then exposed that the Docker E2E job invoked the Python 3.13
+  wheelhouse target without installing Python 3.13. The job now establishes
+  Python 3.13 before image and Docker E2E work, and reuses it if an app-only
+  release continues into hosted validation.
 - Real application changes still require the read-only capacity preflight,
   tested immutable images, Azure OIDC, app-only Container Apps deployment, and
   final release evidence. The configured federated identity still needs

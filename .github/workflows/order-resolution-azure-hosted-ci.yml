@@ -334,6 +334,9 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -399,10 +402,6 @@ jobs:
         if: ${{ needs.routing.outputs.deploy_mode == 'app_only' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         working-directory: agents/order-resolution/azure-hosted
         run: make deploy-ci-images
-      - uses: actions/setup-python@v5
-        if: ${{ needs.routing.outputs.deploy_mode == 'app_only' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        with:
-          python-version: "3.13"
       - uses: Azure/setup-azd@v2
         if: ${{ needs.routing.outputs.deploy_mode == 'app_only' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Install release-validation dependencies
