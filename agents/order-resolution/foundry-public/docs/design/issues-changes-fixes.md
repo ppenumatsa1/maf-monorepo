@@ -9,6 +9,151 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-10-22 - Public parity deployed and release evidence finalized
+
+**Deployed state.** The reviewed public resource graph is operational:
+Foundry account/project/models, Azure AI Search, PostgreSQL, ACR, monitoring,
+Container Apps, managed identities and scoped RBAC, the runtime-secret
+connection, hosted agent, Bot/Teams infrastructure, backend, and frontend are
+deployed. The Teams application is published to Shared scope as **Order
+Resolution Assistant Foundry Public** version `1.0.1`.
+
+**Completed release.** Release
+`order-resolution-20261022T001617Z-1249190` finalized successfully with every
+same-window gate passing. Hosted agent `order-resolution-hosted` version `6`
+is active on an immutable image. The app-only interval from packaging through
+telemetry completed in **11m 45.254s**, below the 15-minute budget.
+
+Fresh hosted acceptance passed
+the low-risk path and two approval/resume paths. PostgreSQL remained the
+authoritative source for workflow, checkpoint, approval, and event assertions.
+Application Insights correlated all three conversations with zero exceptions.
+Strict Foundry Task Completion and Coherence evaluation each passed all three
+conversations with zero failed, errored, or skipped items.
+
+**Issues found and fixed.**
+
+- AZD now emits the hosted response as a JSON envelope instead of legacy text.
+  Hosted E2E now requires structured `status == completed`, extracts
+  `message` or `latest_output.message`, and retains the legacy text fallback.
+- ARM redacts runtime-connection credentials on GET. Verification now checks
+  exact safe metadata: connection name, `CustomKeys` category/auth type, and
+  `metadata.ApiType == KeyValue`. Hosted deployment verification still proves
+  the literal runtime connection placeholder.
+- Cloud evaluation requires the release identity to hold account-scoped
+  `Foundry User` and `Cognitive Services OpenAI User`. A fail-closed preflight
+  now verifies both roles before packaging or deployment.
+- Structured HITL resume completed durable state but did not consistently
+  expose the approved outcome in the conversation trace. E2E now adds a
+  post-approval explanation turn, verifies that terminal PostgreSQL state is
+  unchanged, and makes the approved result available to Foundry evaluation.
+- Evaluation previously started before E2E and telemetry completed, allowing
+  partial pre-approval traces to be judged. Acceptance is now serialized as
+  hosted E2E, telemetry correlation, then strict evaluation.
+- Hosted, backend, and frontend stateless deployments now run concurrently
+  after packaging and runtime-connection verification, preserving the
+  existing 15-minute app-only-to-telemetry budget.
+- Release timing fixtures and resume ordering now model telemetry before
+  evaluation, preserving the successful telemetry interval when evaluation is
+  resumed.
+- Secret-free aggregation now permits numeric Foundry usage metrics such as
+  `prompt_tokens` while continuing to reject credential-bearing token fields
+  and values.
+- A failed final-evidence timing attempt can now be retried while the release
+  remains active, instead of leaving a recoverable aggregation failure stuck.
+
+**Validation.** Focused release-evidence tests, release-script contracts, and
+diff checks pass. The durable `release-window.json` status is `passed`; preview,
+model preflight, deployment verification, smoke, hosted E2E, Application
+Insights connection, telemetry, and evaluation are all finalized as
+successful. No deployment blocker remains.
+
+## 2026-10-21 - Public parity implementation and focused local validation; live evidence pending
+
+**Implementation.** The public source now carries the shared parity contract
+while retaining its public topology and `docs/design/` layout:
+
+- both backend images use Python 3.13, the runtime graph is hash-locked, and
+  image builds install a validated CPython 3.13 Linux AMD64 wheelhouse offline;
+- backend and frontend direct dependency baselines and lane-specific lockfiles
+  are synchronized, including React 19.3, CopilotKit 1.79, Zod 4.6, Vite 8.3,
+  Playwright 1.64, ESLint 10.12, and the TypeScript 7/6 compatibility split;
+- FastAPI uses lifespan for startup/shutdown, hosted PostgreSQL pools default
+  to `0/2/30`, and production startup validates an externally managed schema
+  instead of running DDL;
+- administrator tooling owns schema and least-privilege grants, while the
+  runtime receives only required table DML and sequence usage;
+- the wrapper validates one trusted absolute frontend origin, and workflow
+  origin is server-selected across API, Responses, and Teams;
+- Responses approval requires structured metadata or checkpoint-keyed
+  `function_call_output`; free-form decision text and cross-channel resume are
+  rejected;
+- one hosted process composes Responses and Activity, with Azure Bot Service,
+  `MsTeamsChannel`, Shared publication automation, privacy-minimized Adaptive
+  Cards, hashed one-time actions, and an atomic approve/reject claim;
+- public provisioning/reuse is selected by an ignored external profile,
+  capacity checks are read-only and incremental, routine reuse preview fails
+  on any mutation, and infrastructure changes cannot be routed automatically
+  through app-only release; and
+- evaluation polling/status handling, fresh-window evidence aggregation,
+  secret checks, immutable metadata, application rollback authority, Activity
+  rollback, and Microsoft 365/Bot rollback boundaries are represented in
+  source and canonical documentation.
+
+**Focused local validation.** `make test` passed Ruff and 162 backend tests.
+`make eval-backend` passed 10/10 deterministic cases; it exited successfully
+with pool-shutdown diagnostic warnings. `make test-scripts`,
+`make test-deployment-profile`, the frontend production build/typecheck, and
+`make foundry-iac-build` passed. The script gate covered PostgreSQL grants,
+hosted deployment contracts, release evidence, incremental capacity, preview
+safety, bootstrap/release portability, Activity reconciliation, Teams
+publication, and Teams IaC. The Python wheelhouse gate reused 112 compatible
+runtime wheels.
+
+`make foundry-package` now completes for backend, frontend, and the hosted
+agent. The reviewed public infrastructure graph converged in Azure: Foundry,
+the project and model deployments, monitoring, ACR, evaluation storage,
+Container Apps, PostgreSQL, managed identities/RBAC, and the runtime-secret
+project connection are provisioned. PostgreSQL schema and least-privilege
+runtime credentials were applied without recording secrets in the repository.
+
+**Live deployment corrections.**
+
+- The external profile and capacity contract required Azure AI Search, but the
+  public Bicep graph did not create it. Search parameters, a public
+  local-auth-disabled Search resource, AZD mappings, outputs, and bootstrap
+  contract coverage were added.
+- East US 2 returned `InsufficientResourcesAvailable` for a new Basic Search
+  service. A second reviewed preview moved only Search to Canada Central; the
+  application, Foundry, PostgreSQL, and Container Apps remain in East US 2.
+  The Search create then succeeded and secret-free outputs were hydrated.
+- `az resource list` omitted the nested Foundry project even though ARM
+  returned it. Capacity preflight now falls back to the account project child
+  collection rather than reporting false app-only drift.
+- The hosted deployment target used the all-resources app-only preflight, which
+  required Bot/Teams before the hosted agent identity existed, while Teams
+  preview requires that identity. Hosted deployment now uses a focused
+  app-only preflight that remains strict for Foundry/models, Search,
+  PostgreSQL, Container Apps, and ACR but intentionally defers Bot/Teams until
+  after hosted activation. The all-resources release preflight remains
+  fail-closed.
+
+The hosted image built and pushed successfully, but agent-version creation is
+currently blocked because the authenticated operator has management-plane
+ownership without a Foundry data-plane role on the project. The pending
+least-privilege correction is a project-scoped `Foundry User` assignment;
+permission was not changed without explicit approval.
+
+**Evidence boundary.** This entry records implementation and focused local
+validation only. Comprehensive local validation is still tracked separately.
+Reviewed Azure preview/apply and shared-infrastructure convergence are
+complete. Hosted activation, Bot/Teams deployment, backend/frontend release,
+Responses or Teams live acceptance, Foundry evaluation, Application Insights
+correlation, aggregate release evidence, and rollback verification are still
+pending. The temporary
+`foundry-private-upgrade.md` inventory remains until those gates complete and
+the final evidence is reviewed.
+
 ## 2026-08-15 - Deployment documentation synchronized
 
 **Documentation alignment.** Updated the deployment flow, README navigation,
@@ -527,6 +672,11 @@ Browser
   -> internal FastAPI responses-wrapper Container App
   -> managed-identity Foundry Responses agent
   -> shared PostgreSQL workflow/checkpoint/approval/event state
+
+Microsoft Teams
+  -> Azure Bot Service and MsTeamsChannel
+  -> additive Foundry Activity endpoint in the same hosted process
+  -> the same workflow and PostgreSQL state
 ```
 
 The browser never receives a Foundry endpoint credential. The wrapper creates a
@@ -534,16 +684,21 @@ Foundry `conv_...` conversation before the first request, persists that thread
 identifier, dispatches the initial Responses request without remote streaming,
 and resumes HITL using checkpoint-keyed `function_call_output`. Browser live
 updates come from persisted PostgreSQL projections through polling and stable
-native SSE; the rich stream is additive.
+native SSE; the rich stream is additive. Teams approvals use opaque Adaptive
+Card actions with hashed, channel-bound state and one atomic approve/reject
+claim. This is the current source architecture, not proof that either channel
+is live.
 
 ## Historical teardown and clean-provision baseline
 
 The public Foundry resources were intentionally deleted on 2026-07-28. The
 target details and release evidence below describe that historical recovery
 only. They must not be used to claim a current deployment or to select the
-current deployment route. The v15 public lane uses the retained-resource,
-app-only route defined in `.azure/deployment-plan.md` and has the fresh evidence
-recorded above.
+current deployment route. The v15 public lane used the retained-resource,
+app-only route defined at that time and has historical evidence recorded above.
+The current parity source and its external-profile, incremental-capacity,
+preview-safe release route require fresh evidence as stated in the 2026-10-21
+entry.
 
 The delivery ledger was stale because the successful 2026-07-27 release
 evidence was retained without a teardown status transition. The README and this

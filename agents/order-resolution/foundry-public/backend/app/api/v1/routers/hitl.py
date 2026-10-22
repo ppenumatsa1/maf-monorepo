@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.api.v1.schemas.hitl import HitlResponseRequest, HitlResponseResult
 from app.core.container import order_resolution_service
 from app.infrastructure.persistence.idempotency_store import IdempotencyInProgressError
+from app.modules.order_resolution.service import ApprovalChannelError
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/hitl", tags=["hitl"])
@@ -12,6 +13,8 @@ router = APIRouter(prefix="/api/hitl", tags=["hitl"])
 async def respond_hitl(request: HitlResponseRequest) -> HitlResponseResult:
     try:
         return await order_resolution_service.respond_hitl(request)
+    except ApprovalChannelError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except IdempotencyInProgressError as exc:

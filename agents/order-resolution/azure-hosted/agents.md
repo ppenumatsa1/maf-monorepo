@@ -5,12 +5,12 @@ This file describes expected behavior for coding agents working in this reposito
 ## Project Context
 
 - Backend: FastAPI + MAF SDK workflow path (single primary workflow story).
-- Azure target: two Container Apps (FastAPI/MAF backend and React/Nginx
-  frontend) in subscription `7df95e88-701c-4693-af77-3159f83b558d`,
-  `rg-maf-ora-azure`, in North Central US. Foundry is used only for
-  model inference and report-only evaluations, not as an application host.
-  East US is excluded because of the Azure PostgreSQL offer restriction. Do not
-  claim deployment until current validation evidence exists.
+- Azure target: an external React/Nginx frontend Container App and an internal
+  FastAPI/MAF backend Container App. Foundry is used only for model inference
+  and report-only evaluation, not as an application host. PostgreSQL uses
+  managed-identity authentication. Target values come from a validated,
+  ignored operator profile and must not be committed. Do not claim deployment
+  until current validation evidence exists.
 - Frontend: React + Vite, consumes SSE workflow events.
 - Workflow checkpointing: Postgres-backed checkpoint storage via repository-pattern adapters.
 - Event streaming: legacy SSE remains the stable contract; `/rich` remains an
@@ -49,6 +49,8 @@ This file describes expected behavior for coding agents working in this reposito
   redacted projection.
 - frontend endpoint configuration must honor injected runtime values before
   Vite fallbacks, and the CopilotKit inspector must stay disabled.
+- Do not add private networking, Foundry hosted-agent/Responses, Bot, Activity,
+  Teams, or Adaptive Card surfaces.
 
 6. Never remove coverage for:
 
@@ -96,12 +98,12 @@ and proceeds only when the selected PostgreSQL server and database are
 absent because steady-state IaC excludes PostgreSQL. Do not add a separate owner approval, reference, or caller-supplied
 preview-digest gate. Release
 claims require fresh smoke, hosted browser E2E, the three HTTP domain
-scenarios, a completed report-only evaluation with zero failed/errored rows,
-exact Application Insights correlation, and final evidence from the same
+scenarios, exact Application Insights correlation, a completed report-only
+evaluation with zero failed/errored rows, and final evidence from the same
 release window. The release record must also pass the 15-minute
-app-only-to-telemetry budget; the latest verified interval is 13m 24.6s. The
-shared `../deployment/profiles/azure-hosted.env` is the target authority;
-lane-local profiles are bootstrap/compatibility inputs. Do not introduce
+app-only-to-telemetry budget. Target values belong in a validated, ignored
+operator profile selected by `AZURE_HOSTED_PROFILE` or the ignored default
+path. Tracked examples must not contain live target values. Do not introduce
 shared scripts or runtime components. Keep
 generated JSON under `.artifacts/releases/<release-id>/evidence/`, logs under
 `logs/`, and preserve final failed evidence when a gate stops the release.
@@ -144,7 +146,7 @@ Use these baseline scenarios:
 
 Reference details:
 
-- `docs/design/hitl-approval-conditions.md`
+- `docs/hitl-approval-conditions.md`
 
 ## Documentation Update Contract
 
@@ -152,4 +154,4 @@ When architecture or execution policies change, update these instruction files i
 
 - `.github/copilot-instructions.md`
 - `agents.md`
-- `docs/design/engineering-operating-model.md`
+- `docs/engineering-operating-model.md`

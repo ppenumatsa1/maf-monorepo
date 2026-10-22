@@ -13,6 +13,7 @@ foundry:
   poll_interval: 5
   timeout: 900
   evaluators:
-    - relevance
+    - task_completion
+    - coherence
 options:
   pass_threshold: 0.8

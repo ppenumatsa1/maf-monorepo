@@ -38,7 +38,7 @@ set_default() {
   fi
 }
 
-for command in azd curl sha256sum; do
+for command in azd curl; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Missing required binary: $command" >&2
     exit 1
@@ -46,20 +46,10 @@ for command in azd curl sha256sum; do
 done
 
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
-resource_group="$(required_env AZURE_RESOURCE_GROUP)"
+required_env AZURE_RESOURCE_GROUP >/dev/null
 required_env AZURE_LOCATION >/dev/null
-name_prefix="$(required_env NAME_PREFIX)"
-normalized_prefix="$(printf '%s' "$name_prefix" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
-if [[ ${#normalized_prefix} -lt 3 || ${#normalized_prefix} -gt 20 ]]; then
-  echo "NAME_PREFIX must normalize to 3-20 lowercase alphanumeric characters." >&2
-  exit 1
-fi
-
-resource_name_suffix="$(printf '%s' "${subscription_id}/${resource_group}" | sha256sum | cut -c1-8)"
-resource_name_base="${normalized_prefix:0:12}${resource_name_suffix}"
 
 set_env INFRASTRUCTURE_MODE bootstrap
-set_env NAME_PREFIX "$normalized_prefix"
 operator_ip="$(get_env POSTGRES_OPERATOR_IP)"
 if [[ -z "$operator_ip" ]]; then
   operator_ip="$(curl --fail --silent --show-error --max-time 10 -4 https://api.ipify.org)"
@@ -69,41 +59,30 @@ if [[ ! "$operator_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
   echo "POSTGRES_OPERATOR_IP must be a public IPv4 address." >&2
   exit 1
 fi
-set_default RESOURCE_NAME_SUFFIX "$resource_name_suffix"
-set_default FOUNDRY_ACCOUNT_NAME "${resource_name_base}ai"
-set_default FOUNDRY_PROJECT_NAME order-resolution
-set_default FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$(required_env FOUNDRY_ACCOUNT_NAME)"
-set_default HOSTED_AGENT_NAME order-resolution-hosted
-set_default FOUNDRY_RUNTIME_CONNECTION_NAME orderresolutionruntimesecrets
-set_default FOUNDRY_MODEL_DEPLOYMENT_NAME order-resolution-gpt-4-1-mini
-set_default FOUNDRY_MODEL_FORMAT OpenAI
-set_default FOUNDRY_MODEL_NAME gpt-4.1-mini
-set_default FOUNDRY_MODEL_VERSION 2025-04-14
-set_default FOUNDRY_MODEL_SKU_NAME Standard
-set_default FOUNDRY_MODEL_CAPACITY 2500
-set_default FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME order-resolution-text-embedding-3-small
-set_default FOUNDRY_EMBEDDINGS_MODEL_VERSION 1
-set_default FOUNDRY_EMBEDDINGS_MODEL_CAPACITY 120
-set_default FOUNDRY_EVAL_MODEL order-resolution-gpt-4-1-mini-evaluation
-set_default FOUNDRY_EVALUATION_MODEL_CAPACITY 250
-set_default FOUNDRY_RAI_POLICY_NAME Microsoft.Default
-set_default POSTGRES_DATABASE order_resolution
-set_default POSTGRES_ADMIN_USERNAME pgadmin
-set_default POSTGRES_RUNTIME_USERNAME order_resolution_runtime
-set_default POSTGRES_SERVER_NAME "${resource_name_base}pg"
-set_default POSTGRES_SERVER_LOCATION "$(required_env AZURE_LOCATION)"
-set_default CONTAINER_REGISTRY_NAME "${resource_name_base}acr"
-set_default LOG_ANALYTICS_WORKSPACE_NAME "${resource_name_base}-log"
-set_default APPLICATION_INSIGHTS_NAME "${resource_name_base}-ai"
-set_default CONTAINER_APPS_ENVIRONMENT_NAME "${resource_name_base}-cae"
-set_default BACKEND_CONTAINER_APP_NAME "${resource_name_base}-backend"
-set_default FRONTEND_CONTAINER_APP_NAME "${resource_name_base}-frontend"
-set_default PUBLIC_BACKEND_MANAGED_IDENTITY_NAME "${resource_name_base}-backend-mi"
-set_default PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME "${resource_name_base}-frontend-mi"
-set_default BACKEND_IMAGE_REPOSITORY order-resolution-public-backend
-set_default FRONTEND_IMAGE_REPOSITORY order-resolution-public-frontend
-set_default EVALUATION_STORAGE_ACCOUNT_NAME "${resource_name_base}eval"
-set_default BOOTSTRAP_RUNTIME_DATABASE_URL bootstrap-pending
+for key in \
+  FOUNDRY_ACCOUNT_NAME FOUNDRY_PROJECT_NAME FOUNDRY_CUSTOM_SUBDOMAIN_NAME \
+  HOSTED_AGENT_NAME FOUNDRY_RUNTIME_CONNECTION_NAME \
+  FOUNDRY_MODEL_DEPLOYMENT_NAME FOUNDRY_MODEL_FORMAT FOUNDRY_MODEL_NAME \
+  FOUNDRY_MODEL_VERSION FOUNDRY_MODEL_SKU_NAME FOUNDRY_MODEL_CAPACITY \
+  FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME FOUNDRY_EMBEDDINGS_MODEL_FORMAT \
+  FOUNDRY_EMBEDDINGS_MODEL_NAME FOUNDRY_EMBEDDINGS_MODEL_VERSION \
+  FOUNDRY_EMBEDDINGS_MODEL_SKU_NAME FOUNDRY_EMBEDDINGS_MODEL_CAPACITY \
+  FOUNDRY_EVAL_MODEL FOUNDRY_EVALUATION_MODEL_FORMAT \
+  FOUNDRY_EVALUATION_MODEL_NAME FOUNDRY_EVALUATION_MODEL_VERSION \
+  FOUNDRY_EVALUATION_MODEL_SKU_NAME FOUNDRY_EVALUATION_MODEL_CAPACITY \
+  FOUNDRY_RAI_POLICY_NAME POSTGRES_DATABASE POSTGRES_ADMIN_USERNAME \
+  POSTGRES_RUNTIME_USERNAME POSTGRES_SERVER_NAME POSTGRES_SERVER_LOCATION \
+  CONTAINER_REGISTRY_NAME CONTAINER_REGISTRY_SKU_NAME \
+  LOG_ANALYTICS_WORKSPACE_NAME APPLICATION_INSIGHTS_NAME \
+  CONTAINER_APPS_ENVIRONMENT_NAME BACKEND_CONTAINER_APP_NAME \
+  FRONTEND_CONTAINER_APP_NAME PUBLIC_BACKEND_MANAGED_IDENTITY_NAME \
+  PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME BACKEND_IMAGE_REPOSITORY \
+  FRONTEND_IMAGE_REPOSITORY HOSTED_AGENT_IMAGE_REPOSITORY \
+  EVALUATION_STORAGE_ACCOUNT_NAME BOT_SERVICE_NAME BOT_SERVICE_SKU_NAME; do
+  required_env "$key" >/dev/null
+done
+required_env BOOTSTRAP_RUNTIME_DATABASE_URL >/dev/null
+required_env POSTGRES_ADMIN_PASSWORD >/dev/null
 
 echo "Prepared the selected AZD environment for portable bootstrap mode."
 echo "Set POSTGRES_ADMIN_PASSWORD and POSTGRES_HOSTED_PASSWORD securely before credential provisioning."

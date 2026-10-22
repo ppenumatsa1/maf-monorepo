@@ -1,27 +1,15 @@
 targetScope = 'subscription'
 
 @description('AZD environment name.')
-@allowed([
-  'maf-ora-azure'
-])
 param environmentName string
 
-@description('Approved Azure subscription for this deployment lane.')
-@allowed([
-  '7df95e88-701c-4693-af77-3159f83b558d'
-])
+@description('Azure subscription selected by the validated external profile.')
 param targetSubscriptionId string
 
-@description('Approved resource group for this deployment lane.')
-@allowed([
-  'rg-maf-ora-azure'
-])
+@description('Resource group selected by the validated external profile.')
 param resourceGroupName string
 
 @description('Deployment location.')
-@allowed([
-  'northcentralus'
-])
 param location string
 
 @description('Infrastructure lifecycle mode. Bootstrap creates PostgreSQL; steadyState excludes it from deployment.')
@@ -46,6 +34,15 @@ param frontendImage string = ''
 @description('Application database name.')
 param postgresDatabaseName string = 'maf_workflow'
 
+@description('PostgreSQL Flexible Server compute SKU selected by the validated external profile.')
+param postgresSkuName string = 'Standard_B1ms'
+
+@description('PostgreSQL Flexible Server compute tier selected by the validated external profile.')
+param postgresSkuTier string = 'Burstable'
+
+@description('PostgreSQL major version selected by the validated external profile.')
+param postgresVersion string = '16'
+
 @secure()
 @description('Optional MCP API key. Leave empty when MCP is not configured.')
 param mcpApiKey string = ''
@@ -59,6 +56,9 @@ param mcpServerUrl string = ''
 
 @description('Azure AI Foundry project name.')
 param foundryProjectName string = 'order-resolution'
+
+@description('Optional interactive operator principal that runs report-only Foundry evaluations.')
+param foundryEvaluationOperatorPrincipalId string = ''
 
 @description('Azure AI Foundry chat model deployment name exposed to the backend.')
 param foundryChatDeploymentName string = 'gpt-4.1-mini'
@@ -175,6 +175,7 @@ module foundry './modules/foundry.bicep' = {
   params: {
     accountName: take('${normalizedPrefix}ai${resourceSuffix}', 64)
     projectName: foundryProjectName
+    evaluationOperatorPrincipalId: foundryEvaluationOperatorPrincipalId
     location: location
     tags: commonTags
     customSubDomainName: take('${normalizedPrefix}ai${resourceSuffix}', 64)
@@ -209,6 +210,9 @@ module postgres './modules/postgres-flexible-server.bicep' = if (infrastructureM
     tags: commonTags
     databaseName: postgresDatabaseName
     bootstrapAllowedIp: validatedBootstrapAllowedIp
+    skuName: postgresSkuName
+    skuTier: postgresSkuTier
+    version: postgresVersion
   }
 }
 
@@ -258,6 +262,9 @@ var backendSecrets = concat(
     }
   ]
 )
+var backendName = 'maf-backend-${resourceSuffix}'
+var frontendName = 'maf-frontend-${resourceSuffix}'
+var frontendOrigin = 'https://${frontendName}.${containerAppsEnvironment.outputs.defaultDomain}'
 var backendEnv = concat(
   [
     {
@@ -275,6 +282,14 @@ var backendEnv = concat(
     {
       name: 'MEMORY_PROVIDER'
       value: 'postgres'
+    }
+    {
+      name: 'DB_SCHEMA_MANAGED_EXTERNALLY'
+      value: 'true'
+    }
+    {
+      name: 'FRONTEND_ORIGIN'
+      value: frontendOrigin
     }
     {
       name: 'AZURE_POSTGRES_HOST'
@@ -336,9 +351,6 @@ var backendEnv = concat(
     }
   ]
 )
-
-var backendName = 'maf-backend-${resourceSuffix}'
-var frontendName = 'maf-frontend-${resourceSuffix}'
 
 module backend './modules/container-app.bicep' = if (infrastructureMode == 'bootstrap') {
   name: 'backendContainerApp'

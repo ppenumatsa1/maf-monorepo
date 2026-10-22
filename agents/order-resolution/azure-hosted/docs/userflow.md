@@ -4,7 +4,7 @@
 
 The React UI submits requests to the FastAPI MAF application and consumes the
 native SSE stream. The same application contract is used locally and by the
-planned Container Apps deployment.
+Container Apps release contract.
 
 1. An operator submits an order issue with `POST /api/chat/run`.
 2. The UI subscribes to `GET /api/chat/stream/{thread_id}`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build least-privilege PostgreSQL credential SQL without logging secrets."""
+"""Build least-privilege PostgreSQL runtime credential SQL without logging secrets."""
 
 from __future__ import annotations
 
@@ -9,12 +9,13 @@ from urllib.parse import quote
 
 RUNTIME_TABLES = (
     "workflow_runs",
+    "responses_dispatches",
     "workflow_events",
     "conversation_messages",
     "checkpoints",
     "approvals",
+    "teams_card_actions",
     "idempotency_keys",
-    "responses_dispatches",
     "sessions",
     "eval_runs",
     "eval_results",
@@ -34,6 +35,10 @@ def qualified(names: tuple[str, ...]) -> str:
     return ", ".join(f"public.{quote_identifier(name)}" for name in names)
 
 
+def literals(names: tuple[str, ...]) -> str:
+    return ", ".join(quote_literal(name) for name in names)
+
+
 def build_provision_sql(
     database: str,
     runtime_username: str,
@@ -45,6 +50,8 @@ def build_provision_sql(
     role_literal = quote_literal(runtime_username)
     password_literal = quote_literal(hosted_password)
     admin_identifier = quote_identifier(admin_username)
+    admin_literal = quote_literal(admin_username)
+    runtime_objects = RUNTIME_TABLES + RUNTIME_SEQUENCES
     return f"""DO $provision$
 DECLARE
   granted_role name;
@@ -73,7 +80,22 @@ END
 $provision$;
 REASSIGN OWNED BY {role_identifier} TO {admin_identifier};
 DROP OWNED BY {role_identifier};
+DO $ownership$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class object
+    JOIN pg_namespace namespace ON namespace.oid = object.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND object.relname IN ({literals(runtime_objects)})
+      AND pg_get_userbyid(object.relowner) <> {admin_literal}
+  ) THEN
+    RAISE EXCEPTION 'Runtime schema objects must be owned by the administrator role.';
+  END IF;
+END
+$ownership$;
 REVOKE ALL PRIVILEGES ON DATABASE {database_identifier} FROM {role_identifier};
+REVOKE TEMPORARY ON DATABASE {database_identifier} FROM PUBLIC;
 GRANT CONNECT ON DATABASE {database_identifier} TO {role_identifier};
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON SCHEMA public FROM {role_identifier};
@@ -99,21 +121,31 @@ def build_runtime_url(
 
 def build_verification_sql(runtime_username: str) -> str:
     role_literal = quote_literal(runtime_username)
-    table_checks = "\n  ".join(
-        f"""IF NOT has_table_privilege(current_user, 'public.{table}', 'SELECT')
+    table_checks_list = []
+    for table in RUNTIME_TABLES:
+        table_checks_list.append(
+            f"""IF NOT has_table_privilege(current_user, 'public.{table}', 'SELECT')
      OR NOT has_table_privilege(current_user, 'public.{table}', 'INSERT')
      OR NOT has_table_privilege(current_user, 'public.{table}', 'UPDATE')
-     OR NOT has_table_privilege(current_user, 'public.{table}', 'DELETE') THEN
-    RAISE EXCEPTION 'Runtime credential is missing required table privileges.';
+     OR NOT has_table_privilege(current_user, 'public.{table}', 'DELETE')
+     OR has_table_privilege(current_user, 'public.{table}', 'TRUNCATE')
+     OR has_table_privilege(current_user, 'public.{table}', 'REFERENCES')
+     OR has_table_privilege(current_user, 'public.{table}', 'TRIGGER') THEN
+    RAISE EXCEPTION 'Runtime credential has invalid table privileges.';
   END IF;"""
-        for table in RUNTIME_TABLES
-    )
-    sequence_checks = "\n  ".join(
-        f"""IF NOT has_sequence_privilege(current_user, 'public.{sequence}', 'USAGE') THEN
-    RAISE EXCEPTION 'Runtime credential is missing required sequence privileges.';
+        )
+    table_checks = "\n  ".join(table_checks_list)
+
+    sequence_checks_list = []
+    for sequence in RUNTIME_SEQUENCES:
+        sequence_checks_list.append(
+            f"""IF NOT has_sequence_privilege(current_user, 'public.{sequence}', 'USAGE')
+     OR has_sequence_privilege(current_user, 'public.{sequence}', 'SELECT')
+     OR has_sequence_privilege(current_user, 'public.{sequence}', 'UPDATE') THEN
+    RAISE EXCEPTION 'Runtime credential has invalid sequence privileges.';
   END IF;"""
-        for sequence in RUNTIME_SEQUENCES
-    )
+        )
+    sequence_checks = "\n  ".join(sequence_checks_list)
     return f"""DO $verify$
 DECLARE
   role_attributes record;
@@ -134,9 +166,28 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Runtime credential has prohibited role membership.';
   END IF;
+  IF NOT has_database_privilege(current_user, current_database(), 'CONNECT')
+     OR has_database_privilege(current_user, current_database(), 'CREATE')
+     OR has_database_privilege(current_user, current_database(), 'TEMPORARY') THEN
+    RAISE EXCEPTION 'Runtime credential has invalid database privileges.';
+  END IF;
   IF NOT has_schema_privilege(current_user, 'public', 'USAGE')
-     OR has_schema_privilege(current_user, 'public', 'CREATE') THEN
+     OR has_schema_privilege(current_user, 'public', 'CREATE')
+     OR EXISTS (
+       SELECT 1 FROM pg_namespace
+       WHERE nspname = 'public'
+         AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+     ) THEN
     RAISE EXCEPTION 'Runtime credential has invalid schema privileges.';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class object
+    JOIN pg_namespace namespace ON namespace.oid = object.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND object.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+  ) THEN
+    RAISE EXCEPTION 'Runtime credential owns schema objects.';
   END IF;
   {table_checks}
   {sequence_checks}

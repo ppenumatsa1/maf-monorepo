@@ -10,8 +10,7 @@ from app.core.database import postgres_db
 
 class CheckpointStore:
     def __init__(self, _storage_dir: Path | None = None) -> None:
-        postgres_db.ensure_schema()
-        self._pool = postgres_db.get_pool()
+        self._pool = postgres_db.pool
 
     def create(self, thread_id: str, state: dict[str, Any]) -> dict[str, Any]:
         checkpoint = {

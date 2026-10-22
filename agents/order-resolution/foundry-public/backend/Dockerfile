@@ -1,4 +1,4 @@
-FROM python:3.12.4-slim-bookworm AS runtime
+FROM python:3.13-slim AS runtime
 
 WORKDIR /app
 
@@ -6,8 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements.lock ./
+COPY .wheels/ /wheels/
+RUN pip install --no-cache-dir --no-index --find-links=/wheels \
+        --require-hashes -r requirements.lock \
+    && rm -rf /wheels
 
 RUN adduser --disabled-password --gecos "" appuser
 

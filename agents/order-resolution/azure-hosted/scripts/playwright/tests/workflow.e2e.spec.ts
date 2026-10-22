@@ -52,7 +52,10 @@ test.describe("MAF workflow UI", () => {
     await page.locator("#approval-comment").fill("Approve delayed-order compensation");
     await page.getByRole("button", { name: "Approve" }).click();
 
-    await expect(outputPanel).toContainText("Resolution complete");
+    await expect(
+      outputPanel.getByText("completed", { exact: true }),
+    ).toBeVisible();
+    await expect(outputPanel).toContainText("ord-1009");
     await expect(
       page.getByText("No pending approvals.", { exact: false }),
     ).toBeVisible();
@@ -105,7 +108,9 @@ test.describe("MAF workflow UI", () => {
     await expect(
       page.getByText("workflow.output", { exact: false }),
     ).toBeVisible();
-    await expect(outputPanel).toContainText("Resolution complete");
+    await expect(
+      outputPanel.getByText("completed", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "New Run" }).click();
 
     await expect(timelinePanel).toContainText(
@@ -138,7 +143,11 @@ test.describe("MAF workflow UI", () => {
     await expect(caseCard.locator(".result-pass")).toBeVisible();
     await expect(caseCard).toContainText("Observed");
     await expect(caseCard).toContainText("HITL: false");
-    await expect(page.locator(".panel-output")).toContainText("Resolution complete");
+    await expect(
+      page
+        .locator(".panel-output")
+        .getByText("completed", { exact: true }),
+    ).toBeVisible();
   });
 
   test("reject decision escalates workflow", async ({ page }) => {

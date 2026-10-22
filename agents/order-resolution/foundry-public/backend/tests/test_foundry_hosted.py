@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import UUID
 
 import pytest
 
@@ -26,17 +25,30 @@ class _FakeTextResponse:
 class _FakeRepository:
     def __init__(self) -> None:
         self.details_by_thread: dict[str, object] = {}
+        self.origins_by_thread: dict[str, str] = {}
 
     def get_workflow_run(self, thread_id: str) -> object | None:
         return self.details_by_thread.get(thread_id)
+
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None:
+        if thread_id in self.origins_by_thread:
+            return self.origins_by_thread[thread_id]
+        return "responses" if thread_id in self.details_by_thread else None
 
 
 class _FakeService:
     def __init__(self) -> None:
         self.started: list[dict[str, str]] = []
         self.resumed: list[dict[str, str]] = []
+        self.origin_channels: list[str] = []
 
-    async def start_chat_run(self, request: object) -> object:
+    async def start_chat_run(
+        self,
+        request: object,
+        *,
+        origin_channel: str = "api",
+    ) -> object:
+        self.origin_channels.append(origin_channel)
         self.started.append(
             {
                 "thread_id": request.thread_id,  # type: ignore[attr-defined]
@@ -46,7 +58,13 @@ class _FakeService:
         )
         return SimpleNamespace(run_id="run-1", thread_id=request.thread_id)
 
-    async def respond_hitl(self, request: object) -> object:
+    async def respond_hitl(
+        self,
+        request: object,
+        *,
+        origin_channel: str = "api",
+    ) -> object:
+        self.origin_channels.append(origin_channel)
         self.resumed.append(
             {
                 "checkpoint_id": request.checkpoint_id,  # type: ignore[attr-defined]
@@ -54,6 +72,50 @@ class _FakeService:
             }
         )
         return SimpleNamespace(accepted=True, checkpoint_id=request.checkpoint_id, thread_id="C1")
+
+
+class _StatefulHitlService(_FakeService):
+    def __init__(
+        self,
+        repository: _FakeRepository,
+        checkpoint_threads: dict[str, str],
+    ) -> None:
+        super().__init__()
+        self.repository = repository
+        self.checkpoint_threads = checkpoint_threads
+
+    async def respond_hitl(
+        self,
+        request: object,
+        *,
+        origin_channel: str = "api",
+    ) -> object:
+        self.origin_channels.append(origin_channel)
+        checkpoint_id = request.checkpoint_id  # type: ignore[attr-defined]
+        decision = request.decision  # type: ignore[attr-defined]
+        self.resumed.append(
+            {
+                "checkpoint_id": checkpoint_id,
+                "decision": decision,
+            }
+        )
+        thread_id = self.checkpoint_threads[checkpoint_id]
+        self.repository.details_by_thread[thread_id] = _details(
+            thread_id=thread_id,
+            status="completed",
+            pending=[
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "status": "approved" if decision == "approve" else "rejected",
+                }
+            ],
+            output_message=f"Resumed {thread_id} with {decision}.",
+        )
+        return SimpleNamespace(
+            accepted=True,
+            checkpoint_id=checkpoint_id,
+            thread_id=thread_id,
+        )
 
 
 class _FakeSpan:
@@ -98,6 +160,130 @@ class _FakeResponsesHost:
         self.handler = handler
 
 
+class _FakeAgentApp:
+    def __init__(self) -> None:
+        self.handlers: dict[str, object] = {}
+        self.error_handler: object | None = None
+
+    def activity(self, activity_type: str):
+        def decorator(handler: object) -> object:
+            self.handlers[activity_type] = handler
+            return handler
+
+        return decorator
+
+    def error(self, handler: object) -> object:
+        self.error_handler = handler
+        return handler
+
+
+class _FakeActivityHost:
+    def __init__(self, **kwargs: object) -> None:
+        self.agent_app = _FakeAgentApp()
+        super().__init__(**kwargs)
+
+
+class _FakeActivity:
+    def __init__(self, **kwargs: object) -> None:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _FakeActivityTypes:
+    message = "message"
+    invoke_response = "invokeResponse"
+
+
+class _FakeAttachment(_FakeActivity):
+    pass
+
+
+class _FakeInvokeResponse(_FakeActivity):
+    pass
+
+
+class _FakeActivityContext:
+    def __init__(self, activity: object) -> None:
+        self.activity = activity
+        self.sent: list[object] = []
+
+    async def send_activity(self, activity: object) -> None:
+        self.sent.append(activity)
+
+
+class _FakeTeamsCardActionRepository:
+    def __init__(self) -> None:
+        self.issued: list[dict[str, object]] = []
+        self.actions: dict[str, dict[str, str]] = {}
+        self.completed: list[str] = []
+        self.released: list[str] = []
+
+    def issue_actions(self, **kwargs: object) -> dict[str, str]:
+        self.issued.append(kwargs)
+        checkpoint_id = str(kwargs["checkpoint_id"])
+        thread_id = str(kwargs["thread_id"])
+        conversation_id = str(kwargs["conversation_id"])
+        user_id = str(kwargs["user_id"])
+        tokens = {
+            "approve": f"approve-{checkpoint_id}",
+            "reject": f"reject-{checkpoint_id}",
+        }
+        batch_id = f"batch-{checkpoint_id}"
+        for decision, token in tokens.items():
+            self.actions[token] = {
+                "checkpoint_id": checkpoint_id,
+                "thread_id": thread_id,
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "decision": decision,
+                "batch_id": batch_id,
+                "status": "pending",
+            }
+        return tokens
+
+    def claim_action(
+        self,
+        *,
+        token: str,
+        decision: str,
+        conversation_id: str,
+        user_id: str,
+    ) -> object:
+        action = self.actions.get(token)
+        if action is None:
+            raise foundry_main.TeamsCardActionError("invalid_token", "invalid")
+        if action["status"] != "pending":
+            raise foundry_main.TeamsCardActionError("action_already_used", "used")
+        if action["conversation_id"] != conversation_id:
+            raise foundry_main.TeamsCardActionError("conversation_mismatch", "wrong conversation")
+        if action["user_id"] != user_id:
+            raise foundry_main.TeamsCardActionError("user_mismatch", "wrong user")
+        if action["decision"] != decision:
+            raise foundry_main.TeamsCardActionError("decision_mismatch", "wrong decision")
+        batch_id = action["batch_id"]
+        for candidate in self.actions.values():
+            if candidate["batch_id"] == batch_id and candidate["status"] == "pending":
+                candidate["status"] = "processing" if candidate is action else "superseded"
+        return SimpleNamespace(
+            checkpoint_id=action["checkpoint_id"],
+            thread_id=action["thread_id"],
+            decision=action["decision"],
+            batch_id=batch_id,
+        )
+
+    def complete_action(self, batch_id: str) -> None:
+        self.completed.append(batch_id)
+        for action in self.actions.values():
+            if action["batch_id"] == batch_id and action["status"] == "processing":
+                action["status"] = "consumed"
+
+    def release_action(self, batch_id: str) -> None:
+        self.released.append(batch_id)
+        for action in self.actions.values():
+            if action["batch_id"] == batch_id:
+                action["status"] = "pending"
+
+
 def _details(
     *,
     thread_id: str,
@@ -139,15 +325,51 @@ def _details(
     )
 
 
-def _fake_responses_types() -> tuple[
-    type[object], type[object], type[object], type[object], type[object]
-]:
+_FakeResponsesTypes = tuple[type[object], type[object], type[object], type[object], type[object]]
+
+
+def _fake_responses_types() -> _FakeResponsesTypes:
     return (
         _FakeResponsesHost,
         object,
         object,
         _FakeTextResponse,
         object,
+    )
+
+
+def _fake_activity_types() -> tuple[
+    type[object],
+    type[object],
+    type[object],
+    type[object],
+    type[object],
+]:
+    return (
+        _FakeActivityHost,
+        _FakeActivity,
+        _FakeActivityTypes,
+        _FakeAttachment,
+        _FakeInvokeResponse,
+    )
+
+
+def _incoming_activity(
+    *,
+    conversation_id: str = "teams-conversation-1",
+    user_id: str = "user-1",
+    text: str | None = None,
+    name: str | None = None,
+    value: object | None = None,
+    activity_type: str = "message",
+) -> object:
+    return SimpleNamespace(
+        type=activity_type,
+        conversation=SimpleNamespace(id=conversation_id),
+        from_property=SimpleNamespace(id=f"channel-{user_id}", aad_object_id=user_id),
+        text=text,
+        name=name,
+        value=value,
     )
 
 
@@ -166,6 +388,8 @@ def test_hosted_manifest_configures_responses_and_model_settings() -> None:
     assert "FOUNDRY_RUNTIME_DATABASE_URL:" not in manifest_text
     assert "\n            DATABASE_URL:" not in manifest_text
     assert "\n            RUNTIME_DATABASE_URL:" not in manifest_text
+    assert "- protocol: responses" in manifest_text
+    assert "- protocol: activity" in manifest_text
     assert not hasattr(foundry_main, "setup_observability")
 
 
@@ -202,11 +426,14 @@ def test_build_app_uses_foundry_managed_response_store(
 ) -> None:
     _FakeResponsesHost.instances.clear()
     monkeypatch.setattr(foundry_main, "_load_responses_types", _fake_responses_types)
+    monkeypatch.setattr(foundry_main, "_load_activity_types", _fake_activity_types)
 
     app = foundry_main._build_app()
 
     assert app is _FakeResponsesHost.instances[-1]
     assert app.store_supplied is False
+    assert set(app.agent_app.handlers) == {"message", "invoke"}
+    assert app.agent_app.error_handler is not None
 
 
 def test_runtime_database_url_override_sets_database_url_when_missing(
@@ -346,6 +573,22 @@ def test_parse_input_detects_function_call_output_decision() -> None:
     assert parsed.checkpoint_id == "cp-123"
 
 
+def test_parse_input_accepts_structured_decision_metadata() -> None:
+    parsed = foundry_main._parse_input(
+        {
+            "conversation": {"id": "C1"},
+            "metadata": {
+                "checkpoint_id": "cp-structured",
+                "decision": "reject",
+            },
+        },
+        None,
+    )
+
+    assert parsed.decision == "reject"
+    assert parsed.checkpoint_id == "cp-structured"
+
+
 def test_parse_input_extracts_message_from_context_when_payload_is_empty() -> None:
     parsed = foundry_main._parse_input(
         {},
@@ -382,7 +625,7 @@ def test_parse_input_accepts_previous_response_id_for_resume() -> None:
         None,
     )
     assert parsed.conversation_id == "resp-prev-1"
-    assert parsed.decision == "approve"
+    assert parsed.decision is None
 
 
 def test_parse_input_prefers_payload_conversation_string_over_previous_response_id() -> None:
@@ -397,12 +640,12 @@ def test_parse_input_prefers_payload_conversation_string_over_previous_response_
     assert parsed.conversation_id == "conv-456"
 
 
-def test_parse_input_extracts_conversation_id_from_context_request_metadata() -> None:
+def test_parse_input_uses_context_request_metadata_instead_of_response_id() -> None:
     parsed = foundry_main._parse_input(
         {"id": "resp-123", "input": "Resolve delayed order ORD-1009"},
         SimpleNamespace(request_body={"metadata": {"conversation_id": "conv-meta-1"}}),
     )
-    assert parsed.conversation_id == "resp-123"
+    assert parsed.conversation_id == "conv-meta-1"
 
 
 def test_parse_input_prefers_context_request_metadata_over_context_id() -> None:
@@ -412,8 +655,7 @@ def test_parse_input_prefers_context_request_metadata_over_context_id() -> None:
             id="resp-999", request_body={"metadata": {"conversation_id": "conv-meta-2"}}
         ),
     )
-    # Strict responses-native mode no longer uses metadata/context.id fallback.
-    UUID(parsed.conversation_id)
+    assert parsed.conversation_id == "conv-meta-2"
 
 
 def test_parse_input_uses_payload_conversation_id_when_present() -> None:
@@ -428,7 +670,7 @@ def test_parse_input_uses_payload_conversation_id_when_present() -> None:
     assert parsed.conversation_id == "conv-123"
 
 
-def test_parse_input_detects_approval_from_nested_value_shapes() -> None:
+def test_parse_input_does_not_infer_approval_from_nested_text() -> None:
     parsed = foundry_main._parse_input(
         {
             "conversation": {"id": "conv-approve-1"},
@@ -442,17 +684,86 @@ def test_parse_input_detects_approval_from_nested_value_shapes() -> None:
         None,
     )
     assert parsed.message == "Approve"
-    assert parsed.decision == "approve"
+    assert parsed.decision is None
 
 
-def test_parse_input_detects_approval_from_serialized_context_input() -> None:
+def test_parse_input_does_not_infer_approval_from_serialized_context_input() -> None:
     context = SimpleNamespace(
         conversation_id="conv-approve-2",
         input="{'conversation': {'id': 'conv-approve-2'}, 'input': 'Approve'}",
     )
     parsed = foundry_main._parse_input({}, context)
     assert parsed.conversation_id == "conv-approve-2"
+    assert parsed.decision is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Approve",
+        "  approved  ",
+        "\nYES!\t",
+        "Reject",
+        "  ReJeCtEd.  ",
+        "\tno?\n",
+        "Do not approve this refund",
+        "No refund; send a replacement",
+    ],
+)
+def test_parse_input_never_infers_decision_from_free_form_text(message: str) -> None:
+    parsed = foundry_main._parse_input(
+        {
+            "conversation": {"id": "conversation-1"},
+            "input": [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": message}],
+                }
+            ],
+        },
+        None,
+    )
+
+    assert parsed.message == message.strip()
+    assert parsed.decision is None
+
+
+def test_parse_input_extracts_function_call_output_from_context_request_body() -> None:
+    parsed = foundry_main._parse_input(
+        {"conversation": {"id": "C3"}},
+        SimpleNamespace(
+            request_body={
+                "input": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": "cp-456",
+                        "output": "approve",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert parsed.conversation_id == "C3"
     assert parsed.decision == "approve"
+    assert parsed.checkpoint_id == "cp-456"
+
+
+def test_parse_input_extracts_function_call_output_from_resolved_context_items() -> None:
+    parsed = foundry_main._parse_input(
+        {"conversation": {"id": "C4"}},
+        None,
+        input_items=[
+            {
+                "type": "function_call_output",
+                "call_id": "cp-789",
+                "output": "reject",
+            }
+        ],
+    )
+
+    assert parsed.decision == "reject"
+    assert parsed.checkpoint_id == "cp-789"
 
 
 def test_parse_input_resume_hitl_without_decision_does_not_auto_approve() -> None:
@@ -461,6 +772,280 @@ def test_parse_input_resume_hitl_without_decision_does_not_auto_approve() -> Non
         None,
     )
     assert parsed.decision is None
+
+
+@pytest.mark.asyncio
+async def test_activity_message_emits_secure_pending_approval_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _FakeRepository()
+    repo.details_by_thread["teams-conversation-1"] = _details(
+        thread_id="teams-conversation-1",
+        status="waiting_approval",
+        pending=[
+            {
+                "checkpoint_id": "cp-card-1",
+                "status": "pending",
+                "action": "issue_partial_refund",
+            }
+        ],
+    )
+    service = _FakeService()
+    card_repo = _FakeTeamsCardActionRepository()
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+    monkeypatch.setattr(foundry_main, "teams_card_action_repository", card_repo)
+    monkeypatch.setattr(foundry_main, "get_tracer", lambda _: _FakeTracer())
+
+    context = _FakeActivityContext(_incoming_activity(text="Resolve delayed order ORD-1001"))
+    await foundry_main._run_from_activity_message(
+        context,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        attachment_type=_FakeAttachment,
+    )
+
+    assert service.started == [
+        {
+            "thread_id": "teams-conversation-1",
+            "session_id": "teams-conversation-1",
+            "message": "Resolve delayed order ORD-1001",
+        }
+    ]
+    assert service.origin_channels == ["teams_activity"]
+    assert card_repo.issued[0]["checkpoint_id"] == "cp-card-1"
+    sent = context.sent[0]
+    assert sent.type == "message"
+    assert sent.text == "Approval required."
+    card = sent.attachments[0].content
+    assert [action["title"] for action in card["actions"]] == ["Approve", "Reject"]
+    assert card["actions"][0]["data"] == {"token": "approve-cp-card-1"}
+    assert card["actions"][1]["data"] == {"token": "reject-cp-card-1"}
+    assert "checkpoint" not in json.dumps(card["actions"]).lower()
+    assert "ord-1001" not in json.dumps(card).lower()
+
+
+@pytest.mark.asyncio
+async def test_activity_card_uses_m365_attachment_alias() -> None:
+    from microsoft_agents.activity import Attachment
+
+    context = _FakeActivityContext(_incoming_activity(text="test"))
+    card = {"type": "AdaptiveCard", "version": "1.5"}
+
+    await foundry_main._send_activity_card(
+        context,
+        card=card,
+        text="Approval required.",
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        attachment_type=Attachment,
+    )
+
+    attachment = context.sent[0].attachments[0]
+    assert attachment.content_type == foundry_main.teams_cards.ADAPTIVE_CONTENT_TYPE
+    assert attachment.content == card
+
+
+@pytest.mark.asyncio
+async def test_activity_typed_decision_does_not_resume_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _FakeService()
+    repo = _FakeRepository()
+    repo.details_by_thread["teams-conversation-1"] = _details(
+        thread_id="teams-conversation-1",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-card-1", "status": "pending"}],
+    )
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    context = _FakeActivityContext(_incoming_activity(text="Approve"))
+
+    await foundry_main._run_from_activity_message(
+        context,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        attachment_type=_FakeAttachment,
+    )
+
+    assert service.started == []
+    assert service.resumed == []
+    assert context.sent == ["Use the pending approval card to submit a decision."]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("decision", "verb", "resolved_status"),
+    [
+        ("approve", foundry_main.teams_cards.APPROVE_VERB, "Approved"),
+        ("reject", foundry_main.teams_cards.REJECT_VERB, "Rejected"),
+    ],
+)
+async def test_activity_card_decision_resumes_exact_checkpoint_and_updates_card(
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    verb: str,
+    resolved_status: str,
+) -> None:
+    repo = _FakeRepository()
+    repo.details_by_thread["teams-conversation-1"] = _details(
+        thread_id="teams-conversation-1",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-card-1", "status": "pending"}],
+    )
+    service = _StatefulHitlService(repo, {"cp-card-1": "teams-conversation-1"})
+    card_repo = _FakeTeamsCardActionRepository()
+    tokens = card_repo.issue_actions(
+        thread_id="teams-conversation-1",
+        checkpoint_id="cp-card-1",
+        conversation_id="teams-conversation-1",
+        user_id="user-1",
+        ttl_seconds=60,
+    )
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+    monkeypatch.setattr(foundry_main, "teams_card_action_repository", card_repo)
+    monkeypatch.setattr(foundry_main, "get_tracer", lambda _: _FakeTracer())
+    context = _FakeActivityContext(
+        _incoming_activity(
+            name=foundry_main.teams_cards.ADAPTIVE_ACTION_INVOKE,
+            value={
+                "action": {
+                    "verb": verb,
+                    "data": {"token": tokens[decision]},
+                }
+            },
+            activity_type="invoke",
+        )
+    )
+
+    await foundry_main._run_from_activity_invoke(
+        context,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        invoke_response_type=_FakeInvokeResponse,
+    )
+
+    assert service.resumed == [{"checkpoint_id": "cp-card-1", "decision": decision}]
+    assert service.origin_channels == ["teams_activity"]
+    assert card_repo.completed == ["batch-cp-card-1"]
+    invoke = context.sent[0]
+    assert invoke.type == "invokeResponse"
+    assert invoke.value.status == 200
+    assert invoke.value.body["statusCode"] == 200
+    assert invoke.value.body["value"]["body"][0]["text"] == resolved_status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("conversation_id", "user_id", "error_code"),
+    [
+        ("teams-conversation-2", "user-1", "conversation_mismatch"),
+        ("teams-conversation-1", "user-2", "user_mismatch"),
+    ],
+)
+async def test_activity_card_action_rejects_wrong_user_or_conversation(
+    monkeypatch: pytest.MonkeyPatch,
+    conversation_id: str,
+    user_id: str,
+    error_code: str,
+) -> None:
+    service = _FakeService()
+    card_repo = _FakeTeamsCardActionRepository()
+    tokens = card_repo.issue_actions(
+        thread_id="teams-conversation-1",
+        checkpoint_id="cp-card-1",
+        conversation_id="teams-conversation-1",
+        user_id="user-1",
+        ttl_seconds=60,
+    )
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+    monkeypatch.setattr(foundry_main, "teams_card_action_repository", card_repo)
+    monkeypatch.setattr(foundry_main, "get_tracer", lambda _: _FakeTracer())
+    context = _FakeActivityContext(
+        _incoming_activity(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            name=foundry_main.teams_cards.ADAPTIVE_ACTION_INVOKE,
+            value={
+                "action": {
+                    "verb": foundry_main.teams_cards.REJECT_VERB,
+                    "data": {"token": tokens["reject"]},
+                }
+            },
+            activity_type="invoke",
+        )
+    )
+
+    await foundry_main._run_from_activity_invoke(
+        context,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        invoke_response_type=_FakeInvokeResponse,
+    )
+
+    assert service.resumed == []
+    assert context.sent[0].value.body["statusCode"] == 403
+    assert context.sent[0].value.body["value"]["code"] == error_code
+
+
+@pytest.mark.asyncio
+async def test_activity_card_action_replay_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _FakeRepository()
+    repo.details_by_thread["teams-conversation-1"] = _details(
+        thread_id="teams-conversation-1",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-card-1", "status": "pending"}],
+    )
+    service = _StatefulHitlService(repo, {"cp-card-1": "teams-conversation-1"})
+    card_repo = _FakeTeamsCardActionRepository()
+    tokens = card_repo.issue_actions(
+        thread_id="teams-conversation-1",
+        checkpoint_id="cp-card-1",
+        conversation_id="teams-conversation-1",
+        user_id="user-1",
+        ttl_seconds=60,
+    )
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+    monkeypatch.setattr(foundry_main, "teams_card_action_repository", card_repo)
+    monkeypatch.setattr(foundry_main, "get_tracer", lambda _: _FakeTracer())
+
+    def context() -> _FakeActivityContext:
+        return _FakeActivityContext(
+            _incoming_activity(
+                name=foundry_main.teams_cards.ADAPTIVE_ACTION_INVOKE,
+                value={
+                    "action": {
+                        "verb": foundry_main.teams_cards.APPROVE_VERB,
+                        "data": {"token": tokens["approve"]},
+                    }
+                },
+                activity_type="invoke",
+            )
+        )
+
+    first = context()
+    replay = context()
+    await foundry_main._run_from_activity_invoke(
+        first,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        invoke_response_type=_FakeInvokeResponse,
+    )
+    await foundry_main._run_from_activity_invoke(
+        replay,
+        activity_type=_FakeActivity,
+        activity_types=_FakeActivityTypes,
+        invoke_response_type=_FakeInvokeResponse,
+    )
+
+    assert service.resumed == [{"checkpoint_id": "cp-card-1", "decision": "approve"}]
+    assert first.sent[0].value.body["statusCode"] == 200
+    assert replay.sent[0].value.body["statusCode"] == 409
+    assert replay.sent[0].value.body["value"]["code"] == "action_already_used"
 
 
 @pytest.mark.asyncio
@@ -491,6 +1076,7 @@ async def test_run_from_responses_starts_workflow_and_returns_serialized_events(
             "message": "Resolve delayed order ORD-1001",
         }
     ]
+    assert service.origin_channels == ["responses"]
     assert payload["thread_id"] == "C1"
     assert payload["status"] == "completed"
     assert any(event["type"] == "tool.call" for event in payload["events"])
@@ -522,6 +1108,7 @@ async def test_run_from_responses_resumes_pending_approval(
     )
 
     assert service.resumed == [{"checkpoint_id": "cp-123", "decision": "approve"}]
+    assert service.origin_channels == ["responses"]
     span = tracer.spans[0]
     assert span.name == "foundry.responses.invoke"
     assert span.attributes["workflow.thread_id"] == "C1"
@@ -535,11 +1122,120 @@ async def test_run_from_responses_resumes_pending_approval(
 
 
 @pytest.mark.asyncio
+async def test_run_from_responses_treats_approval_words_as_normal_messages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _FakeRepository()
+    service = _FakeService()
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+
+    response = await foundry_main._run_from_responses(
+        {
+            "conversation": {"id": "conversation-none"},
+            "input": "  APPROVED!  ",
+        },
+        None,
+        _FakeTextResponse,
+    )
+
+    payload = json.loads(response.text)
+    assert payload["message"] == "Workflow run not found."
+    assert service.started == [
+        {
+            "thread_id": "conversation-none",
+            "session_id": "conversation-none",
+            "message": "APPROVED!",
+        }
+    ]
+    assert service.resumed == []
+
+
+@pytest.mark.asyncio
+async def test_run_from_responses_cannot_resume_teams_activity_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _FakeRepository()
+    service = _FakeService()
+    repo.details_by_thread["teams-conversation-1"] = _details(
+        thread_id="teams-conversation-1",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-teams-1", "status": "pending"}],
+    )
+    repo.origins_by_thread["teams-conversation-1"] = "teams_activity"
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+
+    response = await foundry_main._run_from_responses(
+        {
+            "conversation": {"id": "teams-conversation-1"},
+            "input": [
+                {
+                    "type": "function_call_output",
+                    "call_id": "cp-teams-1",
+                    "output": "approve",
+                }
+            ],
+        },
+        None,
+        _FakeTextResponse,
+    )
+
+    payload = json.loads(response.text)
+    assert payload["message"] == "Use the pending approval card to submit a decision."
+    assert service.resumed == []
+
+
+@pytest.mark.asyncio
+async def test_run_from_responses_does_not_resume_checkpoint_from_another_conversation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _FakeRepository()
+    service = _FakeService()
+    repo.details_by_thread["conversation-a"] = _details(
+        thread_id="conversation-a",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-a", "status": "pending"}],
+    )
+    repo.details_by_thread["conversation-b"] = _details(
+        thread_id="conversation-b",
+        status="waiting_approval",
+        pending=[{"checkpoint_id": "cp-b", "status": "pending"}],
+    )
+    monkeypatch.setattr(foundry_main, "workflow_run_repository", repo)
+    monkeypatch.setattr(foundry_main, "order_resolution_service", service)
+
+    response = await foundry_main._run_from_responses(
+        {
+            "conversation": {"id": "conversation-a"},
+            "input": [
+                {
+                    "type": "function_call_output",
+                    "call_id": "cp-b",
+                    "output": "approve",
+                }
+            ],
+        },
+        None,
+        _FakeTextResponse,
+    )
+
+    payload = json.loads(response.text)
+    assert payload["message"] == "No pending approval found for this conversation."
+    assert service.resumed == []
+
+
+@pytest.mark.asyncio
 async def test_run_from_responses_records_exception_on_root_span(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FailingService:
-        async def start_chat_run(self, request: object) -> object:
+        async def start_chat_run(
+            self,
+            request: object,
+            *,
+            origin_channel: str = "api",
+        ) -> object:
             raise RuntimeError("boom")
 
     tracer = _FakeTracer()

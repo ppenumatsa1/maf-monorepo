@@ -23,6 +23,11 @@ are not evidence of a currently live endpoint, deployment, trace, or
 evaluation result. Recorded release evidence belongs in
 [issues-changes-fixes.md](issues-changes-fixes.md).
 
+The current parity implementation is present in source with focused local
+contract coverage. Reviewed Azure infrastructure/application deployment,
+Responses and Teams acceptance, evaluation, telemetry, rollback, and aggregate
+evidence remain pending.
+
 ## Business Problem
 
 Support teams need to resolve delivery and product issues quickly while keeping
@@ -146,6 +151,10 @@ deterministic policy and HITL decision.
   access behind ports.
 - PostgreSQL is the application-owned source of durable workflow/audit state;
   the Foundry conversation is a separate Foundry-managed conversation identity.
+- The hosted process exposes Responses for browser/programmatic traffic and
+  Activity for Teams without introducing a second workflow. Workflow origin is
+  server-selected and approval decisions cannot cross API, Responses, or Teams
+  boundaries.
 
 ## Process View
 
@@ -274,6 +283,11 @@ The wrapper and hosted agent are separate processes. Consequently, wrapper
 mode tails persisted `workflow_events` for native SSE instead of relying on
 the local in-memory event bus.
 
+For Teams, the Activity adapter uses the Teams conversation as the workflow
+thread. A waiting approval produces a privacy-minimized Adaptive Card with
+opaque approve/reject tokens. PostgreSQL stores only hashes and uses one atomic
+batch claim so competing card actions cannot both resume the checkpoint.
+
 ## Development View
 
 There is one business workflow implementation and one application service
@@ -305,6 +319,7 @@ flowchart TD
 | MAF workflow | `backend/app/maf/*` | Prompts, agents, tools, sequential triage, policy retrieval, resolution, HITL, runner, and middleware. |
 | Adapters | `backend/app/infrastructure/*` | PostgreSQL repositories, checkpoint/session/idempotency stores, MCP/RAG, Foundry Responses client, and event bus. |
 | Foundry host | `backend/foundry/main.py` | Responses protocol parsing, invocation tracing, and construction of the same hosted MAF path. |
+| Teams cards | `backend/foundry/teams_cards.py` and `backend/app/infrastructure/persistence/teams_card_action_repository.py` | Privacy-minimized Adaptive Cards, hashed action bindings, and atomic claim/replay protection. |
 | Browser UI | `frontend/src/*` | React timeline, approval panel, optional selected-thread AG-UI, and CopilotKit presentation. |
 
 `RUNTIME_TARGET=local_maf` runs the workflow from FastAPI for local validation.
@@ -409,6 +424,11 @@ configuration through the project-scoped `orderresolutionruntimesecrets`
 connection placeholder, not the resolved PostgreSQL URL. No direct
 browser-to-Foundry or browser-to-PostgreSQL path is part of this design.
 
+Microsoft Teams reaches the same hosted process through Azure Bot Service,
+`MsTeamsChannel`, and the Foundry Activity endpoint. The public Teams IaC adds
+Bot/channel diagnostics only; it does not add a VNet, private endpoint,
+private runner, direct browser backend ingress, or alternate workflow.
+
 ### Durable Stores and Recovery
 
 PostgreSQL is the durable application store:
@@ -419,6 +439,7 @@ PostgreSQL is the durable application store:
 | `workflow_events` | Append-only ordered native timeline used by history and durable SSE. |
 | `conversation_messages` and `sessions` | Thread transcript and session association. |
 | `checkpoints` and `approvals` | Durable HITL state, reviewer decision, comments, and audit timestamps. |
+| `teams_card_actions` | Hashed, expiring, channel-bound approve/reject action batches and atomic claim state. |
 | `idempotency_keys` | One-time resolution submission protection. |
 | `responses_dispatches` | Wrapper request-hash/idempotency lifecycle and resolved Foundry conversation thread. |
 | `eval_runs` and `eval_results` | Local evaluation records. |
@@ -456,6 +477,12 @@ Insights connection. Release validation must wait for the configured trace age
 and evaluate the fresh hosted E2E conversations; source configuration alone is
 not trace evidence.
 
+FastAPI uses lifespan for schema validation and pool shutdown. Hosted
+PostgreSQL pools default to minimum `0`, maximum `2`, and idle retirement after
+`30` seconds. Production sets `DB_SCHEMA_MANAGED_EXTERNALLY=true`; startup
+validates required schema objects while administrator-only tooling owns DDL
+and grants the runtime only required table DML and sequence usage.
+
 ## Scenarios (+1 View)
 
 The scenario view demonstrates how the four structural views work together.
@@ -469,6 +496,7 @@ PostgreSQL projections; it does not introduce a separate orchestration path.
 | Damaged item, rejected | Damaged-item policy requires human review; the reviewer rejects the proposed action. | The checkpoint resolves once and the workflow records rejection without invoking the side-effecting resolution submission. | Durable event history ends in `escalated`; the approval audit identifies the reviewer and decision. |
 | Hosted wrapper restart or reconnect | The browser request remains tied to one Foundry conversation/thread and durable run state. | The wrapper replays/tails `workflow_events` from PostgreSQL rather than depending on an in-memory event bus. | The operator can reload history and native SSE without duplicate dispatch or loss of a pending approval. |
 | Selected-thread assistance | The assistant may explain lifecycle state but cannot decide or perform a resolution. | AG-UI and CopilotKit read the persisted, allowlisted projection only. | The UI receives safe labels, status, checkpoint summaries, and generic output; raw order/policy/MCP/RAG/checkpoint data remains server-side. |
+| Teams approval race | A Teams-origin checkpoint accepts only its bound Adaptive Card action. | One token is claimed atomically and its sibling is superseded; wrong-user/conversation, replay, and cross-channel attempts fail before resume. | The winning invoke replaces the pending card with a resolved card; at most one terminal workflow decision occurs. |
 
 ## Execution Surfaces and Release Behavior
 
@@ -477,7 +505,7 @@ The supported execution surfaces are:
 1. **Local full stack:** React, FastAPI, native SSE, and PostgreSQL, used for
    authoritative UI/API/event-contract validation.
 2. **Public Foundry hosted agent:** `backend/foundry/main.py` packaged by
-   `backend/Dockerfile.hosted`, serving the Responses protocol.
+   `backend/Dockerfile.hosted`, serving Responses plus additive Activity.
 3. **Public browser path:** external frontend Container App, internal FastAPI
    wrapper Container App, Foundry Responses, and shared PostgreSQL durable
    state.
@@ -487,7 +515,7 @@ from an operator workstation through:
 
 ```bash
 make foundry-profile-apply \
-  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+  FOUNDRY_DEPLOYMENT_PROFILE=deployment/profiles/foundry-public.env
 make foundry-bootstrap
 make foundry-release
 ```
@@ -499,6 +527,12 @@ converges the hosted identity's account-scoped runtime role, then runs exact
 deployment verification, smoke, three-conversation hosted E2E, trace
 evaluation, Application Insights verification, and aggregate evidence. It
 reuses the selected target and does not automatically provision infrastructure.
+
+The change router never upgrades deployment authority automatically. An
+infrastructure change blocks the routine release and requires a reviewed
+full-infrastructure preview/apply. Routine reuse additionally requires a
+fresh preview with zero create/update/delete/replace operations and zero
+incremental capacity.
 
 Provisioning is separate. In bootstrap mode `make foundry-provision` creates
 the complete Foundry/account/project/models, ACR, monitoring, Container Apps,

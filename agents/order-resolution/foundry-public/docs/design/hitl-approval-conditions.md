@@ -5,7 +5,8 @@ This document defines the exact conditions that trigger human approval (`hitl.re
 ## Journey Context (Local MAF -> Public Foundry-hosted)
 
 - Local FastAPI host runs the shared MAF workflow.
-- Public Foundry-hosted Responses entrypoint runs the same workflow.
+- Public Foundry-hosted Responses and Teams Activity entrypoints run the same
+  workflow in one hosted process.
 - The public frontend uses the same stable API/SSE contract through an internal
   FastAPI wrapper, which resumes the Foundry conversation using the checkpoint ID.
 - Therefore, the trigger behavior below is the shared production contract across hosts.
@@ -93,6 +94,25 @@ For HITL-required scenarios:
   - only one `hitl.response`
   - only one terminal `workflow.output`
 
+## Decision authorization
+
+- The server persists the workflow origin as `api`, `responses`, or
+  `teams_activity`; request payloads cannot select or override it.
+- Responses decisions require structured metadata or a checkpoint-keyed
+  `function_call_output`. Text such as `yes`, `no`, `approve`, or `reject` is
+  always treated as conversation text.
+- A Responses turn can resume only a pending checkpoint belonging to the same
+  Responses conversation. API and Teams card actions cannot cross that
+  boundary.
+- Teams card actions use opaque hashed tokens bound to the Teams-origin
+  workflow, checkpoint, decision, user, and conversation. Approve and Reject
+  are one batch: an atomic claim marks one action `processing` and its sibling
+  `superseded`; completion consumes the winner, while release restores the
+  batch only if the approval is still pending.
+- Teams cards expose only the proposed action label and opaque tokens. They do
+  not expose order/customer details, checkpoint IDs, workflow state, user IDs,
+  or conversation IDs. A successful invoke returns a resolved replacement card.
+
 For non-HITL scenarios:
 
 - No `hitl.request` event
@@ -100,12 +120,14 @@ For non-HITL scenarios:
 
 ## Public-lane boundary
 
-The released v15 public lane preserves these trigger rules and
-checkpoint-keyed, idempotent resume semantics. The native timeline remains the
-operator contract. The optional AG-UI and CopilotKit selected-thread views are
-read-only redacted projections: they may show that approval is pending or
-resolved, but cannot submit a decision and never receive order, policy,
-MCP/RAG, prompt, reviewer-comment, or checkpoint-state payloads.
+The current public-lane source preserves these trigger rules and
+checkpoint-keyed, idempotent resume semantics across API, Responses, and Teams
+Activity. Source and local tests do not prove a current Azure deployment. The
+native timeline remains the operator contract. The optional AG-UI and
+CopilotKit selected-thread views are read-only redacted projections: they may
+show that approval is pending or resolved, but cannot submit a decision and
+never receive order, policy, MCP/RAG, prompt, reviewer-comment, or
+checkpoint-state payloads.
 
 The checkpoint stores sanitized trace context so the public approval request
 can restore correlation for `workflow.hitl_resume`; that internal context is

@@ -11,6 +11,8 @@ changed_files="$(printf '%s\n%s\n' "$tracked_changes" "$untracked_changes" | sed
 
 if [[ -z "$changed_files" ]]; then
   echo "deploy_mode=app_only"
+  echo "release_authority=app_only"
+  echo "release_permitted=true"
   echo "validation_mode=quick"
   echo "infrastructure_reconciliation=not_requested"
   echo "reason=no_changed_files"
@@ -18,15 +20,28 @@ if [[ -z "$changed_files" ]]; then
 fi
 
 if grep -Eq '^infra/' <<<"$changed_files"; then
+  if [[ "${FOUNDRY_INFRA_RECONCILED:-}" == "true" ]]; then
+    echo "deploy_mode=app_only"
+    echo "release_authority=app_only"
+    echo "release_permitted=true"
+    echo "validation_mode=full"
+    echo "infrastructure_reconciliation=reviewed_applied"
+    echo "reason=infrastructure_change_was_explicitly_reconciled"
+    exit 0
+  fi
   echo "deploy_mode=app_only"
+  echo "release_authority=full_infra"
+  echo "release_permitted=false"
   echo "validation_mode=full"
   echo "infrastructure_reconciliation=required"
   echo "reason=infrastructure_change_requires_explicit_reconciliation"
   exit 0
 fi
 
-if grep -Eq '^(Makefile|scripts/|\.azure/|docker-compose\.yml|backend/Dockerfile(\.hosted)?|frontend/Dockerfile|frontend/nginx\.conf|pyproject\.toml|backend/requirements(\-dev)?\.txt|frontend/package(-lock)?\.json|\.env\.example|\.github/workflows/|backend/|frontend/)' <<<"$changed_files"; then
+if grep -Eq '^(Makefile|scripts/|deployment/|\.azure/|docker-compose\.yml|backend/Dockerfile(\.hosted)?|frontend/Dockerfile|frontend/nginx\.conf|pyproject\.toml|backend/requirements(\-dev)?\.txt|frontend/package(-lock)?\.json|\.env\.example|\.github/workflows/|backend/|frontend/)' <<<"$changed_files"; then
   echo "deploy_mode=app_only"
+  echo "release_authority=app_only"
+  echo "release_permitted=true"
   echo "validation_mode=full"
   echo "infrastructure_reconciliation=not_requested"
   echo "reason=runtime_or_package_surface_changed"
@@ -34,6 +49,8 @@ if grep -Eq '^(Makefile|scripts/|\.azure/|docker-compose\.yml|backend/Dockerfile
 fi
 
 echo "deploy_mode=app_only"
+echo "release_authority=app_only"
+echo "release_permitted=true"
 echo "validation_mode=quick"
 echo "infrastructure_reconciliation=not_requested"
 echo "reason=non_runtime_change"

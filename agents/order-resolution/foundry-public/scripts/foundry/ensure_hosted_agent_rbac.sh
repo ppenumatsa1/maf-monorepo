@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 ROLE_NAME="Cognitive Services OpenAI User"
+MODE="${1:-apply}"
+[[ "$MODE" == "apply" || "$MODE" == "verify" ]] || {
+  echo "Usage: $0 [apply|verify]" >&2
+  exit 2
+}
 
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -13,8 +18,14 @@ require_bin() {
 }
 
 get_env() {
-  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
-    azd env get-value "$1" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null || true
+  local value
+  if ! value="$(
+    AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+      azd env get-value "$1" --cwd "$FOUNDRY_DIR" --no-prompt 2>/dev/null
+  )"; then
+    return 0
+  fi
+  printf '%s' "$value"
 }
 
 required_env() {
@@ -35,14 +46,13 @@ require_bin jq
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
 foundry_account="$(required_env FOUNDRY_ACCOUNT_NAME)"
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Hosted-agent RBAC convergence requires the canonical public target." >&2
-  exit 1
-}
 principal_id="${HOSTED_AGENT_PRINCIPAL_ID:-$(get_env AGENT_ORDER_RESOLUTION_HOSTED_PRINCIPAL_ID)}"
 [[ -n "$principal_id" ]] || {
   echo "Hosted-agent principal ID is required for RBAC convergence." >&2
+  exit 1
+}
+[[ "$principal_id" =~ ^[0-9a-fA-F-]{36}$ ]] || {
+  echo "Hosted-agent principal ID must be a GUID." >&2
   exit 1
 }
 
@@ -82,6 +92,10 @@ for attempt in $(seq 1 "${FOUNDRY_RBAC_MAX_ATTEMPTS:-18}"); do
     echo "HOSTED_AGENT_RBAC_SCOPE=$scope"
     echo "Hosted-agent RBAC converged at the Foundry account scope."
     exit 0
+  fi
+  if [[ "$MODE" == "verify" ]]; then
+    echo "Required hosted-agent RBAC is absent; app-only releases cannot create role assignments." >&2
+    exit 1
   fi
   set +e
   create_output="$(

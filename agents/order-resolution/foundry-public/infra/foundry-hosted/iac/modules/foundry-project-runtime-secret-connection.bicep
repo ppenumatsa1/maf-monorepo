@@ -8,7 +8,7 @@ param projectName string
 param location string
 
 @description('Deterministic project connection name for hosted runtime secrets.')
-param runtimeConnectionName string = 'orderresolutionruntimesecrets'
+param runtimeConnectionName string
 
 @secure()
 @description('Hosted runtime PostgreSQL URL stored as the database_url custom key.')

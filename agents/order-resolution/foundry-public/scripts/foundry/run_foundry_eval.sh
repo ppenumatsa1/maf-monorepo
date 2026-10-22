@@ -101,4 +101,32 @@ wait_for_fresh_e2e_evidence() {
 wait_for_fresh_e2e_evidence
 
 cd "$ROOT_DIR/backend"
-exec "$ROOT_DIR/backend/.venv/bin/python" -m evals.foundry_eval_runner
+report_file="$(
+  realpath -m "${FOUNDRY_EVAL_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/foundry-report.json}"
+)"
+max_attempts="${FOUNDRY_EVAL_ERROR_RETRY_ATTEMPTS:-3}"
+retry_seconds="${FOUNDRY_EVAL_ERROR_RETRY_SECONDS:-15}"
+
+for attempt in $(seq 1 "$max_attempts"); do
+  set +e
+  "$ROOT_DIR/backend/.venv/bin/python" -m evals.foundry_eval_runner
+  result=$?
+  set -e
+  [[ "$result" -eq 0 ]] && exit 0
+
+  if [[ "$attempt" -lt "$max_attempts" && -f "$report_file" ]] &&
+    jq -e '
+      (.run_details.per_testing_criteria_results // []) as $results
+      | ($results | length) > 0
+      and ([$results[] | (.failed // 0)] | add) == 0
+      and ([$results[] | (.errored // 0)] | add) > 0
+    ' "$report_file" >/dev/null; then
+    echo "Foundry evaluation had evaluator errors but no quality failures; retrying (${attempt}/${max_attempts})."
+    sleep "$retry_seconds"
+    continue
+  fi
+
+  exit "$result"
+done
+
+exit 1

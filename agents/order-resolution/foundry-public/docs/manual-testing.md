@@ -58,16 +58,14 @@ Run the authenticated release sequence:
 make foundry-release
 ```
 
-It covers ORD-1001, ORD-1009 approval, damaged-item rejection, and duplicate
-HITL response behavior. Conversation evidence is written to
+It covers ORD-1001, ORD-1009 approval, damaged-item approval/resume, and
+duplicate HITL response behavior. Conversation evidence is written to
 `backend/.foundry/results/hosted-e2e-evidence.json`.
 
-The released v15 ledger records a replacement smoke, hosted Responses E2E
-generated at `2026-08-07T00:23:59Z`, a matching completed two-conversation
-trace evaluation, and telemetry correlation with zero exceptions. The concrete
-conversation and evaluation identifiers are intentionally maintained in
-[issues-changes-fixes.md](design/issues-changes-fixes.md). Treat that entry as
-historical evidence; run the gates again after a deployment-affecting change.
+Historical release entries remain in
+[issues-changes-fixes.md](design/issues-changes-fixes.md). They do not validate
+the current parity source. Run the complete live gate chain again after the
+reviewed infrastructure/app deployment.
 
 Verify the configured deployed frontend uses the same-origin API proxy and
 validates the complete UI contract with:
@@ -82,3 +80,12 @@ the Foundry Responses endpoint or backend FQDN directly. Before invoking an
 authenticated release, follow the existing-resource, app-only safety checks in
 [deployment-plan.md](../.azure/deployment-plan.md); do not infer a current
 endpoint from repository configuration alone.
+
+For Teams, credential-free tests can validate endpoint merge behavior,
+publication/package structure, Bot/Teams Bicep shape, Adaptive Card
+approve/reject, wrong-user/conversation, replay, resolved-card replacement,
+and atomic competing claims. Live testing additionally requires the reviewed
+Bot deployment, Activity reconciliation, Shared publication, authorized and
+unauthorized invocations, diagnostics, and rollback review. Do not record
+tenant, user, subscription, resource, endpoint, token, or customer identifiers
+in tracked documentation.

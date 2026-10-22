@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -n "${FOUNDRY_DEPLOY_MODE:-}" ]]; then
+  echo "FOUNDRY_DEPLOY_MODE is no longer supported; automatic releases are app_only." >&2
+  exit 1
+fi
+if [[ "${FOUNDRY_FULL_INFRA_AUTHORIZED:-}" == "true" ]]; then
+  echo "Full infrastructure authority cannot be combined with an app-only release." >&2
+  exit 1
+fi
+
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Missing required binary: $1"
@@ -17,38 +26,35 @@ require_bin python3
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-shared_profile="$ROOT_DIR/../deployment/profiles/foundry-public.env"
-legacy_profile="$ROOT_DIR/deployment/profiles/foundry-public.env"
-if [[ -n "${FOUNDRY_DEPLOYMENT_PROFILE:-}" ]]; then
-  deployment_profile="$FOUNDRY_DEPLOYMENT_PROFILE"
-elif [[ -f "$shared_profile" ]]; then
-  deployment_profile="$shared_profile"
-else
-  deployment_profile="$legacy_profile"
-  echo "WARN: Using legacy lane-local deployment profile; migrate to $shared_profile." >&2
-fi
-if [[ "$deployment_profile" == "$legacy_profile" ]]; then
-  echo "WARN: $legacy_profile is legacy_pending_cutover; prefer $shared_profile." >&2
-fi
+deployment_profile="${FOUNDRY_DEPLOYMENT_PROFILE:-$ROOT_DIR/deployment/profiles/foundry-public.env}"
 [[ -f "$deployment_profile" && ! -L "$deployment_profile" ]] || {
-  echo "Deployment profile must be a regular non-symlink file: $deployment_profile" >&2
+  echo "An ignored external deployment profile is required: $deployment_profile" >&2
+  echo "Copy deployment/profiles/foundry-public.env.example and replace every placeholder." >&2
   exit 1
 }
+bash "$ROOT_DIR/deployment/profile.sh" validate "$deployment_profile"
+source "$ROOT_DIR/deployment/profile.sh"
+deployment_profile_load "$deployment_profile"
+deployment_profile_validate
+deployment_profile_export
+[[ "$INFRASTRUCTURE_MODE" == "reuse" ]] || {
+  echo "Routine releases require INFRASTRUCTURE_MODE=reuse." >&2
+  exit 1
+}
+export FOUNDRY_DEPLOYMENT_PROFILE="$deployment_profile"
+AZD_PROJECT_DIR="$ROOT_DIR/infra/foundry-hosted" \
+  bash "$ROOT_DIR/deployment/apply-azd-profile.sh" "$deployment_profile" >/dev/null
 
-FOUNDRY_AZD_ENV_NAME="${FOUNDRY_AZD_ENV_NAME:-${AZD_ENV_NAME:-}}"
+FOUNDRY_AZD_ENV_NAME="${FOUNDRY_AZD_ENV_NAME:-${AZD_ENV_NAME:-$AZURE_ENV_NAME}}"
 FOUNDRY_RELEASE_BASE_REF="${FOUNDRY_RELEASE_BASE_REF:-HEAD}"
 FOUNDRY_VALIDATION_MODE="${FOUNDRY_VALIDATION_MODE:-}"
-
-if [[ -n "${FOUNDRY_DEPLOY_MODE:-}" ]]; then
-  echo "FOUNDRY_DEPLOY_MODE is no longer supported; automatic releases are app_only." >&2
-  exit 1
-fi
 
 export FOUNDRY_RELEASE_STARTED_AT="${FOUNDRY_RELEASE_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 export FOUNDRY_RELEASE_ID="${FOUNDRY_RELEASE_ID:-order-resolution-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 release_dir="$ROOT_DIR/.artifacts/releases/$FOUNDRY_RELEASE_ID"
 export FOUNDRY_RELEASE_LOG_DIR="$release_dir/logs"
 export FOUNDRY_RELEASE_CONTEXT_FILE="$release_dir/release.json"
+export FOUNDRY_PREVIEW_EVIDENCE_FILE="$release_dir/evidence/infrastructure-preview.json"
 export FOUNDRY_MODEL_PREFLIGHT_EVIDENCE_FILE="$release_dir/evidence/model-preflight.json"
 export FOUNDRY_DEPLOYMENT_VERIFICATION_FILE="$release_dir/evidence/deployment-verification.json"
 export HOSTED_SMOKE_EVIDENCE_FILE="$release_dir/evidence/hosted-smoke.json"
@@ -178,20 +184,38 @@ router_output="$(./scripts/skills/deployment-mode-router.sh "$FOUNDRY_RELEASE_BA
 printf '%s\n' "$router_output"
 
 deploy_mode="$(printf '%s\n' "$router_output" | sed -n 's/^deploy_mode=//p' | tail -n 1)"
+release_authority="$(printf '%s\n' "$router_output" | sed -n 's/^release_authority=//p' | tail -n 1)"
+release_permitted="$(printf '%s\n' "$router_output" | sed -n 's/^release_permitted=//p' | tail -n 1)"
 validation_mode="$(printf '%s\n' "$router_output" | sed -n 's/^validation_mode=//p' | tail -n 1)"
 infrastructure_reconciliation="$(printf '%s\n' "$router_output" | sed -n 's/^infrastructure_reconciliation=//p' | tail -n 1)"
 reason="$(printf '%s\n' "$router_output" | sed -n 's/^reason=//p' | tail -n 1)"
 
-if [[ -n "$FOUNDRY_VALIDATION_MODE" ]]; then
+if [[ "$FOUNDRY_VALIDATION_MODE" == "full" ]]; then
   validation_mode="$FOUNDRY_VALIDATION_MODE"
+elif [[ -n "$FOUNDRY_VALIDATION_MODE" && "$FOUNDRY_VALIDATION_MODE" != "$validation_mode" ]]; then
+  echo "FOUNDRY_VALIDATION_MODE cannot downgrade router-selected validation." >&2
+  exit 1
 fi
 
 if [[ "$deploy_mode" != "app_only" ]]; then
   echo "Automatic release routing must remain app_only; received: $deploy_mode" >&2
   exit 1
 fi
+if [[ "$release_authority" != "app_only" ||
+  "$release_permitted" != "true" ||
+  ( "$infrastructure_reconciliation" != "not_requested" &&
+    "$infrastructure_reconciliation" != "reviewed_applied" ) ]]; then
+  echo "Automatic app-only release refused an infrastructure change." >&2
+  echo "Run the explicit full-infra preview and reviewed authority path instead." >&2
+  exit 1
+fi
+if [[ "$infrastructure_reconciliation" == "reviewed_applied" &&
+  "${FOUNDRY_INFRA_RECONCILED:-}" != "true" ]]; then
+  echo "Reviewed infrastructure reconciliation requires FOUNDRY_INFRA_RECONCILED=true." >&2
+  exit 1
+fi
 
-echo "Release router selected deploy_mode=${deploy_mode} validation_mode=${validation_mode} infrastructure_reconciliation=${infrastructure_reconciliation} reason=${reason} base_ref=${FOUNDRY_RELEASE_BASE_REF}"
+echo "Release router selected deploy_mode=${deploy_mode} release_authority=${release_authority} validation_mode=${validation_mode} infrastructure_reconciliation=${infrastructure_reconciliation} reason=${reason}."
 
 case "$validation_mode" in
   quick)
@@ -216,30 +240,26 @@ make foundry-iac-build &
 iac_pid=$!
 wait_for_parallel_jobs "$validation_pid" "$iac_pid"
 
+release_stage=release_preflight
+make foundry-release-preflight
+
 release_stage=deployment
 timing app_only start
-make foundry-release-deploy
+PUBLIC_RELEASE_PREREQUISITES_PASSED=true make foundry-release-deploy
 release_stage=deployment_verification
 run_timed_stage verification make foundry-verify
 
 release_stage=hosted_smoke
 run_timed_stage smoke make foundry-smoke
-FOUNDRY_E2E_EVIDENCE_NOT_BEFORE="$FOUNDRY_RELEASE_STARTED_AT" \
-  run_timed_stage evaluation make foundry-eval &
-evaluation_pid=$!
 release_stage=hosted_e2e
-if ! run_timed_stage hosted_e2e make foundry-hosted-e2e; then
-  echo "Hosted E2E failed; cancelling the pending trace evaluation." >&2
-  kill "$evaluation_pid" 2>/dev/null || true
-  wait "$evaluation_pid" || true
-  exit 1
-fi
+run_timed_stage hosted_e2e make foundry-hosted-e2e
 
 release_stage=telemetry
-run_timed_stage telemetry make foundry-telemetry &
-telemetry_pid=$!
-wait_for_parallel_jobs "$evaluation_pid" "$telemetry_pid"
+run_timed_stage telemetry make foundry-telemetry
 telemetry_ended_at="$(jq -er '.extensions.release_timing.stages.telemetry.ended_at' "$FOUNDRY_RELEASE_CONTEXT_FILE")"
+release_stage=evaluation
+FOUNDRY_E2E_EVIDENCE_NOT_BEFORE="$FOUNDRY_RELEASE_STARTED_AT" \
+  run_timed_stage evaluation make foundry-eval
 python3 scripts/foundry/release_evidence.py timing \
   --release-id "$FOUNDRY_RELEASE_ID" \
   --stage app_only \
@@ -251,4 +271,4 @@ release_stage=release_evidence
 make foundry-evidence
 release_finalized=1
 
-echo "Order Resolution Foundry public app-only release completed for ${AZURE_SUBSCRIPTION_ID}/${AZURE_RESOURCE_GROUP}."
+echo "Order Resolution Foundry public app-only release completed for the selected external profile."

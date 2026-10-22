@@ -29,9 +29,7 @@ def _validate_auth(authorization: str | None, x_api_key: str | None) -> None:
     if expected_bearer:
         expected_header = f"Bearer {expected_bearer}"
         if authorization != expected_header:
-            raise HTTPException(
-                status_code=401, detail="Invalid Authorization bearer token"
-            )
+            raise HTTPException(status_code=401, detail="Invalid Authorization bearer token")
 
 
 @app.post("/mcp")

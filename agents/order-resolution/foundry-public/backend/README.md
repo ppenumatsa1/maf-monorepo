@@ -1,8 +1,9 @@
 # Backend - Shared MAF Order Resolution
 
 The local FastAPI host and public Foundry hosted agent invoke the same MAF
-business workflow. FastAPI owns the stable API/SSE/UI contract; Foundry uses the
-Responses protocol through `foundry/main.py` and `Dockerfile.hosted`.
+business workflow. FastAPI owns the stable API/SSE/UI contract; the hosted
+process composes Responses and Activity protocol adapters through
+`foundry/main.py` and `Dockerfile.hosted`.
 
 ## Local runtime
 
@@ -23,7 +24,7 @@ Deploy from the repository root with the authenticated release command:
 
 ```bash
 make foundry-profile-apply \
-  FOUNDRY_DEPLOYMENT_PROFILE=../deployment/profiles/foundry-public.env
+  FOUNDRY_DEPLOYMENT_PROFILE=deployment/profiles/foundry-public.env
 make foundry-bootstrap
 make foundry-release
 ```
@@ -35,9 +36,9 @@ continues to own the workflow, checkpoint, approval, and audit records.
 The default release route is `app_only`: it reuses the selected portable target
 and its existing database
 and does not automatically provision infrastructure. It validates and deploys
-the application legs by immutable digest, securely converges the
-`orderresolutionruntimesecrets` project connection, converges the hosted
-identity's account-scoped runtime role, verifies exact live state, then runs
+the application legs by immutable digest, verifies the existing
+`orderresolutionruntimesecrets` project connection and hosted identity's
+account-scoped runtime role without mutation, verifies exact live state, then runs
 hosted smoke/E2E, Foundry evaluation, Application Insights validation, and
 aggregate secret-free evidence. The hosted definition and GET metadata contain
 only the connection placeholder, never the resolved PostgreSQL URL.
@@ -47,7 +48,11 @@ hydration then switches the selected environment to non-mutating reuse mode.
 PostgreSQL schema, runtime credential, and readiness steps are explicit and
 credentials remain local to the AZD environment. Production runtimes set
 `DB_SCHEMA_MANAGED_EXTERNALLY=true`, so startup never attempts DDL with the
-least-privilege runtime credential.
+least-privilege runtime credential. FastAPI lifespan startup validates
+connectivity and every required runtime table/column; shutdown retires the
+shared pool. Hosted pool defaults are `min_size=0`, `max_size=2`, and
+`max_idle=30` seconds, configurable through `DB_POOL_MIN_SIZE`,
+`DB_POOL_MAX_SIZE`, and `DB_POOL_MAX_IDLE_SECONDS`.
 
 The hosted browser path is external frontend Container App -> same-origin
 `/api` proxy -> internal FastAPI wrapper -> managed-identity Foundry Responses.
@@ -57,6 +62,21 @@ not expose Foundry credentials or a direct Foundry endpoint to the browser.
 Because the hosted agent is a separate process, wrapper SSE tails persisted
 PostgreSQL workflow events. The initial Responses request is non-streaming; the
 UI polls the selected run until its durable projection is available.
+The wrapper trusts only the configured `FRONTEND_ORIGIN` for CORS. Local use
+falls back to the loopback Vite origins and never enables wildcard origins.
+
+Workflow origin is server-selected as `api`, `responses`, or
+`teams_activity`. Responses resumes require structured decision metadata or a
+checkpoint-keyed `function_call_output`; free-form approval words remain
+ordinary conversation text. Approval channels cannot resolve checkpoints
+created by another channel.
+
+The Activity adapter uses the Teams conversation as the workflow thread and
+emits a redacted Adaptive Card when approval is pending. Cards contain only
+opaque action tokens; token, user, and conversation values are stored only as
+hashes. One atomic claim moves the selected action to `processing` and its
+sibling to `superseded`, so concurrent Approve/Reject invokes cannot both
+resume. Successful invokes replace the pending card with a resolved card.
 
 ## Contracts
 
@@ -119,7 +139,10 @@ requires manual review. `ORD-1001` is low risk; `ORD-1009` requires approval.
 
 ## Container dependency feed
 
-`Dockerfile` and `Dockerfile.hosted` set
-`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`. This is the
-approved CFS package feed for release-image Python dependencies; do not replace
-or supplement it with an unapproved index.
+`Dockerfile` and `Dockerfile.hosted` are Python 3.13 images. They copy
+`requirements.lock` and a prebuilt `.wheels/` directory, then install with
+`--no-index --find-links=/wheels --require-hashes`. The wheelhouse builder
+targets CPython 3.13 Linux AMD64 and validates every wheel tag before packaging.
+The images retain
+`PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple`, but image
+builds must not perform an online dependency resolution.

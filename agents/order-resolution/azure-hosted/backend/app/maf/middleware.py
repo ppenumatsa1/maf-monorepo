@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from app.core.telemetry import record_business_event
 from app.modules.order_resolution.models import WorkflowContext
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -16,11 +18,28 @@ class WorkflowMiddlewareContext:
 
 
 class WorkflowEventEnricher:
-    def enrich(self, context: WorkflowContext, payload: dict[str, Any]) -> dict[str, Any]:
+    def enrich(
+        self,
+        context: WorkflowContext,
+        payload: dict[str, Any],
+        *,
+        event_id: str | None = None,
+    ) -> dict[str, Any]:
         enriched = dict(payload)
-        enriched.setdefault("workflow_run_id", context.run_id)
-        enriched.setdefault("session_id", context.session_id)
+        enriched["workflow_run_id"] = context.run_id
+        enriched["session_id"] = context.session_id
+        enriched["thread_id"] = context.thread_id
+        if event_id is not None:
+            enriched["event_id"] = event_id
         return enriched
+
+
+def safe_failure_payload(exc: Exception) -> dict[str, str]:
+    return {
+        "status": "failed",
+        "code": exc.__class__.__name__,
+        "message": "The resolution workflow could not be completed.",
+    }
 
 
 class MafUsageTracker:
@@ -43,11 +62,11 @@ class MafUsageTracker:
 
 async def execute_with_failure_event(
     middleware_context: WorkflowMiddlewareContext,
-    operation: Callable[[], Awaitable[None]],
+    operation: Callable[[], Awaitable[T]],
     emit_failure: Callable[[WorkflowContext, Exception], Awaitable[None]],
-) -> None:
+) -> T:
     try:
-        await operation()
+        return await operation()
     except Exception as exc:
         await emit_failure(middleware_context.run, exc)
         raise
@@ -118,4 +137,5 @@ __all__ = [
     "WorkflowMiddlewareContext",
     "create_chat_usage_middleware",
     "execute_with_failure_event",
+    "safe_failure_payload",
 ]

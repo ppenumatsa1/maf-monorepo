@@ -34,9 +34,9 @@ def main() -> int:
         "generated_at": "2026-08-15T00:05:00Z",
         "target": {
             "azd_env_name": "maf-ora-azure",
-            "subscription_id": "7df95e88-701c-4693-af77-3159f83b558d",
-            "resource_group": "rg-maf-ora-azure",
-            "location": "northcentralus",
+            "subscription_id": "11111111-1111-4111-8111-111111111111",
+            "resource_group": "rg-portable-azure",
+            "location": "regionone",
             "api_url": "https://api.example.test",
         },
         "checks": [

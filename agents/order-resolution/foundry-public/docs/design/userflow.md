@@ -13,14 +13,15 @@ Current status:
 | Stage | Status | What is actually wired today |
 | --- | --- | --- |
 | Local MAF | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
-| Public Foundry-hosted | Implemented | Responses-native hosted entrypoint runs the same shared MAF workflow. |
-| Public browser wrapper | Released v15 | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
+| Public Foundry-hosted | Implemented in source | Responses and additive Activity hosts run the same shared MAF workflow in one process. |
+| Public browser wrapper | Implemented in source | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
+| Microsoft Teams | Implemented in source | Azure Bot Service and `MsTeamsChannel` target the Activity endpoint; pending approvals use opaque Adaptive Card actions. |
 
-The v15 release evidence is recorded in `issues-changes-fixes.md`. It includes
-hosted Responses smoke, two fresh hosted-E2E conversations, a completed
-two-conversation trace evaluation, and correlated telemetry with zero
-exceptions. Repository configuration and this flow description are not a
-substitute for that dated evidence.
+Historical release evidence is recorded in `issues-changes-fixes.md`. The
+current parity source still requires fresh reviewed infrastructure/deployment,
+Responses and Teams acceptance, evaluation, telemetry, rollback, and aggregate
+evidence. Repository configuration and this flow description are not
+deployment evidence.
 
 ## Current Runtime User Flow (Implemented Path)
 
@@ -41,6 +42,13 @@ substitute for that dated evidence.
 For Foundry-hosted conversations, the same behavior is preserved through Responses turns in the same `conversation_id`, including explanation follow-ups such as “Why was that resolution selected?”.
 
 If the same approval/rejection request is accidentally submitted more than once for a checkpoint, backend handling is idempotent and does not emit duplicate terminal events.
+
+Teams follows the same decision path. A normal message uses the Teams
+conversation as the workflow thread with `origin_channel=teams_activity`. A
+pending approval returns an Adaptive Card containing only opaque approve/reject
+tokens. One atomic repository claim selects the decision and supersedes its
+sibling; free-form decision words and cross-channel decisions cannot resume the
+checkpoint.
 
 ## End-to-End Happy Path (local UI -> API -> MAF -> Postgres)
 

@@ -32,23 +32,46 @@ def verify_version_metadata(
 ) -> dict[str, object]:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", runtime_connection_name):
         raise RuntimeError("FOUNDRY_RUNTIME_CONNECTION_NAME contains invalid characters.")
+    if not re.fullmatch(r".+@sha256:[0-9a-f]{64}", expected_image):
+        raise RuntimeError("FOUNDRY_EXPECTED_HOSTED_IMAGE must be an immutable image digest.")
     expected_database_placeholder = (
         f"${{{{connections.{runtime_connection_name}.credentials.database_url}}}}"
     )
 
     status = str(read_value(version, "status") or "")
+    retrieved_name = str(read_value(version, "name") or "")
+    retrieved_version = str(read_value(version, "version") or "")
     definition = read_value(version, "definition")
     container_configuration = read_value(definition, "container_configuration")
     image = str(read_value(container_configuration, "image") or "")
     environment_variables = read_value(definition, "environment_variables")
     if not isinstance(environment_variables, dict):
         environment_variables = {}
+    protocol_versions = read_value(definition, "protocol_versions")
+    responses_protocol = False
+    activity_protocol = False
+    if isinstance(protocol_versions, list):
+        responses_protocol = any(
+            str(read_value(protocol, "protocol") or "").lower() == "responses"
+            and str(read_value(protocol, "version") or "") == "2.0.0"
+            for protocol in protocol_versions
+        )
+        activity_protocol = any(
+            str(read_value(protocol, "protocol") or "").lower() == "activity"
+            and str(read_value(protocol, "version") or "") == "2.0.0"
+            for protocol in protocol_versions
+        )
     instance_identity = read_value(version, "instance_identity")
     principal_id = str(read_value(instance_identity, "principal_id") or "")
 
     checks = {
         "active": status.lower() == "active",
+        "name_matches": not retrieved_name or retrieved_name == agent_name,
+        "version_matches": not retrieved_version or retrieved_version == agent_version,
+        "image_is_immutable": bool(re.fullmatch(r".+@sha256:[0-9a-f]{64}", image)),
         "image_matches": image == expected_image,
+        "responses_protocol_matches": responses_protocol,
+        "activity_protocol_matches": activity_protocol,
         "database_connection_placeholder_matches": (
             environment_variables.get("DATABASE_URL") == expected_database_placeholder
         ),
@@ -57,6 +80,11 @@ def verify_version_metadata(
         ),
         "schema_managed_externally": (
             str(environment_variables.get("DB_SCHEMA_MANAGED_EXTERNALLY", "")).lower() == "true"
+        ),
+        "hosted_pool_matches": (
+            environment_variables.get("DB_POOL_MIN_SIZE") == "0"
+            and environment_variables.get("DB_POOL_MAX_SIZE") == "2"
+            and environment_variables.get("DB_POOL_MAX_IDLE_SECONDS") == "30"
         ),
         "principal_id_present": bool(principal_id),
     }

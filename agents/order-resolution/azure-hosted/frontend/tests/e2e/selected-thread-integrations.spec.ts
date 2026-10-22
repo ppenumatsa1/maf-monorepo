@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const threadId = "thread-e2e-selected";
 const now = "2026-08-06T22:12:39.579Z";
+const runtimeApiBase = "/runtime-api";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/env-config.js", async (route) => {
@@ -9,14 +10,14 @@ test.beforeEach(async ({ page }) => {
       contentType: "application/javascript",
       body: [
         "window.__APP_CONFIG__ = {",
-        '  API_BASE: "",',
+        `  API_BASE: "${runtimeApiBase}",`,
         '  AG_UI_URL: "/api/chat/stream/{threadId}/ag-ui",',
         '  COPILOTKIT_URL: "/api/copilotkit",',
         "};",
       ].join("\n"),
     });
   });
-  await page.route("**/api/health", async (route) => {
+  await page.route(`**${runtimeApiBase}/api/health`, async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -29,7 +30,7 @@ test.beforeEach(async ({ page }) => {
       }),
     });
   });
-  await page.route("**/api/workflows?*", async (route) => {
+  await page.route(`**${runtimeApiBase}/api/workflows?*`, async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -48,7 +49,7 @@ test.beforeEach(async ({ page }) => {
       }),
     });
   });
-  await page.route(`**/api/workflows/${threadId}`, async (route) => {
+  await page.route(`**${runtimeApiBase}/api/workflows/${threadId}`, async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({

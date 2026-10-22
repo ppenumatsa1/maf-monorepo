@@ -90,6 +90,48 @@ converge_ingress() {
     --output none
 }
 
+require_backend_runtime() {
+  local backend_app="$1"
+  local frontend_app="$2"
+  local frontend_fqdn schema_managed frontend_origin
+  frontend_fqdn="$(
+    az containerapp show \
+      --name "$frontend_app" \
+      --resource-group "$resource_group" \
+      --subscription "$subscription_id" \
+      --query properties.configuration.ingress.fqdn \
+      --output tsv
+  )"
+  [[ -n "$frontend_fqdn" ]] || {
+    echo "Unable to resolve the trusted frontend origin." >&2
+    return 1
+  }
+  schema_managed="$(
+    az containerapp show \
+      --name "$backend_app" \
+      --resource-group "$resource_group" \
+      --subscription "$subscription_id" \
+      --query "properties.template.containers[0].env[?name=='DB_SCHEMA_MANAGED_EXTERNALLY'].value | [0]" \
+      --output tsv
+  )"
+  frontend_origin="$(
+    az containerapp show \
+      --name "$backend_app" \
+      --resource-group "$resource_group" \
+      --subscription "$subscription_id" \
+      --query "properties.template.containers[0].env[?name=='FRONTEND_ORIGIN'].value | [0]" \
+      --output tsv
+  )"
+  [[ "${schema_managed,,}" == "true" ]] || {
+    echo "Backend runtime must set DB_SCHEMA_MANAGED_EXTERNALLY=true before release." >&2
+    return 1
+  }
+  [[ "$frontend_origin" == "https://$frontend_fqdn" ]] || {
+    echo "Backend FRONTEND_ORIGIN must match the deployed frontend before release." >&2
+    return 1
+  }
+}
+
 pin_active_image() {
   local app_name="$1"
   local image registry repository_tag repository digest pinned_image
@@ -131,6 +173,15 @@ pin_active_image() {
   printf '%s\n' "$pinned_image"
 }
 
+readarray -t app_names < <(resolve_app_names)
+[[ "${#app_names[@]}" == 2 ]] || {
+  echo "Unable to resolve backend and frontend Container Apps." >&2
+  exit 1
+}
+backend_app="${app_names[0]}"
+frontend_app="${app_names[1]}"
+require_backend_runtime "$backend_app" "$frontend_app"
+
 deploy_service backend &
 backend_pid=$!
 deploy_service frontend &
@@ -150,13 +201,6 @@ if (( backend_status != 0 || frontend_status != 0 )); then
   exit 1
 fi
 
-readarray -t app_names < <(resolve_app_names)
-[[ "${#app_names[@]}" == 2 ]] || {
-  echo "Unable to resolve backend and frontend Container Apps." >&2
-  exit 1
-}
-backend_app="${app_names[0]}"
-frontend_app="${app_names[1]}"
 pin_active_image "$backend_app" >/dev/null &
 backend_pin_pid=$!
 pin_active_image "$frontend_app" >/dev/null &

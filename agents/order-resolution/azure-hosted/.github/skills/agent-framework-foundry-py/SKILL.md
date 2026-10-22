@@ -50,7 +50,7 @@ Use this repository-owned skill for the application's MAF workflow path. It appl
 - Keep side-effecting resolution submission behind the existing idempotency store. Retry
   only model and read operations; do not blindly retry writes.
 - If HITL decision conditions change, update
-  `docs/design/hitl-approval-conditions.md` and the low-risk, high-risk/resume, and
+  `docs/hitl-approval-conditions.md` and the low-risk, high-risk/resume, and
   damaged-item coverage in `backend/tests/test_workflow.py` and/or
   `backend/.foundry/datasets/order-resolution-hosted-cases.jsonl`.
 

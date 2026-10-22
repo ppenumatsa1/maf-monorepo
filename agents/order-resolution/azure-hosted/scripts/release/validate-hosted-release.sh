@@ -65,8 +65,8 @@ Hosted release validation dry run:
   make release-smoke
   make release-browser-e2e
   make release-domain-e2e
-  make release-eval
   make release-telemetry
+  make release-eval
   make release-evidence
 EOF
   aggregated="true"
@@ -111,7 +111,7 @@ run_stage "deployment verification" verification make --no-print-directory relea
 run_stage "smoke" smoke make --no-print-directory release-smoke
 run_stage "hosted browser E2E" browser_e2e make --no-print-directory release-browser-e2e
 run_stage "domain E2E" domain_e2e make --no-print-directory release-domain-e2e
-run_stage "Foundry evaluation" evaluation make --no-print-directory release-eval
 run_stage "telemetry correlation" telemetry make --no-print-directory release-telemetry
+run_stage "Foundry evaluation" evaluation make --no-print-directory release-eval
 run_final_evidence "final evidence" make --no-print-directory release-evidence
 aggregated="true"

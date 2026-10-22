@@ -6,8 +6,7 @@ FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 TEMPLATE_FILE="$FOUNDRY_DIR/iac/modules/foundry-project-runtime-secret-connection.bicep"
 RESULTS_DIR="$ROOT_DIR/backend/.foundry/results"
 METADATA_FILE="${FOUNDRY_RUNTIME_CONNECTION_METADATA_FILE:-$RESULTS_DIR/runtime-connection-deployment.json}"
-PARAMETER_FILE="$(mktemp "${TMPDIR:-/tmp}/order-resolution-runtime-connection.XXXXXX.json")"
-DEPLOYMENT_NAME="order-resolution-runtime-secret-connection"
+PARAMETER_FILE="$ROOT_DIR/backend/.tmp/runtime-connection-parameters-$$.json"
 
 require_bin() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -38,8 +37,9 @@ cleanup() {
 
 trap cleanup EXIT HUP INT TERM
 umask 077
+mkdir -p "$(dirname "$PARAMETER_FILE")"
 
-for command in az azd jq python3; do
+for command in az azd jq python3 sha256sum; do
   require_bin "$command"
 done
 [[ -f "$TEMPLATE_FILE" ]] || {
@@ -55,22 +55,8 @@ project_name="$(required_env FOUNDRY_PROJECT_NAME)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
 postgres_server_name="$(required_env POSTGRES_SERVER_NAME)"
 connection_name="${FOUNDRY_RUNTIME_CONNECTION_NAME:-$(get_env FOUNDRY_RUNTIME_CONNECTION_NAME)}"
-connection_name="${connection_name:-orderresolutionruntimesecrets}"
-
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] || {
-  echo "Runtime connection convergence requires the canonical public subscription." >&2
-  exit 1
-}
-[[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Runtime connection convergence requires the canonical public resource group." >&2
-  exit 1
-}
-[[ "${location,,}" == "eastus2" ]] || {
-  echo "Runtime connection convergence requires the canonical eastus2 location." >&2
-  exit 1
-}
-[[ "$connection_name" == "orderresolutionruntimesecrets" ]] || {
-  echo "Unexpected runtime connection name: $connection_name" >&2
+[[ -n "$connection_name" ]] || {
+  echo "FOUNDRY_RUNTIME_CONNECTION_NAME is required." >&2
   exit 1
 }
 [[ "$runtime_database_url" == postgresql+psycopg://* ]] &&
@@ -109,10 +95,11 @@ PY
 unset RUNTIME_CONNECTION_DATABASE_URL
 
 az account set --subscription "$subscription_id"
+deployment_name="runtime-connection-$(printf '%s' "$connection_name" | sha256sum | cut -c1-12)"
 az deployment group create \
   --subscription "$subscription_id" \
   --resource-group "$resource_group" \
-  --name "$DEPLOYMENT_NAME" \
+  --name "$deployment_name" \
   --template-file "$TEMPLATE_FILE" \
   --parameters "@$PARAMETER_FILE" \
   --only-show-errors \

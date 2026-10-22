@@ -6,11 +6,12 @@ This file describes expected behavior for coding agents working in this reposito
 
 - Backend: FastAPI + one sequential `FoundryChatClient` /
   `SequentialBuilder` MAF SDK workflow path (single primary workflow story).
-- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses protocol,
-  packaged by `backend/Dockerfile.hosted`).
-- Public Foundry deployment configuration targets subscription
-  `7df95e88-701c-4693-af77-3159f83b558d`, resource group
-  `rg-maf-ora-foundry-public`, and `eastus2`. Treat repository configuration as
+- Foundry hosted entrypoint: `backend/foundry/main.py` (Responses plus additive
+  Teams Activity protocols in one process, packaged by
+  `backend/Dockerfile.hosted`).
+- Public Foundry deployment target values are supplied through a validated,
+  ignored external profile. Never commit tenant, subscription, user, resource,
+  region, or endpoint identifiers. Treat repository configuration as
   implementation intent, not evidence of a currently deployed endpoint. GitHub
   Actions remains credential-free CI; authenticated Azure execution is local via
   `make foundry-release`. Routine release is hard `app_only`, model/quota
@@ -19,8 +20,14 @@ This file describes expected behavior for coding agents working in this reposito
   `make foundry-verify`/`make foundry-evidence` produce the live secret-free
   deployment contract. The canonical stage and command mapping is
   `docs/design/deployment-flow.md`. Successful finalization enforces a
-  15-minute app-only-to-telemetry budget; the latest verified release completed
-  in 14m 01.1s.
+  15-minute app-only-to-telemetry budget. Historical timing does not prove the
+  current parity source has been deployed.
+- Both application images use Python 3.13. Runtime dependencies are
+  hash-locked in `backend/requirements.lock`, packaged as a validated CPython
+  3.13 Linux AMD64 wheelhouse, and installed offline with `--require-hashes`.
+  The frontend baseline is React 19.3, CopilotKit 1.79, Zod 4.6, Vite 8.3,
+  Playwright 1.64, ESLint 10.12, and the TypeScript 7/6 compatibility
+  arrangement documented in `frontend/README.md`.
 - Hosted database variables resolve through the Order-owned
   `orderresolutionruntimesecrets` project `CustomKeys` connection. Hosted
   definitions and GET metadata contain only the literal connection placeholder,
@@ -38,6 +45,14 @@ This file describes expected behavior for coding agents working in this reposito
   checkpoint-keyed `function_call_output`.
 - Durable HITL: Postgres-backed checkpoint storage via repository-pattern
   adapters preserves checkpoint-keyed pause/resume.
+- Teams HITL: pending cards carry only opaque action tokens. The repository
+  binds token hashes to a Teams-origin checkpoint, decision, user, conversation,
+  expiry, and action batch; one atomic claim supersedes the sibling action so
+  concurrent decisions cannot both resume.
+- Current parity status is source/local only until a reviewed Azure preview,
+  deployment, Responses and Teams acceptance, evaluation, telemetry,
+  evidence aggregation, and rollback verification are recorded in the
+  canonical ledger.
 - PostgreSQL schema DDL is administrator-owned. Production runtimes set
   `DB_SCHEMA_MANAGED_EXTERNALLY=true` and the runtime credential remains
   limited to required DML and sequence usage.

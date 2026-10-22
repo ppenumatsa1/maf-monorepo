@@ -5,42 +5,37 @@ targetScope = 'resourceGroup'
   'reuse'
 ])
 @description('bootstrap creates the complete lane. reuse references an already-created lane and creates no resources or role assignments.')
-param infrastructureMode string = 'bootstrap'
-
-@minLength(3)
-@maxLength(20)
-@description('Alphanumeric prefix used to derive deterministic bootstrap resource names.')
-param namePrefix string
+param infrastructureMode string
 
 @description('Location for all public order-resolution resources.')
-param location string = resourceGroup().location
+param location string
 
 @description('Tags applied to resources created in bootstrap mode.')
 param tags object = {}
 
 @description('Foundry account name.')
-param foundryAccountName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}ai', 24)
+param foundryAccountName string
 
 @description('Foundry project name.')
-param foundryProjectName string = 'order-resolution'
+param foundryProjectName string
 
 @description('Foundry custom subdomain.')
-param foundryCustomSubDomainName string = foundryAccountName
+param foundryCustomSubDomainName string
 
 @description('Hosted agent name used to compose the Responses endpoint.')
-param hostedAgentName string = 'order-resolution-hosted'
+param hostedAgentName string
 
 @description('Foundry chat deployment name.')
-param foundryChatDeploymentName string = 'order-resolution-gpt-4-1-mini'
+param foundryChatDeploymentName string
 
 @description('Foundry chat model format.')
-param foundryChatModelFormat string = 'OpenAI'
+param foundryChatModelFormat string
 
 @description('Foundry chat model name.')
-param foundryChatModelName string = 'gpt-4.1-mini'
+param foundryChatModelName string
 
 @description('Foundry chat model version.')
-param foundryChatModelVersion string = '2025-04-14'
+param foundryChatModelVersion string
 
 @description('Foundry chat deployment SKU.')
 @allowed([
@@ -48,59 +43,107 @@ param foundryChatModelVersion string = '2025-04-14'
   'DataZoneStandard'
   'GlobalStandard'
 ])
-param foundryChatModelSkuName string = 'Standard'
+param foundryChatModelSkuName string
 
 @minValue(1)
 @description('Foundry chat deployment capacity in thousands of TPM.')
-param foundryChatModelCapacity int = 2500
+param foundryChatModelCapacity int
 
 @description('Foundry embeddings deployment name.')
-param foundryEmbeddingsDeploymentName string = 'order-resolution-text-embedding-3-small'
+param foundryEmbeddingsDeploymentName string
+
+@description('Foundry embeddings model format.')
+param foundryEmbeddingsModelFormat string
+
+@description('Foundry embeddings model name.')
+param foundryEmbeddingsModelName string
 
 @description('Foundry embeddings model version.')
-param foundryEmbeddingsModelVersion string = '1'
+param foundryEmbeddingsModelVersion string
+
+@description('Foundry embeddings deployment SKU.')
+@allowed([
+  'Standard'
+  'DataZoneStandard'
+  'GlobalStandard'
+])
+param foundryEmbeddingsModelSkuName string
 
 @description('Foundry embeddings deployment capacity in thousands of TPM.')
-param foundryEmbeddingsModelCapacity int = 120
+param foundryEmbeddingsModelCapacity int
 
 @description('Foundry evaluator deployment name.')
-param foundryEvaluationDeploymentName string = 'order-resolution-gpt-4-1-mini-evaluation'
+param foundryEvaluationDeploymentName string
+
+@description('Foundry evaluator model format.')
+param foundryEvaluationModelFormat string
+
+@description('Foundry evaluator model name.')
+param foundryEvaluationModelName string
+
+@description('Foundry evaluator model version.')
+param foundryEvaluationModelVersion string
+
+@description('Foundry evaluator deployment SKU.')
+@allowed([
+  'Standard'
+  'DataZoneStandard'
+  'GlobalStandard'
+])
+param foundryEvaluationModelSkuName string
 
 @description('Foundry evaluator deployment capacity in thousands of TPM.')
-param foundryEvaluationModelCapacity int = 250
+param foundryEvaluationModelCapacity int
 
 @description('Responsible AI policy used by Foundry model deployments.')
-param foundryRaiPolicyName string = 'Microsoft.Default'
+param foundryRaiPolicyName string
+
+@description('Azure AI Search service name.')
+param aiSearchServiceName string
+
+@description('Azure AI Search service location.')
+param aiSearchLocation string
+
+@description('Azure AI Search service SKU.')
+param aiSearchSkuName string
 
 @description('Azure Container Registry name.')
-param containerRegistryName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}acr', 50)
+param containerRegistryName string
+
+@description('Azure Container Registry SKU.')
+@allowed([
+  'Basic'
+  'Standard'
+  'Premium'
+])
+param containerRegistrySkuName string
 
 @description('Log Analytics workspace name.')
-param logAnalyticsWorkspaceName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-log', 63)
+param logAnalyticsWorkspaceName string
 
 @description('Application Insights component name.')
-param applicationInsightsName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-ai', 64)
+param applicationInsightsName string
 
 @description('Container Apps environment name.')
-param containerAppsEnvironmentName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-cae', 32)
+param containerAppsEnvironmentName string
 
 @description('Internal backend Container App name.')
-param backendContainerAppName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-backend', 32)
+param backendContainerAppName string
 
 @description('External frontend Container App name.')
-param frontendContainerAppName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-frontend', 32)
+param frontendContainerAppName string
 
 @description('User-assigned identity attached to the backend Container App.')
-param publicBackendManagedIdentityName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-backend-mi', 128)
+param publicBackendManagedIdentityName string
 
 @description('User-assigned identity attached to the frontend Container App.')
-param publicFrontendManagedIdentityName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-frontend-mi', 128)
+param publicFrontendManagedIdentityName string
 
 @description('ACR repository written by the backend release.')
-param backendImageRepository string = 'order-resolution-public-backend'
+param backendImageRepository string
 
 @description('ACR repository written by the frontend release.')
-param frontendImageRepository string = 'order-resolution-public-frontend'
+param frontendImageRepository string
 
 @description('Temporary public image used until the first backend release.')
 param bootstrapBackendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -109,32 +152,32 @@ param bootstrapBackendImage string = 'mcr.microsoft.com/azuredocs/containerapps-
 param bootstrapFrontendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 @description('PostgreSQL Flexible Server name.')
-param postgresServerName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}pg', 63)
+param postgresServerName string
 
 @description('PostgreSQL Flexible Server location.')
-param postgresServerLocation string = location
+param postgresServerLocation string
 
 @secure()
 @description('PostgreSQL administrator password required only for bootstrap.')
 param postgresAdministratorPassword string
 
 @description('PostgreSQL administrator login.')
-param postgresAdministratorLogin string = 'pgadmin'
+param postgresAdministratorLogin string
 
 @description('Public IPv4 address permitted to perform schema and credential setup.')
 param postgresOperatorIp string
 
 @description('Database used by the order-resolution runtime.')
-param postgresDatabaseName string = 'order_resolution'
+param postgresDatabaseName string
 
 @description('PostgreSQL major version.')
-param postgresVersion string = '17'
+param postgresVersion string
 
 @description('PostgreSQL compute SKU.')
-param postgresSkuName string = 'Standard_D2ds_v5'
+param postgresSkuName string
 
 @description('PostgreSQL compute tier.')
-param postgresSkuTier string = 'GeneralPurpose'
+param postgresSkuTier string
 
 @description('PostgreSQL storage size in GiB.')
 param postgresStorageSizeGB int = 128
@@ -150,11 +193,11 @@ param postgresBackupRetentionDays int = 7
 param postgresGeoRedundantBackup string = 'Disabled'
 
 @description('Dedicated storage account for Foundry evaluation artifacts.')
-param evaluationStorageAccountName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}eval', 24)
+param evaluationStorageAccountName string
 
 @secure()
 @description('Initial runtime database placeholder replaced by the credential workflow before release.')
-param bootstrapRuntimeDatabaseUrl string = newGuid()
+param bootstrapRuntimeDatabaseUrl string
 
 var isBootstrap = infrastructureMode == 'bootstrap'
 var foundryProjectEndpoint = 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
@@ -174,7 +217,7 @@ resource foundryAccountBootstrap 'Microsoft.CognitiveServices/accounts@2025-06-0
     allowProjectManagement: true
     customSubDomainName: foundryCustomSubDomainName
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    disableLocalAuth: true
   }
   tags: tags
 }
@@ -189,13 +232,16 @@ resource foundryProjectBootstrap 'Microsoft.CognitiveServices/accounts/projects@
   properties: {
     description: 'Public Foundry-hosted order-resolution workflow'
   }
+  dependsOn: [
+    foundryEvaluationDeploymentBootstrap
+  ]
 }
 
 resource foundryChatDeploymentBootstrap 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (isBootstrap) {
   parent: foundryAccountBootstrap
   name: foundryChatDeploymentName
   sku: {
-    name: foundryChatModelSkuName
+    name: foundryEmbeddingsModelSkuName
     capacity: foundryChatModelCapacity
   }
   properties: {
@@ -221,8 +267,8 @@ resource foundryEmbeddingsDeploymentBootstrap 'Microsoft.CognitiveServices/accou
   }
   properties: {
     model: {
-      format: 'OpenAI'
-      name: 'text-embedding-3-small'
+      format: foundryEmbeddingsModelFormat
+      name: foundryEmbeddingsModelName
       version: foundryEmbeddingsModelVersion
     }
     raiPolicyName: foundryRaiPolicyName
@@ -237,14 +283,14 @@ resource foundryEvaluationDeploymentBootstrap 'Microsoft.CognitiveServices/accou
     foundryEmbeddingsDeploymentBootstrap
   ]
   sku: {
-    name: foundryChatModelSkuName
+    name: foundryEvaluationModelSkuName
     capacity: foundryEvaluationModelCapacity
   }
   properties: {
     model: {
-      format: foundryChatModelFormat
-      name: foundryChatModelName
-      version: foundryChatModelVersion
+      format: foundryEvaluationModelFormat
+      name: foundryEvaluationModelName
+      version: foundryEvaluationModelVersion
     }
     raiPolicyName: foundryRaiPolicyName
     versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
@@ -255,11 +301,24 @@ resource containerRegistryBootstrap 'Microsoft.ContainerRegistry/registries@2023
   name: containerRegistryName
   location: location
   sku: {
-    name: 'Basic'
+    name: containerRegistrySkuName
   }
   properties: {
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
+  }
+  tags: tags
+}
+
+resource aiSearchBootstrap 'Microsoft.Search/searchServices@2024-06-01-preview' = if (isBootstrap) {
+  name: aiSearchServiceName
+  location: aiSearchLocation
+  sku: {
+    name: aiSearchSkuName
+  }
+  properties: {
+    disableLocalAuth: true
+    publicNetworkAccess: 'enabled'
   }
   tags: tags
 }
@@ -385,7 +444,7 @@ resource evaluationStorageAccountBootstrap 'Microsoft.Storage/storageAccounts@20
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
@@ -527,6 +586,9 @@ resource publicBackendFoundryUserBootstrap 'Microsoft.Authorization/roleAssignme
     principalId: publicBackendManagedIdentityBootstrap!.properties.principalId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [
+    foundryProjectBootstrap
+  ]
 }
 
 resource foundryAccountEvaluationStorageAccessBootstrap 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {
@@ -735,6 +797,7 @@ resource frontendContainerAppBootstrap 'Microsoft.App/containerApps@2024-03-01' 
 
 var foundryAccountId = resourceId('Microsoft.CognitiveServices/accounts', foundryAccountName)
 var foundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/projects', foundryAccountName, foundryProjectName)
+var aiSearchServiceId = resourceId('Microsoft.Search/searchServices', aiSearchServiceName)
 var containerRegistryId = resourceId('Microsoft.ContainerRegistry/registries', containerRegistryName)
 var applicationInsightsId = resourceId('Microsoft.Insights/components', applicationInsightsName)
 var logAnalyticsWorkspaceId = resourceId('Microsoft.OperationalInsights/workspaces', logAnalyticsWorkspaceName)
@@ -755,6 +818,9 @@ output FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME string = foundryEmbeddingsDeploymentNa
 output FOUNDRY_EVAL_MODEL string = foundryEvaluationDeploymentName
 output HOSTED_AGENT_NAME string = hostedAgentName
 output AZURE_OPENAI_ENDPOINT string = reference(foundryAccountId, '2025-06-01').endpoint
+output AI_SEARCH_SERVICE_NAME string = aiSearchServiceName
+output AI_SEARCH_LOCATION string = aiSearchLocation
+output AI_SEARCH_SERVICE_ID string = aiSearchServiceId
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistryName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = reference(containerRegistryId, '2023-07-01').loginServer
 output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsightsId

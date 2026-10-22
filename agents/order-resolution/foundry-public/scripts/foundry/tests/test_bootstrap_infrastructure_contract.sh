@@ -13,34 +13,55 @@ trap 'rm -rf "$scratch_dir"' EXIT
 output="$(PATH="$mock_bin:$PATH" bash "$prepare_script" 2>&1)"
 for expected in \
   'set INFRASTRUCTURE_MODE=bootstrap' \
-  'set NAME_PREFIX=orderresolution' \
-  'set RESOURCE_NAME_SUFFIX=a63e7c16' \
-  'set POSTGRES_SERVER_NAME=orderresoluta63e7c16pg' \
-  'set CONTAINER_REGISTRY_NAME=orderresoluta63e7c16acr' \
-  'set BACKEND_IMAGE_REPOSITORY=order-resolution-public-backend' \
-  'set FRONTEND_IMAGE_REPOSITORY=order-resolution-public-frontend' \
-  'set FOUNDRY_MODEL_SKU_NAME=Standard' \
-  'set HOSTED_AGENT_NAME=order-resolution-hosted' \
-  'set FOUNDRY_RUNTIME_CONNECTION_NAME=orderresolutionruntimesecrets'; do
+  'Prepared the selected AZD environment for portable bootstrap mode.'; do
   grep -Fxq "$expected" <<<"$output"
 done
+! grep -Fq 'set FOUNDRY_ACCOUNT_NAME=' <<<"$output"
+! grep -Fq 'set FOUNDRY_MODEL_SKU_NAME=' <<<"$output"
+! grep -Fq 'set CONTAINER_REGISTRY_NAME=' <<<"$output"
 
-grep -Fq "param infrastructureMode string = 'bootstrap'" "$template"
+grep -Fq "param infrastructureMode string" "$template"
+! grep -Fq "param infrastructureMode string =" "$template"
+grep -Fq 'param foundryAccountName string' "$template"
+! grep -Fq 'param foundryAccountName string =' "$template"
+grep -Fq 'param containerRegistryName string' "$template"
+! grep -Fq 'param containerRegistryName string =' "$template"
+grep -Fq 'param containerAppsEnvironmentName string' "$template"
+! grep -Fq 'param containerAppsEnvironmentName string =' "$template"
+grep -Fq 'param postgresServerName string' "$template"
+! grep -Fq 'param postgresServerName string =' "$template"
+for external_parameter in \
+  location foundryCustomSubDomainName logAnalyticsWorkspaceName \
+  applicationInsightsName backendContainerAppName frontendContainerAppName \
+  publicBackendManagedIdentityName publicFrontendManagedIdentityName \
+  aiSearchServiceName aiSearchLocation aiSearchSkuName \
+  postgresServerLocation evaluationStorageAccountName \
+  bootstrapRuntimeDatabaseUrl; do
+  grep -Fq "param ${external_parameter} " "$template"
+  ! grep -Eq "param ${external_parameter} [^=]+=" "$template"
+done
+for postgres_parameter in postgresVersion postgresSkuName postgresSkuTier; do
+  grep -Fq "\"${postgres_parameter}\": { \"value\": \"\${POSTGRES_" \
+    "$root_dir/infra/foundry-hosted/iac/main.parameters.json"
+done
 grep -Fq "resource foundryAccountBootstrap" "$template"
 grep -Fq "resource foundryProjectBootstrap" "$template"
 grep -Fq "resource foundryChatDeploymentBootstrap" "$template"
 grep -Fq "resource foundryEmbeddingsDeploymentBootstrap" "$template"
 grep -Fq "resource foundryEvaluationDeploymentBootstrap" "$template"
-grep -B5 -A2 "param foundryChatModelSkuName string = 'Standard'" "$template" | grep -Fq "'DataZoneStandard'"
+grep -Fq "resource aiSearchBootstrap" "$template"
+grep -A15 "resource aiSearchBootstrap" "$template" | grep -Fq "publicNetworkAccess: 'enabled'"
+grep -A15 "resource aiSearchBootstrap" "$template" | grep -Fq "disableLocalAuth: true"
+grep -B5 -A2 "param foundryChatModelSkuName string" "$template" | grep -Fq "'DataZoneStandard'"
 grep -Fq "resource postgresServerBootstrap" "$template"
 grep -Fq "resource evaluationStorageAccountBootstrap" "$template"
-grep -A20 "resource evaluationStorageAccountBootstrap" "$template" | grep -Fq "publicNetworkAccess: 'Enabled'"
+grep -A20 "resource evaluationStorageAccountBootstrap" "$template" | grep -Fq "publicNetworkAccess: 'Disabled'"
 grep -A20 "resource evaluationStorageAccountBootstrap" "$template" | grep -Fq "bypass: 'AzureServices'"
 grep -A20 "resource evaluationStorageAccountBootstrap" "$template" | grep -Fq "defaultAction: 'Deny'"
 grep -A50 "resource backendContainerAppBootstrap" "$template" | grep -Fq "external: false"
 grep -A50 "resource frontendContainerAppBootstrap" "$template" | grep -Fq "external: true"
 grep -Fq "set_env INFRASTRUCTURE_MODE reuse" "$root_dir/scripts/foundry/bootstrap_azd_env.sh"
-! grep -R -Fq "rg-maf-ora-foundry-public-dev2" \
+! grep -REq 'AZURE_RESOURCE_GROUP=rg-[A-Za-z0-9-]+' \
   "$root_dir/Makefile" "$root_dir/scripts/foundry" "$root_dir/infra/foundry-hosted/iac" "$root_dir/deployment"
 
 az bicep build --file "$template" --stdout | python3 -c '
@@ -48,6 +69,14 @@ import json
 import sys
 
 template = json.load(sys.stdin)
+parameter_file = json.loads(
+    open(sys.argv[1], encoding="utf-8").read()
+)["parameters"]
+missing = sorted(
+    name for name, value in template["parameters"].items()
+    if "defaultValue" not in value and name not in parameter_file
+)
+assert not missing, missing
 assignments = [
     resource for resource in template["resources"]
     if resource["type"] == "Microsoft.Authorization/roleAssignments"
@@ -55,7 +84,7 @@ assignments = [
 assert len(assignments) == 10
 assert all("scope" in assignment for assignment in assignments)
 assert all(resource.get("condition") for resource in assignments)
-'
+' "$root_dir/infra/foundry-hosted/iac/main.parameters.json"
 
 MOCK_AZD_LOG="$scratch_dir/hydrated.env" \
   PATH="$hydration_mock_bin:$PATH" \
@@ -64,6 +93,7 @@ MOCK_AZD_LOG="$scratch_dir/hydrated.env" \
 for output_name in \
   AZURE_AI_PROJECT_ENDPOINT AZURE_AI_PROJECT_ID FOUNDRY_PROJECT_ENDPOINT \
   FOUNDRY_PROJECTS_ENDPOINT FOUNDRY_ACCOUNT_NAME FOUNDRY_PROJECT_NAME \
+  FOUNDRY_CUSTOM_SUBDOMAIN_NAME \
   FOUNDRY_HOSTED_RESPONSES_URL FOUNDRY_MODEL_DEPLOYMENT_NAME \
   FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME FOUNDRY_EVAL_MODEL HOSTED_AGENT_NAME \
   FOUNDRY_RUNTIME_CONNECTION_NAME \
@@ -79,3 +109,5 @@ for output_name in \
   FRONTEND_IMAGE_REPOSITORY API_BASE_URL WEB_URL; do
   grep -q "^${output_name}=" "$scratch_dir/hydrated.env"
 done
+grep -Fxq 'FOUNDRY_CUSTOM_SUBDOMAIN_NAME=portable-subdomain' \
+  "$scratch_dir/hydrated.env"

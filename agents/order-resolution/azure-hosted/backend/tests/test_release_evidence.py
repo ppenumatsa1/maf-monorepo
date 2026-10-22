@@ -54,9 +54,9 @@ def _build_release_dir(tmp_path: Path) -> Path:
     release_id = "release-001"
     release_started_at = "2026-08-15T17:00:00Z"
     generated_at = "2026-08-15T17:05:00Z"
-    subscription_id = "7df95e88-701c-4693-af77-3159f83b558d"
-    resource_group = "rg-maf-ora-azure"
-    location = "northcentralus"
+    subscription_id = "11111111-1111-4111-8111-111111111111"
+    resource_group = "rg-portable-azure"
+    location = "regionone"
     target = {
         "azd_env_name": "maf-ora-azure",
         "subscription_id": subscription_id,
@@ -71,7 +71,6 @@ def _build_release_dir(tmp_path: Path) -> Path:
         "Hosted browser E2E passed.\n",
         encoding="utf-8",
     )
-
     _write_json(
         evidence_dir / "release-context.json",
         {
@@ -317,6 +316,17 @@ def _build_release_dir(tmp_path: Path) -> Path:
         },
     ]
     _write_json(
+        release_dir / "logs" / "evaluation-http-output.json",
+        {
+            "provider": "http",
+            "release_id": release_id,
+            "release_started_at": release_started_at,
+            "generated_at": generated_at,
+            "case_ids": evaluation_case_ids,
+            "captures": evaluation_captures,
+        },
+    )
+    _write_json(
         evidence_dir / "evaluation.json",
         {
             **_base_artifact(
@@ -327,11 +337,33 @@ def _build_release_dir(tmp_path: Path) -> Path:
                 target={**target, "api_url": "https://backend.example.com"},
             ),
             "provider": "foundry",
+            "evaluation_mode": "report_only",
             "run_status": "completed",
             "provider_status": "completed",
             "case_ids": evaluation_case_ids,
-            "evaluators": ["relevance"],
-            "result_counts": {"completed": 3, "failed": 0, "errored": 0},
+            "query_count": 3,
+            "evaluators": ["task_completion", "coherence"],
+            "result_counts": {
+                "passed": 3,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+                "expected": 0,
+                "total": 3,
+            },
+            "run_details": {
+                "per_testing_criteria_results": [
+                    {
+                        "testing_criteria": evaluator,
+                        "passed": 3,
+                        "failed": 0,
+                        "errored": 0,
+                        "skipped": 0,
+                        "expected": 0,
+                    }
+                    for evaluator in ("task_completion", "coherence")
+                ]
+            },
             "captures": evaluation_captures,
             "http_output_capture": "logs/evaluation-http-output.json",
         },
@@ -426,4 +458,54 @@ def test_aggregate_rejects_secret_bearing_artifact(tmp_path: Path) -> None:
     with pytest.raises(
         ValueError, match="Forbidden key|Forbidden value|Unexpected Foundry hosted-agent field"
     ):
+        module.aggregate(release_dir)
+
+
+def test_aggregate_allows_numeric_token_metrics_but_rejects_credential_tokens(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    release_dir = _build_release_dir(tmp_path)
+    evaluation_path = release_dir / "evidence" / "evaluation.json"
+    payload = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    payload["usage"] = {
+        "prompt_tokens": 120,
+        "completion_tokens": 30,
+        "total_tokens": 150,
+    }
+    _write_json(evaluation_path, payload)
+    assert module.aggregate(release_dir)["status"] == "passed"
+
+    payload["usage"]["refresh_token"] = "credential-value"
+    _write_json(evaluation_path, payload)
+    with pytest.raises(ValueError, match="Forbidden key"):
+        module.aggregate(release_dir)
+
+
+def test_aggregate_rejects_quality_failure_even_when_overall_status_passed(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    release_dir = _build_release_dir(tmp_path)
+    evaluation_path = release_dir / "evidence" / "evaluation.json"
+    payload = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    payload["run_details"]["per_testing_criteria_results"][0].update(
+        passed=2,
+        failed=1,
+    )
+    _write_json(evaluation_path, payload)
+
+    with pytest.raises(ValueError, match="not a strict complete pass"):
+        module.aggregate(release_dir)
+
+
+def test_aggregate_rejects_http_capture_outside_release_layout(tmp_path: Path) -> None:
+    module = _load_module()
+    release_dir = _build_release_dir(tmp_path)
+    evaluation_path = release_dir / "evidence" / "evaluation.json"
+    payload = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    payload["http_output_capture"] = "../outside.json"
+    _write_json(evaluation_path, payload)
+
+    with pytest.raises(ValueError, match="Unsafe release artifact path"):
         module.aggregate(release_dir)

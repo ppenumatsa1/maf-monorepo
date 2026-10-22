@@ -268,9 +268,15 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-FORBIDDEN_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|bearer[_-]?token|connection[_-]?string|password|secret|database_url|runtime_database_url|access[_-]?token)",
-    re.IGNORECASE,
+SECRET_KEY_PARTS = (
+    "password",
+    "secret",
+    "credential",
+    "api_key",
+    "apikey",
+    "connection_string",
+    "connectionstring",
+    "database_url",
 )
 FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"AccountKey=", re.IGNORECASE),
@@ -278,13 +284,25 @@ FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"DefaultEndpointsProtocol=", re.IGNORECASE),
     re.compile(r"://[^/\s:@]+:[^@\s]+@"),
     re.compile(r"-----BEGIN [A-Z ]+-----"),
+    re.compile(r"\b(?:sk|ghp|github_pat|eyJ)[-_A-Za-z0-9.]{20,}\b"),
 ]
 
 
 def scan_forbidden(value: object, *, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
-            if FORBIDDEN_KEY_PATTERN.search(str(key)):
+            normalized = str(key).lower()
+            numeric_token_metric = normalized.endswith("_tokens") and (
+                item is None or (isinstance(item, (int, float)) and not isinstance(item, bool))
+            )
+            credential_token = "token" in normalized and (
+                not numeric_token_metric
+                or any(
+                    part in normalized
+                    for part in ("access", "refresh", "bearer", "auth", "credential", "client")
+                )
+            )
+            if any(part in normalized for part in SECRET_KEY_PARTS) or credential_token:
                 raise SystemExit(f"Forbidden key in release artifact at {path}.{key}")
             scan_forbidden(item, path=f"{path}.{key}")
         return
@@ -413,9 +431,15 @@ import re
 import sys
 from pathlib import Path
 
-FORBIDDEN_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|bearer[_-]?token|connection[_-]?string|password|secret|database_url|runtime_database_url|access[_-]?token)",
-    re.IGNORECASE,
+SECRET_KEY_PARTS = (
+    "password",
+    "secret",
+    "credential",
+    "api_key",
+    "apikey",
+    "connection_string",
+    "connectionstring",
+    "database_url",
 )
 FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"AccountKey=", re.IGNORECASE),
@@ -423,13 +447,25 @@ FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"DefaultEndpointsProtocol=", re.IGNORECASE),
     re.compile(r"://[^/\s:@]+:[^@\s]+@"),
     re.compile(r"-----BEGIN [A-Z ]+-----"),
+    re.compile(r"\b(?:sk|ghp|github_pat|eyJ)[-_A-Za-z0-9.]{20,}\b"),
 ]
 
 
 def scan_forbidden(value: object, *, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
-            if FORBIDDEN_KEY_PATTERN.search(str(key)):
+            normalized = str(key).lower()
+            numeric_token_metric = normalized.endswith("_tokens") and (
+                item is None or (isinstance(item, (int, float)) and not isinstance(item, bool))
+            )
+            credential_token = "token" in normalized and (
+                not numeric_token_metric
+                or any(
+                    part in normalized
+                    for part in ("access", "refresh", "bearer", "auth", "credential", "client")
+                )
+            )
+            if any(part in normalized for part in SECRET_KEY_PARTS) or credential_token:
                 raise SystemExit(f"Forbidden key in release artifact at {path}.{key}")
             scan_forbidden(item, path=f"{path}.{key}")
         return
@@ -569,8 +605,8 @@ print(json.dumps({
         "release-smoke",
         "release-browser-e2e",
         "release-domain-e2e",
-        "release-eval",
         "release-telemetry",
+        "release-eval",
         "release-evidence",
         "release",
     ],
@@ -580,7 +616,7 @@ PY
   release_write_artifact "release-context.json" "release-context" "ready" "$target_json" "$checks_json" "$extensions_json" "$extra_json"
   local repository_root canonical_profile
   repository_root="$(cd "$ROOT_DIR/../../.." && pwd -P)"
-  canonical_profile="$ROOT_DIR/../deployment/profiles/azure-hosted.env"
+  canonical_profile="${AZURE_HOSTED_PROFILE:-$ROOT_DIR/.azure/azure-hosted.env}"
   python3 "$ROOT_DIR/scripts/release/release-record.py" init \
     --release-dir "$RELEASE_ARTIFACTS_DIR" \
     --project-root "$repository_root" \

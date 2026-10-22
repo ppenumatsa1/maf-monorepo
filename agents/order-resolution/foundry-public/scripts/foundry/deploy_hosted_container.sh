@@ -31,6 +31,14 @@ if [[ ! -x "$PYTHON" ]]; then
   echo "Backend virtual environment is required; run make ensure-backend-env." >&2
   exit 1
 fi
+"$PYTHON" "$ROOT_DIR/scripts/foundry/validate_python_wheelhouse.py" \
+  "$FOUNDRY_DIR/agent/.wheels"
+if ! cmp -s \
+  "$ROOT_DIR/backend/.wheels/.requirements.sha256" \
+  "$FOUNDRY_DIR/agent/.wheels/.requirements.sha256"; then
+  echo "Hosted source wheelhouse is stale; run make foundry-package." >&2
+  exit 1
+fi
 
 cd "$FOUNDRY_DIR"
 get_env() {
@@ -58,11 +66,6 @@ runtime_connection_name="$(
   require_env FOUNDRY_RUNTIME_CONNECTION_NAME "$(get_env FOUNDRY_RUNTIME_CONNECTION_NAME)"
 )"
 
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Hosted-agent deployment requires the canonical public target." >&2
-  exit 1
-}
 if [[ "$runtime_database_url" != *"${postgres_server_name}.postgres.database.azure.com"* ]]; then
   echo "RUNTIME_DATABASE_URL must target ${postgres_server_name}.postgres.database.azure.com." >&2
   exit 1
@@ -71,11 +74,6 @@ if [[ "$runtime_database_url" != *"sslmode=require"* ]]; then
   echo "RUNTIME_DATABASE_URL must require TLS." >&2
   exit 1
 fi
-[[ "$runtime_connection_name" == "orderresolutionruntimesecrets" ]] || {
-  echo "Unexpected Foundry runtime connection name: $runtime_connection_name" >&2
-  exit 1
-}
-
 az account set --subscription "$subscription_id"
 connection_url="https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.CognitiveServices/accounts/${foundry_account}/projects/${foundry_project}/connections/${runtime_connection_name}?api-version=2025-04-01-preview"
 connection_metadata="$(
@@ -92,7 +90,9 @@ jq -e '.category == "CustomKeys" and .auth_type == "CustomKeys"' \
   exit 1
 }
 
-image_repository="${HOSTED_AGENT_IMAGE_REPOSITORY:-order-resolution-hosted}"
+image_repository="$(
+  require_env HOSTED_AGENT_IMAGE_REPOSITORY "$(get_env HOSTED_AGENT_IMAGE_REPOSITORY)"
+)"
 image_tag="${HOSTED_AGENT_IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)}"
 tagged_image="${registry_endpoint}/${image_repository}:${image_tag}"
 
@@ -148,15 +148,15 @@ if [[ -z "$principal_id" ]]; then
   exit 1
 fi
 
-HOSTED_AGENT_PRINCIPAL_ID="$principal_id" \
-  "$ROOT_DIR/scripts/foundry/ensure_hosted_agent_rbac.sh"
-
 agent_endpoint="${project_endpoint}/agents/${agent_name}/endpoint/protocols/openai/responses?api-version=v1"
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_NAME "$agent_name" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_VERSION "$agent_version" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_RESPONSES_ENDPOINT "$agent_endpoint" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_IMAGE "$image" >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd env set AGENT_ORDER_RESOLUTION_HOSTED_PRINCIPAL_ID "$principal_id" >/dev/null
+
+HOSTED_AGENT_PRINCIPAL_ID="$principal_id" \
+  "$ROOT_DIR/scripts/foundry/ensure_hosted_agent_rbac.sh" verify
 
 release_id="${FOUNDRY_RELEASE_ID:-manual-hosted-deploy}"
 release_started_at="${FOUNDRY_RELEASE_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"

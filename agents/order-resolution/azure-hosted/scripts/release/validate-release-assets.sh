@@ -16,8 +16,12 @@ require_fixed_line() {
 
 require_fixed_line "    PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple" \
   backend/Dockerfile
+grep -Fq -- "--no-index --find-links=/wheels" backend/Dockerfile
+grep -Fq -- "--require-hashes -r requirements.lock" backend/Dockerfile
+grep -Fq "python:3.13-slim" backend/Dockerfile
 require_fixed_line "**/__pycache__/" backend/.dockerignore
 require_fixed_line "**/__pycache__/" .gitignore
+python3 scripts/release/tests/test_python_wheelhouse_contract.py
 
 grep -Fq "host: containerapp" azure.yaml
 grep -Fq "deploy_mode=app_only" scripts/skills/deployment-mode-router.sh
@@ -176,25 +180,38 @@ for required in (
 
 selected_target = Path("scripts/release/selected-target.sh").read_text(encoding="utf-8")
 for required in (
-    "order_resolution_dir/deployment/profiles/azure-hosted.env",
-    "order_resolution_dir/deployment/profile.sh",
+    "AZURE_HOSTED_PROFILE",
+    ".azure/azure-hosted.env",
+    "deployment/profile.sh",
+    "APPROVED_AZURE_TENANT_ID",
+    "check-ignore",
 ):
     if required not in selected_target:
         raise SystemExit(f"Missing approved selected-target contract: {required}")
-canonical_profile = Path(
-    "../deployment/profiles/azure-hosted.env"
+profile_example = Path(
+    "../deployment/profiles/azure-hosted.env.example"
 ).read_text(encoding="utf-8")
+for forbidden_profile in (
+    Path("../deployment/profiles/azure-hosted.env"),
+    Path("deployment/profiles/azure-hosted.env"),
+    Path("deployment/profiles/azure-hosted-bootstrap.env"),
+):
+    if forbidden_profile.exists():
+        raise SystemExit(
+            f"Concrete tracked Azure target profile must not exist: {forbidden_profile}"
+        )
 for required in (
     "DEPLOYMENT_LANE=azure-hosted",
-    "AZURE_SUBSCRIPTION_ID=7df95e88-701c-4693-af77-3159f83b558d",
-    "AZURE_RESOURCE_GROUP=rg-maf-ora-azure",
-    "AZURE_LOCATION=northcentralus",
+    "AZURE_TENANT_ID=00000000-0000-0000-0000-000000000000",
+    "AZURE_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000",
+    "AZURE_LOCATION=examplelocation",
+    "FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME=",
 ):
-    if required not in canonical_profile:
-        raise SystemExit(f"Missing approved canonical profile contract: {required}")
+    if required not in profile_example:
+        raise SystemExit(f"Missing synthetic profile example contract: {required}")
 
 bootstrap_profile = Path(
-    "deployment/profiles/azure-hosted-bootstrap.env"
+    "deployment/profiles/azure-hosted-bootstrap.env.example"
 ).read_text(encoding="utf-8")
 if "legacy_pending_cutover" not in bootstrap_profile:
     raise SystemExit("Lane-local bootstrap profile must be labeled legacy_pending_cutover.")
@@ -203,8 +220,24 @@ for forbidden in ("PASSWORD=", "TOKEN=", "SECRET=", "BACKEND_IMAGE=", "FRONTEND_
         raise SystemExit(f"Tracked bootstrap profile contains forbidden deploy input: {forbidden}")
 
 release_artifacts = Path("scripts/release/release-artifacts.sh").read_text(encoding="utf-8")
-if 'canonical_profile="$ROOT_DIR/../deployment/profiles/azure-hosted.env"' not in release_artifacts:
-    raise SystemExit("Release context must use the canonical Order Resolution profile.")
+if 'AZURE_HOSTED_PROFILE:-$ROOT_DIR/.azure/azure-hosted.env' not in release_artifacts:
+    raise SystemExit("Release context must use the ignored external Azure profile.")
+
+capacity_preflight = Path(
+    "scripts/release/capacity_preflight.py"
+).read_text(encoding="utf-8")
+for required in (
+    "Microsoft.App",
+    "Microsoft.DBforPostgreSQL",
+    "Microsoft.ContainerRegistry",
+    "Microsoft.Insights",
+    "Microsoft.OperationalInsights",
+    "ManagedEnvironmentCount",
+    "SandboxCores",
+    "aggregate Foundry model quota",
+):
+    if required not in capacity_preflight:
+        raise SystemExit(f"Missing read-only capacity contract: {required}")
 
 if Path("infra/azure-apphosted/iac/parameters.dev.json").exists():
     raise SystemExit("Tracked placeholder parameters.dev.json must not exist.")

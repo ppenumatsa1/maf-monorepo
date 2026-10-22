@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+backend/.wheels/
 .pytest_cache/
 **/.pytest_cache/
 .coverage
@@ -36,6 +37,8 @@ local.ini
 *.local.ini
 .vscode/
 frontend/public/env-config.js
+deployment/profiles/*.env
+!deployment/profiles/*.env.example
 
 # Generated Bicep build artifacts (keep parameters.dev.json tracked)
 infra/foundry-hosted/iac/main.json
@@ -53,3 +56,8 @@ deployment-report/
 .artifacts/releases/*
 !.artifacts/releases/_contract/
 !.artifacts/releases/_contract/release-v1.schema.json
+
+# Generated Microsoft 365 packages and publication evidence stay local.
+.artifacts/teams-publication/
+.artifacts/tests/
+.artifacts/previews/

@@ -30,6 +30,7 @@ maf-order-resolution-agent/
         rich_events.py
       main.py
     foundry/main.py
+    foundry/teams_cards.py
     tests/
     .foundry/
       datasets/
@@ -37,12 +38,16 @@ maf-order-resolution-agent/
       suites/
     Dockerfile.hosted
     eval.yaml
+    requirements.lock
+    requirements-dev.lock
   frontend/
     src/
       lib/
     package.json
   infra/
     foundry-hosted/
+      iac/teams/
+      teams-publication.json
   scripts/
     foundry/
     playwright/
@@ -64,4 +69,15 @@ maf-order-resolution-agent/
 - `backend/app/infrastructure/*`: persistence and external adapters.
 - `backend/app/infrastructure/foundry/*`: managed-identity Foundry Responses
   client used by the internal API wrapper.
-- `backend/foundry/main.py`: Foundry-hosted Responses adapter that invokes the shared service/workflow path.
+- `backend/app/infrastructure/persistence/teams_card_action_repository.py`:
+  opaque, hashed, batched Teams approval actions with atomic claim/replay
+  protection.
+- `backend/foundry/main.py`: one Foundry-hosted process composing Responses and
+  Activity adapters around the shared service/workflow path.
+- `backend/foundry/teams_cards.py`: privacy-minimized pending/resolved Adaptive
+  Card construction and action parsing.
+- `infra/foundry-hosted/iac/teams/`: Azure Bot Service, `MsTeamsChannel`, and
+  diagnostics module plus credential-free contract tests.
+- `scripts/foundry/*`: hash-locked wheelhouse, incremental capacity, preview
+  safety, app-only/full-infrastructure routing, evaluation/evidence, Teams
+  publication, and rollback automation.

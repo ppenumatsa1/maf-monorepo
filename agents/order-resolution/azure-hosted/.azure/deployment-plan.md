@@ -1,303 +1,310 @@
 # Azure App-Hosted Deployment Plan
 
-> **Status: Validated; infrastructure and app release complete.** The approved
-> target was bootstrapped and transitioned to steady state on 2026-08-14.
-> PostgreSQL and Container Apps are excluded from steady-state reconciliation.
-> Fresh app-only release `cli-20260815T031509Z` passed every release gate on
-> 2026-08-15 without infrastructure, database, or RBAC mutation.
+> **Status:** Validated
+>
+> The user approved the prepared Azure-hosted parity, bootstrap, database
+> transition, and deployment plan. A claim that the current source revision is
+> deployed still requires a fresh generated release bundle. Historical results
+> are retained in [the evidence ledger](../docs/issues-changes-fixes.md).
 
 ## Intended target
 
 | Setting | Source intent |
 | --- | --- |
-| Subscription | `7df95e88-701c-4693-af77-3159f83b558d` |
-| Resource group | `rg-maf-ora-azure` |
-| AZD environment | `maf-ora-azure` |
-| Region | North Central US (`northcentralus`) |
+| Target selection | Validated, ignored operator profile |
 | Package | `infra/azure-apphosted/` |
-| Application topology | React/Nginx frontend Container App -> same-origin `/api` -> FastAPI/MAF backend Container App |
-| Model/evaluation boundary | Foundry model inference and report-only evaluation only |
+| Browser topology | External React/Nginx frontend -> same-origin `/api` -> internal FastAPI/MAF backend |
+| Database | Retained Azure PostgreSQL with backend managed identity |
+| Model/evaluation boundary | Optional Foundry model inference and report-only evaluation |
+| Excluded surfaces | Private networking, hosted-agent/Responses, Bot, Activity, Teams, Adaptive Cards |
 
-East US is excluded for this target because of the Azure PostgreSQL offer
-restriction. FastAPI is the sole sequential MAF host. Do not add or document an
-alternative Foundry application-hosting surface in this Azure-hosted lane.
+Tracked documentation contains no concrete tenant, subscription, user,
+resource, region, or endpoint values.
 
-## Target readiness findings
+## Deployment recipe
 
-- Authentication resolves the approved subscription and tenant.
-- `rg-maf-ora-azure` does not yet exist, so this target requires the one-time
-  bootstrap path; it is not a retained-resource migration.
-- Required resource providers are registered.
-- `gpt-4.1-mini` `GlobalStandard` quota is fully consumed (`5000/5000`) in the
-  checked target regions. Bootstrap defaults use the parameterized `Standard`
-  SKU, which has 5000 available; `DataZoneStandard` remains an explicit
-  operator override with 2000 available. The `text-embedding-3-small`
-  deployment uses the model-specific `DataZoneStandard` default because
-  North Central US does not support `Standard` for that model. No deployment
-  defaults to `GlobalStandard`.
-- PostgreSQL capability data includes `Standard_D2ds_v5` in the checked
-  regions. The existing low-cost topology is unchanged; the bootstrap preview
-  must confirm the selected PostgreSQL SKU is accepted before deployment.
-- The Container Apps quota helper could not run because extension access was
-  permission-denied. Do not bypass that control or infer quota. The
-  subscription-scope bootstrap preview is the required capacity/readiness
-  check, and any Container Apps quota failure remains a bootstrap blocker.
+- **Type:** Azure Developer CLI (`azd`) with subscription-scope Bicep.
+- **Workspace:** this Azure-hosted lane.
+- **Bootstrap:** validated ignored profile -> read-only capacity/policy checks
+  -> `azd provision --preview` -> reviewed bootstrap provisioning.
+- **Application deployment:** immutable backend/frontend Container App images
+  through the lane's app-only release workflow.
+- **Database transition:** administrator-owned PostgreSQL schema/grant
+  migration after bootstrap and before application activation.
 
-## One-time bootstrap
+## Lifecycle model
 
-The project-local tracked profile
-`deployment/profiles/azure-hosted.env` contains only the approved target and
-naming contract. `deployment/profiles/azure-hosted-bootstrap.env` is retained
-for bootstrap compatibility. Profiles intentionally exclude operator IPs,
-images, credentials, tokens, and connection strings. Supply the required
-untracked inputs and prepare the local AZD environment:
+### Fresh bootstrap
+
+Use only for a new profile-selected environment.
+
+1. Validate the ignored profile and active Azure/AZD context.
+2. Supply untracked bootstrap inputs through the operator environment.
+3. Run and review a fresh subscription-scope preview.
+4. Stop on target mismatch, unexpected replacement/deletion, unsupported
+   capacity, public exposure, or excessive privilege.
+5. Provision only through the authorized bootstrap path.
+6. Establish schema and least-privilege PostgreSQL access for the backend
+   managed identity.
+7. Verify identities, health, and monitoring.
+8. Remove temporary bootstrap access and transition to steady state.
+9. Run an app-only release to deploy and validate the application.
+
+### Steady-state infrastructure
+
+PostgreSQL and application data are retained. Infrastructure reconciliation is
+never inferred from changed files.
 
 ```bash
-export POSTGRES_BOOTSTRAP_ALLOWED_IP="<operator-public-ipv4>"
-export BACKEND_IMAGE="<explicit-bootstrap-backend-image>"
-export FRONTEND_IMAGE="<explicit-bootstrap-frontend-image>"
-export POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME="<entra-upn>"
-export POSTGRES_ENTRA_ADMIN_PRINCIPAL_ID="<entra-object-id>"
-make prepare-bootstrap
-azd provision --preview --environment maf-ora-azure --no-prompt
+make release-infra-preview
+make release-infra-reconcile
 ```
 
-Only a separately authorized bootstrap may run `azd provision`. After it
-completes, run `make prepare-steady-state`. That command verifies the selected
-PostgreSQL server/database identity, verifies and deletes exactly the
-`allow-bootstrap-runner` firewall rule for the recorded operator IP, then
-changes local AZD configuration to `INFRASTRUCTURE_MODE=steadyState`. It fails
-before transition if deletion cannot be verified. If the exact rule is already
-confirmed absent after a prior partial attempt, retry completes both AZD
-updates; lookup/auth errors still fail closed. In steady state the
-PostgreSQL module, post-provision grant hook, and Container App modules are
-excluded, so future IaC cannot alter PostgreSQL or application secrets/config.
+The apply command obtains its own fresh preview and must fail on unexpected
+stateful mutation, identity expansion, replacement, or public exposure.
 
-## Normal release: app-only
-
-Use the existing release path after applicable local gates:
+### Routine app-only release
 
 ```bash
 make release-app
 ```
 
-It deploys backend/frontend revisions only and then runs
-`make release-validate`. It must not call `azd provision`, implicitly
-reconcile infrastructure, recreate PostgreSQL, or reset the `maf_workflow`
-database. Preserve the approved CFS Python package feed and the frontend
-Alpine/musl-compatible image build.
+The release:
 
-The release target is read from the shared canonical
-`../deployment/profiles/azure-hosted.env`; lane-local profiles remain
-bootstrap/compatibility inputs. One release ID owns `release.json`,
-JSON evidence under `.artifacts/releases/<release-id>/evidence/`, and logs under
-the sibling `logs/` directory. Evaluation is report-only but release-blocking:
-it must complete with zero failed or errored rows. The validation wrapper writes
-failed final evidence when an intermediate gate fails. Finalization also
-rejects app-only-to-telemetry durations above 15 minutes; release
-`final-20260816T024551Z-667e609-azure` passed in 13m 24.6s.
+1. validates source and target context;
+2. builds and validates immutable backend/frontend images;
+3. deploys only the application revisions;
+4. converges the backend to internal ingress and frontend to external ingress;
+5. verifies image digests, active revisions, health, and proxy behavior;
+6. runs smoke, hosted browser E2E, and three HTTP/durable domain scenarios;
+7. verifies exact Application Insights correlation and zero relevant
+   exceptions;
+8. runs report-only Foundry evaluation over the captured HTTP results; and
+9. aggregates final secret-free evidence.
 
-The release validation must capture a fresh `release_run_id`,
-`release_started_at`, low/high-risk thread IDs, and workflow run IDs. In the
-same evidence window it must pass:
+PostgreSQL, schema, data, and RBAC must not be recreated or broadened by this
+path. Failed validation must still write failed final evidence.
 
-1. HTTPS/frontend/proxied-API health and smoke;
-2. `ORD-1001` completion without HITL and `ORD-1009` HITL behavior;
-3. hosted Playwright E2E through the frontend proxy;
-4. report-only Foundry evaluation; and
-5. Application Insights telemetry/HITL correlation for those identifiers.
+## Profile contract
 
-Record non-secret results and endpoint identities here only after they run.
-Local test results, source inspection, historical records, or broad telemetry
-lookbacks do not satisfy this evidence requirement.
+The operator profile is data, not shell code. It may contain only the approved
+target selectors:
 
-## Azure validation checklist
-
-All validation checks pass only when the following evidence exists:
-
-### AZD recipe validation steps
-
-- [x] Confirm Azure CLI and AZD authentication, selected subscription, AZD
-  environment, resource group, and location.
-- [x] Run the repository's release-source and subscription-portability
-  validation commands.
-- [x] Compile the subscription-scope Bicep template.
-- [x] Run the required local build and test gates.
-- [x] Review static RBAC assignments for least privilege and correct scope.
-- [x] Run and review a non-mutating subscription-scope bootstrap preview.
-- [x] Confirm the preview uses chat/evaluator `Standard`, embeddings
-  `DataZoneStandard`, creates PostgreSQL only during bootstrap, and contains no
-  unexpected deletions.
-- [x] Confirm steady-state IaC excludes PostgreSQL and application Container
-  Apps so retained data, secrets, and application revisions cannot be
-  reconciled accidentally.
-
-1. Azure Developer CLI and Azure authentication resolve `maf-ora-azure` to
-   subscription `7df95e88-701c-4693-af77-3159f83b558d`,
-   `rg-maf-ora-azure`, and `northcentralus`.
-2. Release source guards, mocked reconciliation guards, Bicep compilation, and
-   static least-privilege role review pass.
-3. The bootstrap preview confirms Container Apps capacity and the selected
-   PostgreSQL/model SKUs without relying on the inaccessible quota helper.
-4. A steady-state subscription-scope IaC preview is reviewed. PostgreSQL must
-   be absent from the what-if because that lifecycle is excluded after
-   bootstrap; any PostgreSQL entry blocks reconciliation.
-5. The **Required cloud Docker E2E** job builds the exact backend/frontend
-   release images, tests them, pushes their immutable ACR digests, and only
-   then updates the Container Apps.
-6. The same CI job runs fresh smoke, hosted Playwright, report-only Foundry
-   evaluation, and exact-pair Application Insights correlation validation.
-
-## Validation proof
-
-| Check | Result |
-| --- | --- |
-| Azure CLI/AZD authentication and selected environment | Passed on 2026-08-14: subscription `7df95e88-701c-4693-af77-3159f83b558d`, environment `maf-ora-azure`, resource group `rg-maf-ora-azure`, location `northcentralus` |
-| Release source guards and mocked reconciliation boundary | `make release-source-validation` passed, including subscription portability, fail-closed PostgreSQL transition, fresh-what-if, and no-implicit-reconciliation guards |
-| Bicep compilation | `make bicep-build` passed for the subscription-scope template |
-| Required local build/test gates | `make test` passed (66 tests), `make eval-backend` passed (10/10), `make test-e2e` passed (7 workflow and 3 selected-thread tests), and `./scripts/skills/design-review-skill.sh` passed |
-| Bootstrap subscription-scope preview | Passed: 13 creates and no modify/delete operations. Expected resources were the resource group, two Container Apps, Container Apps environment, Foundry account/project and three model deployments, ACR, PostgreSQL flexible server, Application Insights, and Log Analytics |
-| Steady-state subscription-scope preview | Passed: 10 creates and no modify/delete operations on the empty target. PostgreSQL and both application Container Apps were absent, proving steady-state exclusion |
-| Foundry deployment SKUs | Passed: chat `Standard`, evaluator `Standard`, embeddings `DataZoneStandard`; no `GlobalStandard` default |
-| PostgreSQL lifecycle safety | Passed: bootstrap alone includes PostgreSQL and its exact operator-IP firewall rule; transition verifies server/database identity, deletes and verifies only `allow-bootstrap-runner`, then clears the IP and selects `steadyState`; grant hook exits without mutation in steady state |
-| Static role review | Passed: backend/frontend `AcrPull` is scoped to ACR, backend Cognitive Services OpenAI User is scoped to the Foundry account, backend Foundry User is scoped to the project, and the project identity Foundry User role is scoped to the account. No resource-group or subscription-scope application data roles |
-| Immutable image and fresh release evidence | Passed on 2026-08-15: exact backend/frontend images passed Docker E2E, were pushed by digest and deployed app-only; fresh smoke, hosted browser E2E, report-only Foundry evaluation, and exact-pair Application Insights validation all passed |
-| Current pre-release revalidation | Passed on 2026-08-15: AZD authentication/target checks, package builds for both services, policy summary, and non-mutating preview. The preview contained no create/delete/replace operations; reported modifications were Azure API/default-property readback drift, so infrastructure apply remains prohibited for this app-only release |
-
-The target resource group did not exist before either preview. Both
-`azd provision --preview --environment maf-ora-azure --no-prompt` runs stated
-that no changes would be applied. The bootstrap preview validated the selected
-PostgreSQL and model resource shapes without provisioning them. The
-steady-state preview was run by changing only local AZD environment values and
-then restoring `INFRASTRUCTURE_MODE=bootstrap`; it proposed neither PostgreSQL
-nor application Container Apps and reported no deletion.
-
-## Role assignment verification
-
-**Status:** Verified statically.
-
-- Backend managed identity: `AcrPull` at its ACR, Cognitive Services OpenAI
-  User at the Foundry account, and Foundry User at the Foundry project.
-- Frontend managed identity: `AcrPull` at its ACR.
-- Foundry project system identity: Foundry User at its parent Foundry account.
-- No role assignment in this template is scoped to the resource group or
-  subscription.
-
-## Exceptional infrastructure reconciliation
-
-An infrastructure change is not an automatic full release. Invoking the
-validated reconciliation workflow is execution intent; no separate owner
-approval, reference, or caller-supplied preview/template digest is required.
-Preview without changing resources:
-
-```bash
-make release-infra-preview
+```dotenv
+CONTRACT_VERSION=1
+DEPLOYMENT_LANE=azure-hosted
+AZURE_ENV_NAME=<azd-environment>
+AZURE_TENANT_ID=<tenant-guid>
+AZURE_SUBSCRIPTION_ID=<subscription-guid>
+AZURE_RESOURCE_GROUP=<resource-group>
+AZURE_LOCATION=<azure-region>
+NAME_PREFIX=<name-prefix>
+POSTGRES_DATABASE_NAME=<database-name>
 ```
 
-Apply directly after applicable validation:
+The tracked bootstrap example documents additional approved model, PostgreSQL,
+and capacity selectors. The selected profile must not contain user IDs,
+credentials, connection strings, tokens, operator IPs, image references,
+generated resource IDs, or endpoints.
 
-```bash
-make release-infra-reconcile
+## All validation checks pass
+
+### Source and local gates
+
+- [x] `make test`
+- [x] `make eval-backend`
+- [x] `make test-e2e`
+- [x] `./scripts/skills/design-review-skill.sh`
+- [x] release-contract/profile tests
+- [x] Bicep build and local package checks
+
+### Azure Developer CLI validation steps
+
+- [x] 1. AZD installation.
+- [x] 2. Official `azure.yaml` schema validation.
+- [x] 3. Ignored AZD environment and operator-profile setup.
+- [x] 4. AZD authentication check.
+- [x] 5. Active tenant/subscription/location verification, including read-only
+  regional capacity and quota checks.
+- [x] 6. Aspire pre-provisioning checks (not applicable; this is not an Aspire
+  project).
+- [x] 7. Fresh non-mutating bootstrap provision preview.
+- [x] 8. Backend/frontend build verification.
+- [x] 9. Docker build-context and lock validation.
+- [x] 10. AZD package validation for all services.
+- [x] 11. Azure Policy review and static least-privilege RBAC verification.
+- [x] 12. Aspire post-provisioning checks (not applicable; this is not an
+  Aspire project).
+
+Documentation-only changes may use the focused documentation validation
+described in the final section instead of application test suites.
+
+### Azure release gates
+
+- [x] Selected profile, Azure CLI, and AZD environment match.
+- [x] Exact immutable backend/frontend images are deployed.
+- [x] Backend ingress is internal.
+- [x] Frontend ingress is external and proxied `/api` health passes.
+- [x] Low-risk scenario completes without HITL.
+- [x] High-risk scenario pauses and resumes.
+- [x] Damaged-item scenario pauses and resumes.
+- [x] Hosted browser E2E passes.
+- [x] Exact telemetry correlation passes with zero relevant exceptions.
+- [x] Report-only evaluation completes with zero failed or errored rows.
+- [x] Final evidence passes the app-only-to-telemetry budget.
+
+## Validation Proof
+
+- **AZD and authentication:** `azd version` and
+  `AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd auth login --check-status`
+  passed.
+- **Schema:** the Azure MCP `validate_azure_yaml` command validated
+  `azure.yaml` against the official stable schema.
+- **Environment:** `make prepare-bootstrap` created the ignored local AZD
+  environment from the validated external operator profile. Bootstrap-only
+  PostgreSQL selectors, administrator identity, operator IP, and image
+  references remained untracked.
+- **Regional preflight:** the preferred Canada Central preview was rejected by
+  Azure because the required `gpt-4.1-mini` model version supports neither
+  requested deployment SKU there. The previously approved East US 2 fallback
+  passed model, service, quota, and resource-name checks.
+- **Infrastructure preview:**
+  `AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --preview --no-prompt --environment <approved-environment>`
+  completed successfully and proposed only the expected resource group, ACR,
+  monitoring, Foundry account/project/models, PostgreSQL server, Container Apps
+  environment, identities, role assignments, and two Container Apps.
+- **PostgreSQL capacity recovery:** an initial live provision exposed that the
+  profile's PostgreSQL SKU/tier/version selectors were validated but not passed
+  into Bicep. Those selectors are now wired through the AZD environment,
+  parameters, root template, and PostgreSQL module. Burstable capacity remained
+  unavailable at provision time, so the profile selected the supported
+  General Purpose fallback and a fresh preview accepted it.
+- **Foundry concurrency recovery:** project creation is serialized after the
+  account's three model deployments to prevent concurrent child-resource
+  updates from returning `RequestConflict`. Bicep compilation and the fresh
+  Azure preview passed with that dependency.
+- **Evaluation operator scope recovery:** a live strict evaluation proved that
+  project-scoped `Foundry User` does not authorize
+  `Microsoft.CognitiveServices/accounts/AIServices/assets/write`. The operator
+  assignment is now account-scoped, matching the validated sibling release.
+  The subscription portability contract, Bicep build, official `azure.yaml`
+  schema validation, policy review, AZD authentication, fresh steady-state
+  provision preview, and AZD package validation all passed after the change.
+- **Build and Docker contexts:** `make bicep-build` and
+  `BACKEND_IMAGE=<explicit-image> FRONTEND_IMAGE=<explicit-image> make build-release-images`
+  passed. The backend used the hash-verified offline Python wheelhouse; the
+  frontend Docker build used its committed npm lockfile.
+- **Packaging:**
+  `AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd package --no-prompt --environment <approved-environment>`
+  packaged both services successfully.
+- **Policy:** subscription and inherited management-group assignments were
+  reviewed. The successful ARM preview confirmed no evaluated deny policy
+  blocks the proposed East US 2 topology. Write operations still require the
+  operator's current MFA authorization.
+- **Result:** all recipe-specific validation, build, package, policy, and
+  static role checks passed. The validated steady-state RBAC correction then
+  provisioned successfully.
+
+## Role Assignment Verification
+
+- **Status:** Verified.
+- **Identities:** backend managed identity, frontend managed identity, and
+  Foundry project identity.
+- **Backend:** `AcrPull` is scoped to the deployment ACR; `Cognitive Services
+  OpenAI User` is scoped to the Foundry account; `Foundry User` is scoped to
+  the Foundry project. PostgreSQL access is created as an Entra database
+  principal and constrained with SQL grants rather than an ARM role.
+- **Frontend:** `AcrPull` is scoped only to the deployment ACR.
+- **Foundry project identity:** `Foundry User` is scoped only to the Foundry
+  account required by the project.
+- **Evaluation operator:** the explicitly supplied interactive operator
+  principal has `Foundry User` only on the Foundry account because cloud judge
+  evaluation asset creation is authorized at the parent account scope.
+- **Monitoring:** the backend exports OpenTelemetry through the generated
+  Application Insights connection string and does not require a broad Azure
+  management role.
+- **Forbidden scopes:** no subscription-wide or resource-group-wide application
+  data roles.
+- **Issues:** none. The obsolete project-scoped evaluation-operator assignment
+  was removed after the account-scoped role and successful evaluation were
+  verified.
+
+### Live Role Verification
+
+- Azure MCP and Azure CLI role queries confirmed both application identities
+  have `AcrPull` only on the deployment ACR.
+- The backend additionally has `Cognitive Services OpenAI User` on the Foundry
+  account and `Foundry User` on the Foundry project.
+- The Foundry project identity has `Foundry User` only on its parent account.
+- The interactive evaluation operator has the required `Foundry User` on the
+  Foundry account. The prior project-scoped assignment was removed.
+- No application identity has a subscription-wide or resource-group-wide role.
+- **Status:** Passed.
+
+## Final Deployment Proof
+
+- The selected steady-state environment provisioned the account-scoped
+  evaluation-operator RBAC correction successfully.
+- Both Container Apps report `Succeeded` and `Running`; backend ingress is
+  internal and frontend ingress is external.
+- The public frontend health endpoint returned `ok` after infrastructure
+  reconciliation.
+- The canonical release completed with status `succeeded`; every declared gate
+  and artifact passed.
+- Hosted browser E2E and the low-risk, high-risk approval/resume, and
+  damaged-item approval/resume scenarios passed.
+- Three telemetry correlation pairs passed with zero relevant exceptions.
+- App-only start through telemetry completed in `397635` ms, below the
+  15-minute budget.
+- Foundry report-only evaluation completed all three conversations. Task
+  Completion and Coherence each passed `3/3`, with zero failed or errored
+  result rows.
+
+## Evidence authority
+
+Each release owns:
+
+```text
+.artifacts/releases/<release-id>/
+  release.json
+  evidence/
+    release-context.json
+    source-validation.json
+    infrastructure.json        # explicit infrastructure actions only
+    images.json
+    deployment.json
+    smoke.json
+    domain-e2e.json
+    telemetry.json
+    evaluation.json
+    release-evidence.json
+  logs/
 ```
 
-Apply independently resolves the approved target, requires all stateful
-Foundry model/deployment parameters from the selected AZD environment, obtains
-a fresh steady-state subscription-scope what-if, rejects any PostgreSQL entry,
-and verifies the server identity after the operation. Container App resources
-are bootstrap-only in IaC, so reconciliation cannot replace MCP secrets,
-endpoint configuration, or app revisions.
+Exact release, target, endpoint, image, thread, workflow, evaluation, and
+correlation identifiers stay in the ignored generated bundle. Tracked docs
+record only profile-independent outcomes.
 
-## Evidence ledger
+## Historical acceptance summary
 
-Add a dated entry only after an authorized deployment or release has completed.
-Include:
+Historical evidence records show that the then-current source completed:
 
-- AZD environment/resource group and non-secret frontend/backend endpoints;
-- revision/image identifiers when available;
-- release/thread/workflow-run correlation IDs;
-- smoke, hosted E2E, report-only evaluation, and telemetry results;
-- exceptions or blockers, including an unresolved Docker E2E TLS
-  trust/handshake failure if one actually occurred.
+- fresh bootstrap and transition to steady state;
+- app-only deployment without PostgreSQL or RBAC mutation;
+- browser and domain HITL validation;
+- exact telemetry correlation with zero relevant exceptions;
+- report-only evaluation with zero failed/errored rows; and
+- the app-only-to-telemetry interval within the configured budget.
 
-### 2026-08-15 fresh app-only release
+These records are operational history, not proof for the current revision.
 
-- **Release:** `cli-20260815T031509Z`; evidence window
-  `2026-08-15T03:19:50.037142Z`. No `azd provision`, infrastructure
-  reconciliation, PostgreSQL/schema/data operation, or RBAC mutation ran.
-- **Endpoints:** backend
-  [https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io)
-  and frontend
-  [https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io).
-- **Images/revisions:** backend
-  `sha256:6dde47133ffff78105a14cd4e7c168666373f0980c4ba7fa81a9806557b988a3`
-  on `maf-backend-abnhku--ci-cli-20260815t031509z`; frontend
-  `sha256:2ca6d41b1d9f8598bae749b19be6eac47a5689149271c69fd557e551eb6ef0ce`
-  on `maf-frontend-abnhku--ci-cli-20260815t031509z`. Both are active,
-  `Running`, and ready.
-- **Build/test:** backend lint and 66 tests, deterministic evaluation 10/10,
-  frontend build, local Playwright 7 + 3, design review, and exact-image
-  Docker E2E 7 + 3 passed before deployment.
-- **Smoke/correlation:** low-risk thread
-  `smoke-apphosted-cli-20260815T031509Z-ord1001`, workflow
-  `11c1f439-50bb-4631-9fce-77bf347f540d`, completed without HITL and produced
-  6 correlated telemetry items with zero exceptions. High-risk thread
-  `smoke-apphosted-cli-20260815T031509Z-ord1009`, workflow
-  `136b3ecd-f28f-4d87-9578-afd595473e74`, exercised HITL and produced 4
-  correlated telemetry items with zero exceptions.
-- **Hosted/Evaluation:** hosted workflow and selected-thread Playwright passed
-  7 + 3. Foundry evaluation `eval_abe05815b0fc4d3fb1fc1df0598adafb`,
-  run `evalrun_52f4bc6dffe445cf85438389d7eabb75`, passed 2/2 with zero
-  failures, errors, or skips.
-- **Resolved issue:** Azure rejected the first revision suffix because the
-  timestamp contained uppercase characters. The release script now lowercases
-  generated revision suffixes and release-asset validation enforces the fix.
-  The failed attempt changed no Container App revision; the retry passed.
+## Documentation validation
 
-### 2026-08-14 fresh infrastructure bootstrap
+For documentation-only changes:
 
-- **Deployment:** subscription
-  `7df95e88-701c-4693-af77-3159f83b558d`, resource group
-  `rg-maf-ora-azure`, region `northcentralus`, deployment
-  `maf-ora-azure-1786761892`, state `Succeeded`, correlation
-  `d7c34b26-08ba-812d-7af9-4f6b0b37bded`.
-- **Endpoints:** backend
-  [https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-backend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io)
-  and frontend
-  [https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io](https://maf-frontend-abnhku.politesmoke-b76fed34.northcentralus.azurecontainerapps.io).
-  Backend `/health`, frontend `/`, and frontend `/api/health` returned HTTP
-  200. These are provisioning checks, not app release-gate evidence.
-- **Models:** `gpt-4.1-mini` and
-  `gpt-4.1-mini-evaluator` are `Standard`; `text-embedding-3-small` is
-  `DataZoneStandard`; all three report `Succeeded`.
-- **RBAC:** backend and frontend identities have `AcrPull` only at
-  `maforaazureacrpuzsryv2`; backend has Cognitive Services OpenAI User at the
-  Foundry account and Foundry User at the project; the project identity has
-  Foundry User at the account. Both private-image Container App revisions are
-  healthy.
-- **PostgreSQL:** server
-  `maf-ora-azure-pg-abnhku.postgres.database.azure.com`, database
-  `maf_workflow`, backend principal
-  `maf-ora-azure-backend-id-abnhku`. Entra admin creation, backend role
-  creation, grants, idempotent schema application, and readiness passed.
-  Ten public tables exist and the backend role has database connect, schema
-  usage/create, and table DML privileges.
-- **Steady state:** the exact `allow-bootstrap-runner` rule was deleted and
-  verified absent, the bootstrap IP was cleared, and the mode is
-  `steadyState`. The final preview skipped PostgreSQL and both Container Apps,
-  proposed zero creates/deletes, and showed only non-destructive Azure
-  provider/default normalization on other retained infrastructure.
-- **Recovery fixes:** resolved a globally unavailable ACR name, replaced an
-  Entra administrator object ID from the wrong tenant, changed the async raw
-  admin REST PUT to the polling Azure CLI command, and corrected current
-  PostgreSQL database/firewall CLI option names.
-- **Release boundary:** no app release, hosted E2E, Foundry evaluation, or
-  telemetry release gate ran. Continue with `ora-azure-release`.
-
-### 2026-08-07 app-only cloud release
-
-- **GitHub Actions:** [run `31204487857`](https://github.com/ppenumatsa1/maf-monorepo/actions/runs/31204487857), release ID `ci-31204487857-1`.
-- **Endpoints:** backend [https://maf-backend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io](https://maf-backend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io) and frontend [https://maf-frontend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io](https://maf-frontend-puzsry.greensky-96a4c481.northcentralus.azurecontainerapps.io).
-- **Immutable images:** backend `sha256:91c6879de9f8f50431f33669605a5476ff3997174a942b309845c6701c56abcf`; frontend `sha256:a61ff2249f01d2f49d0c9e0fea42e275e4ad7238722a9cc549ff639e3657e081`.
-- **Gates:** Docker E2E, smoke, hosted workflow and selected-thread browser E2E, and report-only Foundry evaluation all passed. Foundry evaluation `eval_565e438b61934c209250de2516a2acdf` / `evalrun_4497efc4ce6f4ba6aba8c74ce2d66d6b` passed both cases.
-- **Telemetry:** exact fresh pairs for low- and high-risk smoke threads recorded 6 and 5 telemetry items respectively, with zero exceptions; their App Insights correlation evidence is validated.
-- **Infrastructure:** no reconciliation ran; PostgreSQL and the `maf_workflow` database were not changed.
+1. verify every relative Markdown link resolves;
+2. verify no tracked documentation references the removed nested design path;
+3. verify the required documentation inventory exists;
+4. verify no concrete tenant, subscription, user, Azure resource, or deployed
+   endpoint values remain; and
+5. report any required integration outside documentation-owned scope.

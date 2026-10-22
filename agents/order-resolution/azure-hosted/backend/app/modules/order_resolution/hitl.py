@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 import re
+from typing import Literal, cast
+
+ApprovalDecision = Literal["approve", "reject"]
+APPROVAL_DECISIONS = frozenset({"approve", "reject"})
+
+
+def validate_approval_decision(decision: str) -> ApprovalDecision:
+    if decision not in APPROVAL_DECISIONS:
+        raise ValueError(f"Unsupported approval decision: {decision}")
+    return cast(ApprovalDecision, decision)
 
 
 def extract_order_id(message: str) -> str:

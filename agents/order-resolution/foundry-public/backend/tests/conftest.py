@@ -4,6 +4,7 @@ import os
 
 import psycopg
 import pytest
+from app.core.database import postgres_db
 
 
 def _database_available() -> bool:
@@ -21,3 +22,4 @@ def _database_available() -> bool:
 def ensure_database_available() -> None:
     if not _database_available():
         pytest.skip("PostgreSQL is required for backend tests in this repository.")
+    postgres_db.ensure_schema()

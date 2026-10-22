@@ -46,7 +46,8 @@ Native workflow events remain the source of truth. The rich stream maps stages t
 
 ## Redacted selected-thread projections
 
-The v15 public lane exposes two optional, read-only selected-thread surfaces:
+The current public-lane source exposes two optional, read-only selected-thread
+surfaces:
 
 - `GET /api/chat/stream/{thread_id}/ag-ui`
 - `POST /api/copilotkit`
@@ -81,6 +82,17 @@ extending `tool.call` or its rich projections.
   "comments": "optional"
 }
 ```
+
+Workflow origin is server-selected and persisted as `api`, `responses`, or
+`teams_activity`. Responses resumes require structured decision metadata or a
+checkpoint-keyed `function_call_output`; free-form decision words remain
+conversation text. Cross-channel checkpoint resolution is rejected.
+
+Teams pending-card state is stored in `teams_card_actions`. Only token, user,
+and conversation hashes are stored. Each approve/reject pair shares a batch;
+one conditional claim changes the winner to `processing` and the sibling to
+`superseded`, after which the winner is consumed or safely released while the
+approval remains pending.
 
 ## Telemetry Conventions
 
@@ -120,6 +132,10 @@ action/status summaries. If an evaluator finds a response-quality gap, correct
 the response rather than lowering its configured threshold; record the
 finding, replacement evaluation, and telemetry correlation in
 `issues-changes-fixes.md`.
+
+The current parity source has not yet produced fresh Azure evaluation,
+telemetry, or rollback evidence. Local evaluator and contract results must be
+labeled as local and cannot satisfy the release evidence rule.
 
 For operational investigation, query business dependencies first rather than
 the portal's newest-first Search list:

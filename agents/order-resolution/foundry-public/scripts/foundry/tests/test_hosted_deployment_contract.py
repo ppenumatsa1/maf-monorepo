@@ -42,6 +42,13 @@ def test_hosted_definition_uses_connection_placeholder_not_runtime_url(
 
     assert definition.environment_variables["DATABASE_URL"] == expected
     assert definition.environment_variables["RUNTIME_DATABASE_URL"] == expected
+    assert definition.environment_variables["DB_POOL_MIN_SIZE"] == "0"
+    assert definition.environment_variables["DB_POOL_MAX_SIZE"] == "2"
+    assert definition.environment_variables["DB_POOL_MAX_IDLE_SECONDS"] == "30"
+    assert [protocol.as_dict() for protocol in definition.protocol_versions] == [
+        {"protocol": "responses", "version": "2.0.0"},
+        {"protocol": "activity", "version": "2.0.0"},
+    ]
     assert runtime_url not in json.dumps(definition.as_dict())
 
 
@@ -64,13 +71,22 @@ def test_hosted_get_metadata_requires_literal_placeholders() -> None:
     )
     placeholder = "${{connections.orderresolutionruntimesecrets.credentials.database_url}}"
     version = {
+        "name": "order-resolution-hosted",
+        "version": "5",
         "status": "active",
         "definition": {
             "container_configuration": {"image": "example/image@sha256:" + "a" * 64},
+            "protocol_versions": [
+                {"protocol": "responses", "version": "2.0.0"},
+                {"protocol": "activity", "version": "2.0.0"},
+            ],
             "environment_variables": {
                 "DATABASE_URL": placeholder,
                 "RUNTIME_DATABASE_URL": placeholder,
                 "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
+                "DB_POOL_MIN_SIZE": "0",
+                "DB_POOL_MAX_SIZE": "2",
+                "DB_POOL_MAX_IDLE_SECONDS": "30",
             },
         },
         "instance_identity": {"principal_id": "principal-id"},
@@ -101,14 +117,23 @@ def test_hosted_get_metadata_accepts_sdk_mapping_models() -> None:
     image = "example/image@sha256:" + "a" * 64
     version = UserDict(
         {
+            "name": "order-resolution-hosted",
+            "version": "6",
             "status": "active",
             "definition": UserDict(
                 {
                     "container_configuration": UserDict({"image": image}),
+                    "protocol_versions": [
+                        UserDict({"protocol": "responses", "version": "2.0.0"}),
+                        UserDict({"protocol": "activity", "version": "2.0.0"}),
+                    ],
                     "environment_variables": {
                         "DATABASE_URL": placeholder,
                         "RUNTIME_DATABASE_URL": placeholder,
                         "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
+                        "DB_POOL_MIN_SIZE": "0",
+                        "DB_POOL_MAX_SIZE": "2",
+                        "DB_POOL_MAX_IDLE_SECONDS": "30",
                     },
                 }
             ),
@@ -126,6 +151,59 @@ def test_hosted_get_metadata_accepts_sdk_mapping_models() -> None:
 
     assert result["status"] == "active"
     assert result["principal_id"] == "principal-id"
+
+
+def test_hosted_get_metadata_rejects_mutable_image_and_protocol_drift() -> None:
+    placeholder = "${{connections.orderresolutionruntimesecrets.credentials.database_url}}"
+    environment = {
+        "DATABASE_URL": placeholder,
+        "RUNTIME_DATABASE_URL": placeholder,
+        "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
+        "DB_POOL_MIN_SIZE": "0",
+        "DB_POOL_MAX_SIZE": "2",
+        "DB_POOL_MAX_IDLE_SECONDS": "30",
+    }
+    version = {
+        "name": "order-resolution-hosted",
+        "version": "7",
+        "status": "active",
+        "definition": {
+            "container_configuration": {"image": "example/image:latest"},
+            "protocol_versions": [{"protocol": "responses", "version": "1.0.0"}],
+            "environment_variables": environment,
+        },
+        "instance_identity": {"principal_id": "principal-id"},
+    }
+
+    with pytest.raises(RuntimeError, match="must be an immutable image digest"):
+        verify_hosted_agent.verify_version_metadata(
+            version,
+            agent_name="order-resolution-hosted",
+            agent_version="7",
+            expected_image="example/image:latest",
+            runtime_connection_name="orderresolutionruntimesecrets",
+        )
+
+    immutable_image = "example/image@sha256:" + "b" * 64
+    version["definition"]["container_configuration"]["image"] = immutable_image
+    with pytest.raises(RuntimeError, match="responses_protocol_matches"):
+        verify_hosted_agent.verify_version_metadata(
+            version,
+            agent_name="order-resolution-hosted",
+            agent_version="7",
+            expected_image=immutable_image,
+            runtime_connection_name="orderresolutionruntimesecrets",
+        )
+
+    version["definition"]["protocol_versions"] = [{"protocol": "responses", "version": "2.0.0"}]
+    with pytest.raises(RuntimeError, match="activity_protocol_matches"):
+        verify_hosted_agent.verify_version_metadata(
+            version,
+            agent_name="order-resolution-hosted",
+            agent_version="7",
+            expected_image=immutable_image,
+            runtime_connection_name="orderresolutionruntimesecrets",
+        )
 
 
 def test_runtime_connection_template_marks_the_url_secure() -> None:

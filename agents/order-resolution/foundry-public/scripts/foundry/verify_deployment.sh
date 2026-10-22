@@ -8,7 +8,6 @@ EVIDENCE_FILE="${FOUNDRY_DEPLOYMENT_VERIFICATION_FILE:-$RESULTS_DIR/deployment-v
 BACKEND_METADATA_FILE="${PUBLIC_BACKEND_DEPLOYMENT_METADATA_FILE:-$RESULTS_DIR/backend-deployment.json}"
 FRONTEND_METADATA_FILE="${PUBLIC_FRONTEND_DEPLOYMENT_METADATA_FILE:-$RESULTS_DIR/frontend-deployment.json}"
 HOSTED_METADATA_FILE="${HOSTED_AGENT_DEPLOYMENT_METADATA_FILE:-$RESULTS_DIR/hosted-agent-deployment.json}"
-RUNTIME_CONNECTION_METADATA_FILE="${FOUNDRY_RUNTIME_CONNECTION_METADATA_FILE:-$RESULTS_DIR/runtime-connection-deployment.json}"
 CONTEXT_FILE="${FOUNDRY_RELEASE_CONTEXT_FILE:-$RESULTS_DIR/release-context.json}"
 
 require_bin() {
@@ -106,7 +105,6 @@ PYTHON="$ROOT_DIR/backend/.venv/bin/python"
 require_file "$BACKEND_METADATA_FILE"
 require_file "$FRONTEND_METADATA_FILE"
 require_file "$HOSTED_METADATA_FILE"
-require_file "$RUNTIME_CONNECTION_METADATA_FILE"
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 AZD_ENV_VALUES="$(
   AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
@@ -125,19 +123,6 @@ agent_name="$(required_env HOSTED_AGENT_NAME)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
 runtime_connection_name="$(required_env FOUNDRY_RUNTIME_CONNECTION_NAME)"
 
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] || {
-  echo "Verification requires the canonical public subscription." >&2
-  exit 1
-}
-[[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Verification requires the canonical public resource group." >&2
-  exit 1
-}
-[[ "${location,,}" == "eastus2" ]] || {
-  echo "Verification requires the canonical eastus2 location." >&2
-  exit 1
-}
-
 if [[ -f "$CONTEXT_FILE" ]]; then
   release_id="$(jq -r '.release_id // empty' "$CONTEXT_FILE")"
   release_started_at="$(jq -r '.started_at // empty' "$CONTEXT_FILE")"
@@ -155,14 +140,10 @@ expected_frontend_image="$(jq -r '.image // empty' "$FRONTEND_METADATA_FILE")"
 expected_hosted_image="$(jq -r '.image // empty' "$HOSTED_METADATA_FILE")"
 expected_agent_version="$(jq -r '.version // empty' "$HOSTED_METADATA_FILE")"
 expected_principal_id="$(jq -r '.principal_id // empty' "$HOSTED_METADATA_FILE")"
-expected_runtime_connection_name="$(
-  jq -r '.connection_name // empty' "$RUNTIME_CONNECTION_METADATA_FILE"
-)"
 for metadata_file in \
   "$BACKEND_METADATA_FILE" \
   "$FRONTEND_METADATA_FILE" \
-  "$HOSTED_METADATA_FILE" \
-  "$RUNTIME_CONNECTION_METADATA_FILE"; do
+  "$HOSTED_METADATA_FILE"; do
   [[ "$(jq -r '.release_id // empty' "$metadata_file")" == "$release_id" ]] || {
     echo "Deployment metadata spans multiple release windows: $metadata_file" >&2
     exit 1
@@ -178,9 +159,7 @@ done
   echo "Hosted-agent deployment metadata is incomplete." >&2
   exit 1
 }
-[[ "$runtime_connection_name" == "orderresolutionruntimesecrets" ]] &&
-  [[ "$expected_runtime_connection_name" == "$runtime_connection_name" ]] &&
-  [[ "$(jq -r '.runtime_connection_name // empty' "$HOSTED_METADATA_FILE")" == "$runtime_connection_name" ]] || {
+[[ "$(jq -r '.runtime_connection_name // empty' "$HOSTED_METADATA_FILE")" == "$runtime_connection_name" ]] || {
   echo "Runtime connection metadata does not match the deterministic selected connection." >&2
   exit 1
 }
@@ -192,7 +171,8 @@ done
 }
 
 az account set --subscription "$subscription_id"
-verification_temp_dir="$(mktemp -d)"
+verification_temp_dir="$ROOT_DIR/backend/.tmp/deployment-verification-$$"
+mkdir -p "$verification_temp_dir"
 trap 'rm -rf "$verification_temp_dir"' EXIT
 backend_json_file="$verification_temp_dir/backend.containerapp.json"
 frontend_json_file="$verification_temp_dir/frontend.containerapp.json"

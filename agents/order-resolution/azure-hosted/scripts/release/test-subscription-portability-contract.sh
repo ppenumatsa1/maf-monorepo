@@ -1,30 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+unset AZURE_ENV_NAME
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 TEST_DIR="$ROOT_DIR/.artifacts/subscription-portability-test-$$-$RANDOM"
 FAKE_BIN="$TEST_DIR/bin"
-PROFILE="$ROOT_DIR/deployment/profiles/azure-hosted.env"
+PROFILE="$TEST_DIR/azure-hosted.env"
+SUBSCRIPTION_ID="11111111-1111-4111-8111-111111111111"
+TENANT_ID="22222222-2222-4222-8222-222222222222"
+RESOURCE_GROUP="rg-portable-azure"
+LOCATION="regionone"
 
 cleanup() {
   rm -rf "$TEST_DIR"
 }
 trap cleanup EXIT
 mkdir -p "$FAKE_BIN"
+sed \
+  -e 's/^AZURE_ENV_NAME=.*/AZURE_ENV_NAME=portable-azure-hosted/' \
+  -e "0,/00000000-0000-0000-0000-000000000000/s//$TENANT_ID/" \
+  -e "0,/00000000-0000-0000-0000-000000000000/s//$SUBSCRIPTION_ID/" \
+  -e "s/^AZURE_RESOURCE_GROUP=.*/AZURE_RESOURCE_GROUP=$RESOURCE_GROUP/" \
+  -e "s/^AZURE_LOCATION=.*/AZURE_LOCATION=$LOCATION/" \
+  -e 's/^NAME_PREFIX=.*/NAME_PREFIX=portableazure/' \
+  "$ROOT_DIR/../deployment/profiles/azure-hosted.env.example" >"$PROFILE"
 
 cat >"$FAKE_BIN/az" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$1 ${2:-} ${3:-}" in
   "account show --subscription")
-    printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d"
+    case "$*" in
+      *"--query tenantId"*) printf '%s\n' "22222222-2222-4222-8222-222222222222" ;;
+      *"--query state"*) printf '%s\n' "Enabled" ;;
+      *) printf '%s\n' "11111111-1111-4111-8111-111111111111" ;;
+    esac
     ;;
   "postgres flexible-server show")
-    printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/maf-ora-azure-pg-test"
+    printf '%s\n' "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-portable-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/portable-pg-test"
     ;;
   "postgres flexible-server db")
-    printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/maf-ora-azure-pg-test/databases/maf_workflow"
+    printf '%s\n' "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-portable-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/portable-pg-test/databases/maf_workflow"
     ;;
   "postgres flexible-server firewall-rule")
     case "$4" in
@@ -67,10 +84,10 @@ case "$1 ${2:-}" in
     ;;
   "env get-value")
     case "$3" in
-      AZURE_SUBSCRIPTION_ID) printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d" ;;
-      AZURE_RESOURCE_GROUP) printf '%s\n' "rg-maf-ora-azure" ;;
-      AZURE_LOCATION) printf '%s\n' "northcentralus" ;;
-      AZURE_POSTGRES_HOST) printf '%s\n' "maf-ora-azure-pg-test.postgres.database.azure.com" ;;
+      AZURE_SUBSCRIPTION_ID) printf '%s\n' "11111111-1111-4111-8111-111111111111" ;;
+      AZURE_RESOURCE_GROUP) printf '%s\n' "rg-portable-azure" ;;
+      AZURE_LOCATION) printf '%s\n' "regionone" ;;
+      AZURE_POSTGRES_HOST) printf '%s\n' "portable-pg-test.postgres.database.azure.com" ;;
       AZURE_POSTGRES_DATABASE) printf '%s\n' "maf_workflow" ;;
       POSTGRES_BOOTSTRAP_ALLOWED_IP) printf '%s\n' "8.8.8.8" ;;
       *) echo "unexpected azd value: $3" >&2; exit 99 ;;
@@ -89,6 +106,7 @@ chmod 700 "$FAKE_BIN"/*
 azd_log="$TEST_DIR/azd.log"
 output="$(
   PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   AZD_LOG="$azd_log" \
   POSTGRES_BOOTSTRAP_ALLOWED_IP=8.8.8.8 \
   BACKEND_IMAGE=registry.example/backend:v1 \
@@ -99,24 +117,30 @@ output="$(
 )"
 
 for expected in \
-  "set AZURE_SUBSCRIPTION_ID=7df95e88-701c-4693-af77-3159f83b558d" \
-  "set AZURE_RESOURCE_GROUP=rg-maf-ora-azure" \
-  "set AZURE_LOCATION=northcentralus" \
+  "set AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" \
+  "set AZURE_TENANT_ID=$TENANT_ID" \
+  "set AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" \
+  "set AZURE_LOCATION=$LOCATION" \
   "set INFRASTRUCTURE_MODE=bootstrap" \
+  "set POSTGRES_SKU_NAME=Standard_B1ms" \
+  "set POSTGRES_SKU_TIER=Burstable" \
+  "set POSTGRES_VERSION=16" \
   "set POSTGRES_BOOTSTRAP_ALLOWED_IP=8.8.8.8" \
   "set BACKEND_IMAGE=registry.example/backend:v1" \
   "set FRONTEND_IMAGE=registry.example/frontend:v1"; do
   grep -Fq "$expected" "$azd_log"
 done
 for expected in \
-  "set FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME=Standard" \
-  "set FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME=DataZoneStandard" \
-  "set FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME=Standard"; do
+  "set FOUNDRY_CHAT_DEPLOYMENT_SKU_NAME=GlobalStandard" \
+  "set FOUNDRY_EMBEDDINGS_DEPLOYMENT_SKU_NAME=GlobalStandard" \
+  "set FOUNDRY_EVALUATOR_DEPLOYMENT_SKU_NAME=GlobalStandard" \
+  "set FOUNDRY_EVALUATION_OPERATOR_PRINCIPAL_ID=11111111-1111-1111-1111-111111111111"; do
   grep -Fq "$expected" "$azd_log"
 done
 
 firewall_sentinel="$TEST_DIR/firewall-deleted"
 PATH="$FAKE_BIN:/usr/bin:/bin" \
+AZURE_HOSTED_PROFILE="$PROFILE" \
 AZD_LOG="$azd_log" \
 FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
 "$ROOT_DIR/scripts/release/transition-bootstrap-to-steady-state.sh"
@@ -127,6 +151,7 @@ grep -Fq "set POSTGRES_BOOTSTRAP_ALLOWED_IP=" "$azd_log"
 failed_transition_log="$TEST_DIR/failed-transition-azd.log"
 rm -f "$firewall_sentinel"
 if PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   AZD_LOG="$failed_transition_log" \
   FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
   FAKE_FIREWALL_DELETE_FAIL=true \
@@ -141,6 +166,7 @@ fi
 verification_failure_log="$TEST_DIR/verification-failure-azd.log"
 rm -f "$firewall_sentinel"
 if PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   AZD_LOG="$verification_failure_log" \
   FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
   FAKE_FIREWALL_VERIFY_FAIL=true \
@@ -157,6 +183,7 @@ retry_azd_log="$TEST_DIR/retry-azd.log"
 azd_failure_sentinel="$TEST_DIR/azd-update-failed-once"
 rm -f "$firewall_sentinel"
 if PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   AZD_LOG="$retry_azd_log" \
   FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
   FAKE_AZD_SET_FAIL_ONCE_SENTINEL="$azd_failure_sentinel" \
@@ -170,6 +197,7 @@ fi
   ! grep -Fq "set INFRASTRUCTURE_MODE=steadyState" "$retry_azd_log"
 
 PATH="$FAKE_BIN:/usr/bin:/bin" \
+AZURE_HOSTED_PROFILE="$PROFILE" \
 AZD_LOG="$retry_azd_log" \
 FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
 FAKE_AZD_SET_FAIL_ONCE_SENTINEL="$azd_failure_sentinel" \
@@ -181,6 +209,7 @@ grep -Fq "set POSTGRES_BOOTSTRAP_ALLOWED_IP=" "$retry_azd_log"
 
 lookup_failure_log="$TEST_DIR/lookup-failure-azd.log"
 if PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   AZD_LOG="$lookup_failure_log" \
   FAKE_FIREWALL_SENTINEL="$firewall_sentinel" \
   FAKE_FIREWALL_LIST_FAIL=true \
@@ -194,9 +223,10 @@ fi
 
 wrong_profile="$TEST_DIR/wrong-target.env"
 sed \
-  's/7df95e88-701c-4693-af77-3159f83b558d/11111111-1111-1111-1111-111111111111/' \
+  "s/$SUBSCRIPTION_ID/33333333-3333-4333-8333-333333333333/" \
   "$PROFILE" >"$wrong_profile"
 if PATH="$FAKE_BIN:/usr/bin:/bin" \
+  AZURE_HOSTED_PROFILE="$PROFILE" \
   BOOTSTRAP_PROFILE="$wrong_profile" \
   AZD_LOG="$TEST_DIR/wrong-target-azd.log" \
   POSTGRES_BOOTSTRAP_ALLOWED_IP=8.8.8.8 \
@@ -209,7 +239,7 @@ if PATH="$FAKE_BIN:/usr/bin:/bin" \
   echo "Bootstrap preparation accepted an unapproved subscription." >&2
   exit 1
 fi
-grep -Fq "Selected Azure subscription must be" "$TEST_DIR/wrong-target.log"
+grep -Fq "Selected Azure subscription does not match" "$TEST_DIR/wrong-target.log"
 
 python3 - "$ROOT_DIR" <<'PY'
 import json
@@ -238,6 +268,12 @@ for required in (
     if required not in template:
         raise SystemExit(f"Missing portability IaC contract: {required}")
 
+target_parameter_section = template.split(
+    "@description('Infrastructure lifecycle mode.", 1
+)[0]
+if "@allowed([" in target_parameter_section:
+    raise SystemExit("Tracked IaC target parameters must not contain concrete allowlists.")
+
 if "python:3.12-alpine" in template or "placeholderImage" in template:
     raise SystemExit("Tracked IaC still contains a silently deployable placeholder image.")
 
@@ -245,8 +281,12 @@ required_parameters = {
     "targetSubscriptionId",
     "resourceGroupName",
     "infrastructureMode",
+    "postgresSkuName",
+    "postgresSkuTier",
+    "postgresVersion",
     "backendImage",
     "frontendImage",
+    "foundryEvaluationOperatorPrincipalId",
     "foundryEvaluatorDeploymentSkuName",
 }
 missing = required_parameters - parameters["parameters"].keys()
@@ -263,6 +303,24 @@ for path in (
     if "GlobalStandard" in path.read_text(encoding="utf-8"):
         raise SystemExit(f"Bootstrap defaults must not assume exhausted GlobalStandard quota: {path}")
 
+foundry_module = (
+    root / "infra/azure-apphosted/iac/modules/foundry.bicep"
+).read_text(encoding="utf-8")
+evaluation_operator_assignment = foundry_module.split(
+    "resource evaluationOperatorFoundryUserRoleAssignment", 1
+)[1].split("resource evaluatorDeployment", 1)[0]
+for required in (
+    "name: guid(account.id, evaluationOperatorPrincipalId",
+    "scope: account",
+    "'53ca6127-db72-4b80-b1b0-d745d6d5456d'",
+):
+    if required not in evaluation_operator_assignment:
+        raise SystemExit(
+            f"Missing account-scoped Foundry evaluation operator contract: {required}"
+        )
+if "scope: project" in evaluation_operator_assignment:
+    raise SystemExit("Foundry evaluation operator must not be scoped only to the project.")
+
 reconcile = (root / "scripts/release/reconcile-infrastructure.sh").read_text(
     encoding="utf-8"
 )
@@ -278,6 +336,23 @@ grant = (root / "scripts/azure/grant-postgres-identity.sh").read_text(encoding="
 for required in ("INFRASTRUCTURE_MODE", "Skipping PostgreSQL bootstrap grants in steadyState mode."):
     if required not in grant:
         raise SystemExit(f"Missing post-bootstrap grant guard: {required}")
+
+schema_transition = (
+    root / "scripts/azure/apply-postgres-schema.sh"
+).read_text(encoding="utf-8")
+for required in (
+    "backend/app/sql/schema.sql",
+    "REVOKE CREATE ON SCHEMA public",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES",
+    "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES",
+    '[[ "$verification" == "f|t|t|t|0" ]]',
+):
+    if required not in schema_transition:
+        raise SystemExit(f"Missing administrator-owned schema transition contract: {required}")
+
+makefile = (root / "Makefile").read_text(encoding="utf-8")
+if "prepare-steady-state:\n\t./scripts/azure/apply-postgres-schema.sh" not in makefile:
+    raise SystemExit("Steady-state target does not apply the administrator-owned schema first.")
 
 transition = (
     root / "scripts/release/transition-bootstrap-to-steady-state.sh"

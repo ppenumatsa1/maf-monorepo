@@ -10,8 +10,12 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     duration_ms INTEGER,
-    current_stage TEXT
+    current_stage TEXT,
+    origin_channel TEXT NOT NULL DEFAULT 'api'
 );
+
+ALTER TABLE workflow_runs
+    ADD COLUMN IF NOT EXISTS origin_channel TEXT NOT NULL DEFAULT 'api';
 
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_status_created_at
     ON workflow_runs (status, created_at DESC);
@@ -72,6 +76,41 @@ CREATE INDEX IF NOT EXISTS idx_approvals_thread_requested_at
 
 CREATE INDEX IF NOT EXISTS idx_approvals_checkpoint_status
     ON approvals (checkpoint_id, status);
+
+CREATE TABLE IF NOT EXISTS teams_card_actions (
+    token_hash TEXT PRIMARY KEY,
+    batch_id UUID NOT NULL,
+    thread_id TEXT NOT NULL REFERENCES workflow_runs(thread_id) ON DELETE CASCADE,
+    checkpoint_id UUID NOT NULL REFERENCES checkpoints(checkpoint_id) ON DELETE CASCADE,
+    decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject')),
+    conversation_hash TEXT NOT NULL,
+    user_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'consumed', 'superseded')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE teams_card_actions
+    ADD COLUMN IF NOT EXISTS batch_id UUID;
+
+UPDATE teams_card_actions
+SET batch_id = gen_random_uuid()
+WHERE batch_id IS NULL;
+
+ALTER TABLE teams_card_actions
+    ALTER COLUMN batch_id SET NOT NULL;
+
+ALTER TABLE teams_card_actions
+    DROP CONSTRAINT IF EXISTS teams_card_actions_status_check;
+
+ALTER TABLE teams_card_actions
+    ADD CONSTRAINT teams_card_actions_status_check
+    CHECK (status IN ('pending', 'processing', 'consumed', 'superseded'));
+
+CREATE INDEX IF NOT EXISTS idx_teams_card_actions_checkpoint_status
+    ON teams_card_actions (checkpoint_id, status);
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     idempotency_key TEXT PRIMARY KEY,

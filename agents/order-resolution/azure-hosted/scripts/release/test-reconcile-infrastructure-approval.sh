@@ -5,8 +5,12 @@ umask 077
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 TEST_DIR="$ROOT_DIR/.artifacts/reconcile-owner-test-$$-$RANDOM"
 FAKE_BIN="$TEST_DIR/bin"
-SUBSCRIPTION_ID="7df95e88-701c-4693-af77-3159f83b558d"
-POSTGRES_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres"
+SUBSCRIPTION_ID="11111111-1111-4111-8111-111111111111"
+TENANT_ID="22222222-2222-4222-8222-222222222222"
+RESOURCE_GROUP="rg-portable-azure"
+LOCATION="regionone"
+PROFILE="$TEST_DIR/azure-hosted.env"
+POSTGRES_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres"
 POSTGRES_DATABASE_ID="$POSTGRES_ID/databases/maf_workflow"
 SUCCESS_RUN_ID="direct-safe-apply-success-$$"
 
@@ -15,6 +19,14 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$FAKE_BIN"
+sed \
+  -e 's/^AZURE_ENV_NAME=.*/AZURE_ENV_NAME=portable-azure-hosted/' \
+  -e "0,/00000000-0000-0000-0000-000000000000/s//$TENANT_ID/" \
+  -e "0,/00000000-0000-0000-0000-000000000000/s//$SUBSCRIPTION_ID/" \
+  -e "s/^AZURE_RESOURCE_GROUP=.*/AZURE_RESOURCE_GROUP=$RESOURCE_GROUP/" \
+  -e "s/^AZURE_LOCATION=.*/AZURE_LOCATION=$LOCATION/" \
+  -e 's/^NAME_PREFIX=.*/NAME_PREFIX=portableazure/' \
+  "$ROOT_DIR/../deployment/profiles/azure-hosted.env.example" >"$PROFILE"
 
 cat >"$FAKE_BIN/azd" <<'EOF'
 #!/bin/bash
@@ -24,9 +36,9 @@ if [[ "${FAKE_MISSING_AZD_VALUE:-}" == "$3" ]]; then
   exit 0
 fi
 case "$3" in
-  AZURE_SUBSCRIPTION_ID) printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d" ;;
-  AZURE_RESOURCE_GROUP) printf '%s\n' "rg-maf-ora-azure" ;;
-  AZURE_LOCATION) printf '%s\n' "northcentralus" ;;
+  AZURE_SUBSCRIPTION_ID) printf '%s\n' "11111111-1111-4111-8111-111111111111" ;;
+  AZURE_RESOURCE_GROUP) printf '%s\n' "rg-portable-azure" ;;
+  AZURE_LOCATION) printf '%s\n' "regionone" ;;
   AZURE_POSTGRES_HOST) printf '%s\n' "test-postgres.postgres.database.azure.com" ;;
   AZURE_POSTGRES_DATABASE) printf '%s\n' "maf_workflow" ;;
   FOUNDRY_PROJECT_NAME) printf '%s\n' "order-resolution" ;;
@@ -60,11 +72,17 @@ printf '%q ' "$@" >>"$FAKE_AZ_LOG"
 printf '\n' >>"$FAKE_AZ_LOG"
 
 case "$1 ${2:-} ${3:-}" in
-  "account show --subscription") printf '%s\n' "7df95e88-701c-4693-af77-3159f83b558d" ;;
-  "group show --name") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure" ;;
+  "account show --subscription")
+    case "$*" in
+      *"--query tenantId"*) printf '%s\n' "22222222-2222-4222-8222-222222222222" ;;
+      *"--query state"*) printf '%s\n' "Enabled" ;;
+      *) printf '%s\n' "11111111-1111-4111-8111-111111111111" ;;
+    esac
+    ;;
+  "group show --name") printf '%s\n' "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-portable-azure" ;;
   "postgres flexible-server list") printf '%s\n' "1" ;;
-  "postgres flexible-server show") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres" ;;
-  "postgres flexible-server db") printf '%s\n' "/subscriptions/7df95e88-701c-4693-af77-3159f83b558d/resourceGroups/rg-maf-ora-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres/databases/maf_workflow" ;;
+  "postgres flexible-server show") printf '%s\n' "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-portable-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres" ;;
+  "postgres flexible-server db") printf '%s\n' "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-portable-azure/providers/Microsoft.DBforPostgreSQL/flexibleServers/test-postgres/databases/maf_workflow" ;;
   "containerapp list --resource-group")
     if [[ "$*" == *"backend"* ]]; then printf '%s\n' "maf-backend-test"
     else printf '%s\n' "maf-frontend-test"
@@ -92,6 +110,10 @@ cat >"$FAKE_BIN/python3" <<'EOF'
 #!/bin/bash
 exec /usr/bin/python3 "$@"
 EOF
+cat >"$FAKE_BIN/git" <<'EOF'
+#!/bin/bash
+exec /usr/bin/git "$@"
+EOF
 chmod 700 "$FAKE_BIN"/*
 
 compiled_template="$TEST_DIR/compiled-template.json"
@@ -102,7 +124,7 @@ az_log="$TEST_DIR/az.log"
 
 printf '%s\n' '{"fixture":"compiled-template"}' >"$compiled_template"
 cat >"$safe_what_if" <<EOF
-{"changes":[{"resourceId":"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-maf-ora-azure/providers/Microsoft.Insights/components/test","changeType":"NoChange"}]}
+{"changes":[{"resourceId":"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Insights/components/test","changeType":"NoChange"}]}
 EOF
 cat >"$postgres_mutation_what_if" <<EOF
 {"changes":[{"resourceId":"$POSTGRES_ID","changeType":"Modify"},{"resourceId":"$POSTGRES_DATABASE_ID","changeType":"NoChange"}]}
@@ -115,8 +137,9 @@ run_apply() {
 
   /usr/bin/env -u BASH_ENV -u ENV \
     PATH="$FAKE_BIN" \
+    AZURE_HOSTED_PROFILE="$PROFILE" \
     AZURE_SUBSCRIPTION_ID="" \
-    AZURE_ENV_NAME="maf-ora-azure" \
+    AZURE_ENV_NAME="portable-azure-hosted" \
     RELEASE_RUN_ID="$release_run_id" \
     INFRA_RECONCILIATION_TEST_HARNESS="credential-free-reconciliation-mock-v1" \
     INFRA_RECONCILIATION_TEST_COMMAND_ROOT="$FAKE_BIN" \

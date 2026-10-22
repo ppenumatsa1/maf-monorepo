@@ -18,7 +18,11 @@ def migration_plan(project_root: Path) -> dict[str, object]:
     for source in sources:
         if source.is_symlink():
             candidates.append(
-                {"source": source.relative_to(project_root).as_posix(), "eligible": False, "reason": "symlink"}
+                {
+                    "source": source.relative_to(project_root).as_posix(),
+                    "eligible": False,
+                    "reason": "symlink",
+                }
             )
             continue
         if not source.exists():

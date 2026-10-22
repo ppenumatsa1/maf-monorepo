@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -92,6 +93,7 @@ async def test_low_risk_flow_completes_without_hitl(tmp_path: Path) -> None:
     assert isinstance(tool_event["payload"].get("policy_evidence_ids"), list)
     policy_retrieval = tool_event["payload"].get("policy_retrieval")
     assert isinstance(policy_retrieval, dict)
+    assert policy_retrieval.get("provider") == "noop"
     assert isinstance(policy_retrieval.get("query_id"), str)
     assert tool_event["payload"].get("local_tool") == "fetch_order_status/fetch_policy"
     assert tool_event["payload"].get("mcp_tool") == "search"
@@ -101,9 +103,19 @@ async def test_low_risk_flow_completes_without_hitl(tmp_path: Path) -> None:
 
     output_event = next(event for event in history if event["type"] == "workflow.output")
     output_payload = output_event["payload"]
+    assert {"message", "status", "submission_id"} <= set(output_payload)
     assert output_payload.get("status") == "completed"
     assert isinstance(output_payload.get("submission_id"), str)
-    assert "ord-" in str(output_payload.get("message", "")).lower()
+    assert output_payload.get("message") == (
+        "Your partial refund has been submitted for order ord-1001. "
+        "It will be returned to your original payment method within 5-10 business days; "
+        "you will receive a confirmation once processing is complete."
+    )
+    for event in history:
+        assert event["payload"]["workflow_run_id"] == context.run_id
+        assert event["payload"]["session_id"] == context.session_id
+        assert event["payload"]["thread_id"] == thread_id
+        assert event["payload"]["event_id"] == event["id"]
 
 
 @pytest.mark.asyncio
@@ -172,16 +184,27 @@ async def test_high_risk_flow_requests_hitl_then_resumes(
     output_payload = output_event["payload"]
     assert output_payload.get("status") == "completed"
     assert isinstance(output_payload.get("submission_id"), str)
-    assert checkpoint_state["order_id"] in str(output_payload.get("message", ""))
+    assert output_payload.get("message") == (
+        f"Your partial refund has been submitted for order {checkpoint_state['order_id']}. "
+        "It will be returned to your original payment method within 5-10 business days; "
+        "you will receive a confirmation once processing is complete."
+    )
+    for event_type in ("hitl.response", "workflow.output"):
+        event = next(event for event in resumed_history if event["type"] == event_type)
+        assert event["payload"]["workflow_run_id"] == context.run_id
+        assert event["payload"]["session_id"] == context.session_id
+        assert event["payload"]["thread_id"] == thread_id
+        assert event["payload"]["event_id"] == event["id"]
 
 
 @pytest.mark.asyncio
-async def test_broken_item_always_requests_hitl(tmp_path: Path) -> None:
+async def test_broken_item_requests_hitl_then_resumes(tmp_path: Path) -> None:
     event_bus = EventBus()
+    checkpoint_store = CheckpointStore(tmp_path / "checkpoints")
     workflow = OrderResolutionWorkflow(
         event_bus=event_bus,
         memory_store=SessionMemoryStore(tmp_path / "memory"),
-        checkpoint_store=CheckpointStore(tmp_path / "checkpoints"),
+        checkpoint_store=checkpoint_store,
         mcp_tool=MCPKnowledgeTool(endpoint=None),
     )
 
@@ -196,7 +219,25 @@ async def test_broken_item_always_requests_hitl(tmp_path: Path) -> None:
     await workflow.start(context)
 
     history = json.loads(event_bus.history_as_json(thread_id))
+    checkpoint_event = next(event for event in history if event["type"] == "checkpoint.created")
+    checkpoint_id = checkpoint_event["payload"]["checkpoint_id"]
     assert any(event["type"] == "hitl.request" for event in history)
+
+    await workflow.handle_hitl_response(
+        checkpoint_id=checkpoint_id,
+        decision="approve",
+        reviewer="damage-reviewer",
+        comments="photo proof accepted",
+    )
+
+    resumed_history = json.loads(event_bus.history_as_json(thread_id))
+    assert [event["type"] for event in resumed_history].count("hitl.response") == 1
+    output = next(event for event in resumed_history if event["type"] == "workflow.output")
+    assert output["payload"]["status"] == "completed"
+    assert "offer_replacement_or_full_refund" in output["payload"]["message"]
+    checkpoint_record = checkpoint_store.get(checkpoint_id)
+    assert checkpoint_record is not None
+    assert checkpoint_record["status"] == "approved"
 
 
 @pytest.mark.asyncio
@@ -214,7 +255,7 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
         thread_id=thread_id,
         session_id=thread_id,
         customer_id="cust-test",
-        user_message="Resolve delayed order ORD-1001",
+        user_message="Order ORD-1002 has the wrong item in the box.",
     )
     await workflow.start(first_context)
 
@@ -237,7 +278,14 @@ async def test_follow_up_why_question_reuses_prior_resolution_context(tmp_path: 
     output_messages = [
         event["payload"]["message"] for event in history if event["type"] == "workflow.output"
     ]
-    assert any("Previous result: Resolution complete." in message for message in output_messages)
+    assert any(
+        "order ord-1002: issue wrong_item, status in_transit, "
+        "policy free_replacement_and_return_label, action issue_partial_refund, "
+        "and amount $79.00. HITL approval was not required."
+        in message
+        and "Previous result: Your partial refund has been submitted for order ord-1002." in message
+        for message in output_messages
+    )
 
 
 @pytest.mark.asyncio
@@ -275,7 +323,10 @@ async def test_high_risk_rejection_emits_escalated_terminal_output(tmp_path: Pat
     resumed_history = json.loads(event_bus.history_as_json(thread_id))
     output_event = next(event for event in resumed_history if event["type"] == "workflow.output")
     output_payload = output_event["payload"]
-    assert output_payload == {
+    assert {
+        "message": output_payload["message"],
+        "status": output_payload["status"],
+    } == {
         "message": "Request rejected by reviewer. Escalating to human support specialist.",
         "status": "escalated",
     }
@@ -493,3 +544,185 @@ async def test_submit_resolution_is_idempotent_for_duplicate_approval(
     outputs = [e for e in resumed_history if e["type"] == "workflow.output"]
     assert len(hitl_responses) == 1
     assert len(outputs) == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_structured_decision_does_not_resolve_checkpoint(tmp_path: Path) -> None:
+    event_bus = EventBus()
+    checkpoint_store = CheckpointStore(tmp_path / "checkpoints")
+    workflow = OrderResolutionWorkflow(
+        event_bus=event_bus,
+        memory_store=SessionMemoryStore(tmp_path / "memory"),
+        checkpoint_store=checkpoint_store,
+        mcp_tool=MCPKnowledgeTool(endpoint=None),
+    )
+    thread_id = str(uuid4())
+    await workflow.start(
+        WorkflowContext(
+            run_id=str(uuid4()),
+            thread_id=thread_id,
+            session_id=thread_id,
+            customer_id="cust-test",
+            user_message="Order ORD-1009 is delayed and I need compensation.",
+        )
+    )
+    history = json.loads(event_bus.history_as_json(thread_id))
+    checkpoint_id = next(
+        event["payload"]["checkpoint_id"]
+        for event in history
+        if event["type"] == "checkpoint.created"
+    )
+
+    with pytest.raises(ValueError, match="Unsupported approval decision"):
+        await workflow.handle_hitl_response(
+            checkpoint_id=checkpoint_id,
+            decision="maybe",
+            reviewer="test-reviewer",
+            comments=None,
+        )
+
+    checkpoint_record = checkpoint_store.get(checkpoint_id)
+    assert checkpoint_record is not None
+    assert checkpoint_record["status"] == "pending_hitl"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_decisions_produce_one_terminal_outcome(tmp_path: Path) -> None:
+    event_bus = EventBus()
+    checkpoint_store = CheckpointStore(tmp_path / "checkpoints")
+    workflow = OrderResolutionWorkflow(
+        event_bus=event_bus,
+        memory_store=SessionMemoryStore(tmp_path / "memory"),
+        checkpoint_store=checkpoint_store,
+        mcp_tool=MCPKnowledgeTool(endpoint=None),
+    )
+    thread_id = str(uuid4())
+    await workflow.start(
+        WorkflowContext(
+            run_id=str(uuid4()),
+            thread_id=thread_id,
+            session_id=thread_id,
+            customer_id="cust-test",
+            user_message="Order ORD-1009 is delayed and I need compensation.",
+        )
+    )
+    history = json.loads(event_bus.history_as_json(thread_id))
+    checkpoint_id = next(
+        event["payload"]["checkpoint_id"]
+        for event in history
+        if event["type"] == "checkpoint.created"
+    )
+
+    await asyncio.gather(
+        workflow.handle_hitl_response(
+            checkpoint_id=checkpoint_id,
+            decision="approve",
+            reviewer="approver",
+            comments="approve",
+        ),
+        workflow.handle_hitl_response(
+            checkpoint_id=checkpoint_id,
+            decision="reject",
+            reviewer="rejector",
+            comments="reject",
+        ),
+    )
+
+    resumed_history = json.loads(event_bus.history_as_json(thread_id))
+    responses = [event for event in resumed_history if event["type"] == "hitl.response"]
+    outputs = [event for event in resumed_history if event["type"] == "workflow.output"]
+    assert len(responses) == 1
+    assert len(outputs) == 1
+    assert responses[0]["payload"]["decision"] in {"approve", "reject"}
+    assert outputs[0]["payload"]["status"] in {"completed", "escalated"}
+    checkpoint_record = checkpoint_store.get(checkpoint_id)
+    assert checkpoint_record is not None
+    assert checkpoint_record["status"] in {"approved", "rejected"}
+
+
+@pytest.mark.asyncio
+async def test_workflow_failure_event_is_correlated_and_redacted(tmp_path: Path) -> None:
+    event_bus = EventBus()
+    workflow = OrderResolutionWorkflow(
+        event_bus=event_bus,
+        memory_store=SessionMemoryStore(tmp_path / "memory"),
+        checkpoint_store=CheckpointStore(tmp_path / "checkpoints"),
+        mcp_tool=MCPKnowledgeTool(endpoint=None),
+    )
+    workflow.retry_attempts = 1
+
+    async def fail_with_secret(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError("credential=private-token")
+
+    workflow._run_maf_sequence = fail_with_secret  # type: ignore[method-assign]
+    context = WorkflowContext(
+        run_id=str(uuid4()),
+        thread_id=str(uuid4()),
+        session_id=str(uuid4()),
+        customer_id="cust-test",
+        user_message="Order ORD-1001 arrived late.",
+    )
+
+    with pytest.raises(RuntimeError, match="private-token"):
+        await workflow.start(context)
+
+    history = json.loads(event_bus.history_as_json(context.thread_id))
+    failure = next(event for event in history if event["type"] == "workflow.failed")
+    assert failure["payload"] == {
+        "status": "failed",
+        "code": "RuntimeError",
+        "message": "The resolution workflow could not be completed.",
+        "workflow_run_id": context.run_id,
+        "session_id": context.session_id,
+        "thread_id": context.thread_id,
+        "event_id": failure["id"],
+    }
+    assert "private-token" not in json.dumps(failure)
+
+
+@pytest.mark.asyncio
+async def test_hitl_resume_failure_emits_correlated_failure_event(tmp_path: Path) -> None:
+    event_bus = EventBus()
+    checkpoint_store = CheckpointStore(tmp_path / "checkpoints")
+    workflow = OrderResolutionWorkflow(
+        event_bus=event_bus,
+        memory_store=SessionMemoryStore(tmp_path / "memory"),
+        checkpoint_store=checkpoint_store,
+        mcp_tool=MCPKnowledgeTool(endpoint=None),
+    )
+    context = WorkflowContext(
+        run_id=str(uuid4()),
+        thread_id=str(uuid4()),
+        session_id=str(uuid4()),
+        customer_id="cust-test",
+        user_message="Order ORD-1009 is delayed and I need compensation.",
+    )
+    await workflow.start(context)
+    history = json.loads(event_bus.history_as_json(context.thread_id))
+    checkpoint_id = next(
+        event["payload"]["checkpoint_id"]
+        for event in history
+        if event["type"] == "checkpoint.created"
+    )
+
+    async def fail_resolution(**_kwargs: object) -> None:
+        raise RuntimeError("processor credential=private-token")
+
+    workflow._resolution_executor.complete_resolution = fail_resolution  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="private-token"):
+        await workflow.handle_hitl_response(
+            checkpoint_id=checkpoint_id,
+            decision="approve",
+            reviewer="test-reviewer",
+            comments="approved",
+        )
+
+    resumed_history = json.loads(event_bus.history_as_json(context.thread_id))
+    failure = next(event for event in resumed_history if event["type"] == "workflow.failed")
+    assert failure["payload"]["message"] == "The resolution workflow could not be completed."
+    assert failure["payload"]["workflow_run_id"] == context.run_id
+    assert failure["payload"]["session_id"] == context.session_id
+    assert failure["payload"]["thread_id"] == context.thread_id
+    assert failure["payload"]["event_id"] == failure["id"]
+    assert "private-token" not in json.dumps(failure)

@@ -3,6 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
+PYTHON="$ROOT_DIR/backend/.venv/bin/python"
+
+if [[ ! -x "$PYTHON" ]]; then
+  echo "Backend virtual environment is required; run make foundry-python-wheelhouse." >&2
+  exit 1
+fi
+"$PYTHON" "$ROOT_DIR/scripts/foundry/validate_python_wheelhouse.py" \
+  "$ROOT_DIR/backend/.wheels"
 
 get_env() {
   AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
@@ -41,12 +49,6 @@ project_endpoint="$(required_env AZURE_AI_PROJECT_ENDPOINT)"
 responses_endpoint="$(required_env FOUNDRY_RESPONSES_ENDPOINT)"
 model_deployment="$(required_env FOUNDRY_MODEL_DEPLOYMENT_NAME)"
 embeddings_deployment="$(required_env FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME)"
-
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Backend deployment requires the canonical public target." >&2
-  exit 1
-}
 
 az account set --subscription "$subscription_id"
 frontend_fqdn="$(

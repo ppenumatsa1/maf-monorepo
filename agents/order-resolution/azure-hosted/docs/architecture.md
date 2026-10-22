@@ -15,7 +15,7 @@ explicit 4+1 view model:
 It describes source and infrastructure intent. It is not evidence that a
 deployment, endpoint, trace, evaluation, or Azure resource is currently live.
 Current evidence, when authorized and recorded, belongs in
-[.azure/deployment-plan.md](../../.azure/deployment-plan.md) and
+[.azure/deployment-plan.md](../.azure/deployment-plan.md) and
 [issues-changes-fixes.md](issues-changes-fixes.md).
 
 ## Business Problem
@@ -259,9 +259,9 @@ enforced when event payloads are designed.
 
 ### Intended Azure Topology
 
-The Azure app-hosted package declares two Container Apps in
-subscription `7df95e88-701c-4693-af77-3159f83b558d`,
-`rg-maf-ora-azure`, in North Central US:
+The ignored operator profile selects the Azure subscription, resource group,
+AZD environment, and region. The app-hosted package declares two Container
+Apps:
 
 ```text
 Operator browser
@@ -281,15 +281,12 @@ the request execution path as an application host.
 ```
 
 The IaC models both frontend and backend as Container App services. The Nginx
-frontend proxies `/api/` to the backend URL, while the backend is the only
-component that hosts FastAPI and the MAF workflow. Both Container App modules
-declare HTTPS external ingress; the application boundary is architectural, not
-a claim that either endpoint currently exists.
+frontend has external ingress and proxies `/api/` to the internal backend. The
+backend is the only component that hosts FastAPI and the MAF workflow.
 
-East US is excluded from this target because of the Azure PostgreSQL offer
-restriction. The infrastructure package also defines a Container Apps
-environment, Azure Container Registry, user-assigned identities, Azure
-PostgreSQL, monitoring/Application Insights, and a Foundry project/model
+The infrastructure package also defines a Container Apps environment, Azure
+Container Registry, user-assigned identities, Azure PostgreSQL,
+monitoring/Application Insights, and optional Foundry model/evaluation
 configuration. Their presence in IaC is implementation intent, not current
 deployment evidence.
 
@@ -359,11 +356,11 @@ has just passed them.
 | Report-only Foundry model evaluation | `make eval-foundry` |
 | Report-only evaluation against selected AZD backend configuration | `make eval-foundry-deployed` |
 | Consolidated local review gate | `./scripts/skills/design-review-skill.sh` |
-| Normal Azure release | `make release-app`, followed by release smoke, hosted E2E, report-only evaluation, and fresh telemetry correlation. |
+| Normal Azure release | `make release-app`, followed by release smoke, hosted browser/domain E2E, fresh telemetry correlation, report-only evaluation, and final evidence. |
 | Exceptional reconciliation | Explicit `make release-infra-preview`, then direct safety-checked `make release-infra-reconcile`; apply obtains a fresh what-if and PostgreSQL must be retained. |
 
 The required validation set depends on the change; the canonical gate matrix is
 in [engineering-operating-model.md](engineering-operating-model.md). A source
 change, a successful local test, or an IaC definition does not by itself prove
-the status of a public Azure deployment. Record dated, non-secret deployment,
-smoke, evaluation, and telemetry evidence before making that claim.
+the status of an Azure-hosted deployment. Record dated, non-secret deployment,
+smoke, telemetry, evaluation, and final evidence before making that claim.

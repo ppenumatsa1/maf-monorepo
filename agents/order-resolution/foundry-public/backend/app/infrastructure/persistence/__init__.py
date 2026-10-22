@@ -10,6 +10,11 @@ from app.infrastructure.persistence.session_memory import (
     SessionMemoryProvider,
     SessionMemoryStore,
 )
+from app.infrastructure.persistence.teams_card_action_repository import (
+    TeamsCardAction,
+    TeamsCardActionError,
+    TeamsCardActionRepository,
+)
 from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 
 __all__ = [
@@ -19,5 +24,8 @@ __all__ = [
     "PostgresSessionMemoryStore",
     "SessionMemoryProvider",
     "SessionMemoryStore",
+    "TeamsCardAction",
+    "TeamsCardActionError",
+    "TeamsCardActionRepository",
     "WorkflowRunRepository",
 ]

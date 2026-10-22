@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+from uuid import uuid4
 
 CONTRACT = "maf-release/v1"
 LANE = "order-resolution-azure-hosted"
@@ -32,15 +35,21 @@ TIMED_STAGES = (
     "smoke",
     "browser_e2e",
     "domain_e2e",
-    "evaluation",
     "telemetry",
+    "evaluation",
     "final_evidence",
 )
 MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
-FORBIDDEN_KEY = re.compile(
-    r"(api[_-]?key|bearer[_-]?token|connection[_-]?string|password|secret|"
-    r"database_url|runtime_database_url|access[_-]?token|client[_-]?secret)",
-    re.IGNORECASE,
+RELEASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$")
+SECRET_KEY_PARTS = (
+    "password",
+    "secret",
+    "credential",
+    "api_key",
+    "apikey",
+    "connection_string",
+    "connectionstring",
+    "database_url",
 )
 FORBIDDEN_VALUE = [
     re.compile(r"AccountKey=", re.IGNORECASE),
@@ -55,7 +64,7 @@ FORBIDDEN_VALUE = [
 
 def atomic_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
     try:
         with temporary.open("x", encoding="utf-8") as stream:
             json.dump(payload, stream, indent=2, sort_keys=True)
@@ -65,6 +74,38 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def validated_release_directory(path: Path, release_id: str | None = None) -> Path:
+    if path.is_symlink():
+        raise ValueError("release directory may not be a symlink")
+    if release_id is not None and not RELEASE_ID_PATTERN.fullmatch(release_id):
+        raise ValueError("release_id must contain only safe release-id characters")
+    if release_id is not None and path.name != release_id:
+        raise ValueError("release directory name must match release_id")
+    if path.parent.name != "releases" or path.parent.parent.name != ".artifacts":
+        raise ValueError("release directory must be .artifacts/releases/<release-id>")
+    for parent in (path.parent.parent, path.parent):
+        if parent.is_symlink():
+            raise ValueError("release path parents may not be symlinks")
+    resolved = path.resolve(strict=False)
+    if resolved.parent != path.parent.resolve(strict=False):
+        raise ValueError("release path escapes the releases directory")
+    return resolved
+
+
+@contextmanager
+def release_lock(release_dir: Path) -> Any:
+    release_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = release_dir / ".release.lock"
+    if lock_path.is_symlink():
+        raise ValueError("release lock may not be a symlink")
+    with lock_path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def sha256(path: Path) -> str:
@@ -159,10 +200,15 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
         (ended["smoke"], started["domain_e2e"], "domain_e2e"),
         (
             max(ended["browser_e2e"], ended["domain_e2e"]),
-            started["evaluation"],
-            "evaluation",
+            started["telemetry"],
+            "telemetry",
         ),
-        (ended["evaluation"], started["telemetry"], "telemetry"),
+        (ended["telemetry"], started["evaluation"], "evaluation"),
+        (
+            max(ended["telemetry"], ended["evaluation"]),
+            started["final_evidence"],
+            "final_evidence",
+        ),
     )
     for prerequisite_end, stage_start, name in ordering:
         if stage_start < prerequisite_end:
@@ -183,17 +229,21 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
         raise ValueError("Azure app-only to telemetry exceeded the 15-minute release budget")
     if type(azure.get("benchmark_duration_ms")) is not int or azure["benchmark_duration_ms"] != expected_total:
         raise ValueError("invalid Azure benchmark_duration_ms")
-    final_started_at = parse_utc_timestamp(
-        azure["stages"]["final_evidence"]["started_at"], "final_evidence.started_at"
-    )
-    if final_started_at < telemetry_succeeded_at:
-        raise ValueError("final evidence may not start before telemetry succeeds")
-
-
 def scan_secret_like(value: Any, location: str = "$") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if FORBIDDEN_KEY.search(str(key)):
+            normalized = str(key).lower()
+            numeric_token_metric = normalized.endswith("_tokens") and (
+                child is None or (isinstance(child, (int, float)) and not isinstance(child, bool))
+            )
+            credential_token = "token" in normalized and (
+                not numeric_token_metric
+                or any(
+                    part in normalized
+                    for part in ("access", "refresh", "bearer", "auth", "credential", "client")
+                )
+            )
+            if any(part in normalized for part in SECRET_KEY_PARTS) or credential_token:
                 raise ValueError(f"secret-like key rejected at {location}.{key}")
             scan_secret_like(child, f"{location}.{key}")
     elif isinstance(value, list):
@@ -214,8 +264,11 @@ def checked_artifact(release_dir: Path, relative: str) -> Path:
     ):
         raise ValueError(f"unsafe artifact path: {relative}")
     candidate = release_dir.joinpath(*pure.parts)
-    if candidate.is_symlink():
-        raise ValueError(f"artifact symlinks are not accepted: {relative}")
+    current = release_dir
+    for part in pure.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"artifact symlinks are not accepted: {relative}")
     resolved_root = release_dir.resolve()
     resolved = candidate.resolve(strict=True)
     if resolved_root != resolved and resolved_root not in resolved.parents:
@@ -226,6 +279,8 @@ def checked_artifact(release_dir: Path, relative: str) -> Path:
 
 
 def validate_evidence(path: Path, relative: str, release_id: str, started_at: datetime) -> str:
+    if datetime.fromtimestamp(path.stat().st_mtime, tz=UTC) < started_at:
+        raise ValueError(f"stale evidence rejected: {relative}")
     raw = path.read_bytes()
     if b"\x00" in raw:
         raise ValueError(f"binary artifact is not eligible for sanitized release metadata: {relative}")
@@ -237,9 +292,20 @@ def validate_evidence(path: Path, relative: str, release_id: str, started_at: da
         payload = json.loads(text)
         scan_secret_like(payload)
         if isinstance(payload, dict):
+            generated_at = payload.get("generated_at")
+            if not isinstance(generated_at, str):
+                raise ValueError(f"evidence is missing generated_at: {relative}")
             evidence_release_id = payload.get("release_id")
             if evidence_release_id is not None and evidence_release_id != release_id:
                 raise ValueError(f"cross-release evidence rejected: {relative}")
+            evidence_release_start = payload.get("release_started_at")
+            if evidence_release_start is not None:
+                if not isinstance(evidence_release_start, str):
+                    raise ValueError(f"invalid release window evidence: {relative}")
+                if parse_timestamp(
+                    evidence_release_start, f"{relative}.release_started_at"
+                ) != started_at:
+                    raise ValueError(f"cross-window evidence rejected: {relative}")
             for field in ("generated_at", "release_started_at", "started_at"):
                 value = payload.get(field)
                 if isinstance(value, str) and parse_timestamp(value, f"{relative}.{field}") < started_at:
@@ -250,7 +316,7 @@ def validate_evidence(path: Path, relative: str, release_id: str, started_at: da
     return status
 
 
-def init_record(args: argparse.Namespace) -> None:
+def _init_record(args: argparse.Namespace) -> None:
     release_dir = args.release_dir.resolve()
     if release_dir.name != args.release_id or release_dir.parent.name != "releases":
         raise ValueError("release directory must be .artifacts/releases/<release-id>")
@@ -305,6 +371,7 @@ def init_record(args: argparse.Namespace) -> None:
         "durable_artifact": None,
         "extensions": {
             "release_authority": "prepared_not_live_validated",
+            "validation_state": "prepared_not_live_validated",
             "azure": {
                 "app_only_started_at": None,
                 "telemetry_succeeded_at": None,
@@ -324,7 +391,7 @@ def init_record(args: argparse.Namespace) -> None:
     atomic_json(record_path, record)
 
 
-def update_timing(args: argparse.Namespace) -> None:
+def _update_timing(args: argparse.Namespace) -> None:
     record_path = args.release_dir.resolve() / "release.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
     if record.get("status") != "running":
@@ -340,6 +407,13 @@ def update_timing(args: argparse.Namespace) -> None:
     else:
         stage = azure["stages"][args.stage]
         if args.event == "stage-start":
+            if args.stage == "final_evidence" and stage.get("status") == "failed":
+                stage.update(
+                    status="pending",
+                    started_at=None,
+                    ended_at=None,
+                    duration_ms=None,
+                )
             if stage.get("status") != "pending":
                 raise ValueError(f"timing stage is not pending: {args.stage}")
             app_only_value = azure.get("app_only_started_at")
@@ -376,7 +450,7 @@ def update_timing(args: argparse.Namespace) -> None:
     atomic_json(record_path, record)
 
 
-def resume_record(args: argparse.Namespace) -> None:
+def _resume_record(args: argparse.Namespace) -> None:
     record_path = args.release_dir.resolve() / "release.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
     if record.get("status") != "failed":
@@ -407,12 +481,21 @@ def resume_record(args: argparse.Namespace) -> None:
     atomic_json(record_path, record)
 
 
-def finalize_record(args: argparse.Namespace) -> None:
+def _finalize_record(args: argparse.Namespace) -> None:
     release_dir = args.release_dir.resolve()
     record_path = release_dir / "release.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
     if record.get("contract") != CONTRACT or record.get("release_id") != release_dir.name:
         raise ValueError("release.json identity does not match its directory")
+    if record.get("status") != "running":
+        raise ValueError("only the active running release may be finalized")
+    existing_artifact_paths = [
+        item.get("path")
+        for item in record.get("artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    ]
+    if len(existing_artifact_paths) != len(set(existing_artifact_paths)):
+        raise ValueError("release record contains duplicate artifact paths")
     started_at = parse_timestamp(record["started_at"], "started_at")
     declared_gates = record.get("gates")
     if not isinstance(declared_gates, dict) or set(declared_gates) != set(REQUIRED_GATES):
@@ -430,8 +513,14 @@ def finalize_record(args: argparse.Namespace) -> None:
         candidate = release_dir / relative
         if args.status == "failed" and not candidate.exists():
             continue
-        path = checked_artifact(release_dir, relative)
-        gate_status = validate_evidence(path, relative, record["release_id"], started_at)
+        try:
+            path = checked_artifact(release_dir, relative)
+            gate_status = validate_evidence(path, relative, record["release_id"], started_at)
+        except (OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            if args.status == "succeeded":
+                raise
+            record["gates"][gate] = {"status": "failed", "artifact": relative}
+            continue
         record["gates"][gate] = {"status": gate_status, "artifact": relative}
         artifacts.append(
             {"path": relative, "sha256": sha256(path), "size_bytes": path.stat().st_size}
@@ -452,8 +541,39 @@ def finalize_record(args: argparse.Namespace) -> None:
     record["completed_at"] = now
     record["failed_stage"] = args.failed_stage if args.status == "failed" else None
     record["error"] = args.error if args.status == "failed" else None
+    record["extensions"]["validation_state"] = (
+        "live_validated" if args.status == "succeeded" else "validation_failed"
+    )
     scan_secret_like(record)
     atomic_json(record_path, record)
+
+
+def init_record(args: argparse.Namespace) -> None:
+    release_dir = validated_release_directory(args.release_dir, args.release_id)
+    args.release_dir = release_dir
+    with release_lock(release_dir):
+        _init_record(args)
+
+
+def update_timing(args: argparse.Namespace) -> None:
+    release_dir = validated_release_directory(args.release_dir)
+    args.release_dir = release_dir
+    with release_lock(release_dir):
+        _update_timing(args)
+
+
+def resume_record(args: argparse.Namespace) -> None:
+    release_dir = validated_release_directory(args.release_dir)
+    args.release_dir = release_dir
+    with release_lock(release_dir):
+        _resume_record(args)
+
+
+def finalize_record(args: argparse.Namespace) -> None:
+    release_dir = validated_release_directory(args.release_dir)
+    args.release_dir = release_dir
+    with release_lock(release_dir):
+        _finalize_record(args)
 
 
 def parser() -> argparse.ArgumentParser:

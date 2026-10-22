@@ -28,27 +28,28 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - **Copilot provides** implementation, tests, and infra/doc updates.
 - **Gates provide** release evidence for correctness, recovery, telemetry, and model/evaluation behavior.
 
-Canonical contract: `docs/design/engineering-operating-model.md`.
+Canonical contract: `docs/engineering-operating-model.md`.
 
-The Azure deployment lane is one app-hosted package: two Container Apps in
-subscription `7df95e88-701c-4693-af77-3159f83b558d`,
-`rg-maf-ora-azure`, in North Central US, with Foundry limited to models and
-evaluations. East US is excluded because of the Azure PostgreSQL offer
-restriction. Do not claim deployment until current validation evidence exists.
+The Azure deployment lane is one app-hosted package: an external frontend
+Container App and an internal FastAPI backend Container App, with Foundry
+limited to model inference and report-only evaluation. PostgreSQL runtime
+access uses managed identity. Azure target values come from a validated,
+ignored operator profile; never commit tenant, subscription, user, resource,
+region, or endpoint values. Do not claim deployment until current validation
+evidence exists.
 Normal releases are `make release-app` app-only releases. PostgreSQL is
 retained: never recreate, replace, or reset it. Infrastructure reconciliation
 is never implicit, but invoking its validated workflow is execution intent:
 apply obtains its own Bicep what-if and requires the existing PostgreSQL server
 and database to be absent because steady-state IaC excludes PostgreSQL. Do not add owner approval/reference or
 caller-supplied digest gates. Require fresh smoke, hosted browser E2E, the
-three HTTP domain scenarios, a completed report-only evaluation with zero
-failed or errored rows, exact Application Insights correlation, and final
+three HTTP domain scenarios, exact Application Insights correlation, a
+completed report-only evaluation with zero failed or errored rows, and final
 evidence before claiming validation. Successful finalization must reject an
-app-only-to-telemetry interval above 15 minutes; the current verified record is
-13m 24.6s. Keep deployment ownership local to this
-project: use the shared `../deployment/profiles/azure-hosted.env` target while
-keeping `deployment/profile.sh`, `deployment/contracts/`, scripts, and runtime
-lane-local. Generated release JSON
+app-only-to-telemetry interval above 15 minutes. Keep deployment ownership
+local to this project. Profiles, scripts, runtime components, and evidence
+contracts must remain lane-local; compatibility paths may not become a reason
+to commit live target values. Generated release JSON
 belongs under `.artifacts/releases/<release-id>/evidence/`; logs belong under
 the sibling `logs/` directory. Failed validation must still emit final failed
 evidence.
@@ -66,8 +67,10 @@ Retain the CFS Python package feed and Alpine/musl-compatible frontend build.
   - Within `backend/app/maf/*`, keep prompts/agents/tools/executors/runner/workflow
     separated; avoid reintroducing monolithic workflow-stage logic.
 - Do not add legacy Foundry runtime or proxy modules.
+- Do not add private networking, Foundry hosted-agent/Responses, Bot, Activity,
+  Teams, or Adaptive Card surfaces.
 - Any change to HITL decision logic must update:
-  - `docs/design/hitl-approval-conditions.md`
+  - `docs/hitl-approval-conditions.md`
   - workflow tests and/or deterministic evaluation cases
 - Do not remove or rename emitted event types without updating frontend/event consumers:
   - `workflow.stage`
@@ -153,8 +156,9 @@ When behavior changes, update these docs in the same PR:
 
 - `README.md`
 - `backend/README.md`
-- `docs/design/userflow.md`
-- `docs/design/hitl-approval-conditions.md`
-- `docs/design/engineering-operating-model.md`
+- `docs/userflow.md`
+- `docs/hitl-approval-conditions.md`
+- `docs/engineering-operating-model.md`
+- `docs/technical-spec.md`
 - `.github/copilot-instructions.md`
 - `agents.md`

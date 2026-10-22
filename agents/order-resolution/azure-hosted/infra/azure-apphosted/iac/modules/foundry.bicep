@@ -2,6 +2,7 @@ targetScope = 'resourceGroup'
 
 param accountName string
 param projectName string
+param evaluationOperatorPrincipalId string = ''
 param location string = resourceGroup().location
 param tags object = {}
 param customSubDomainName string
@@ -58,6 +59,9 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
     displayName: projectName
     description: 'MAF order resolution app-hosted project'
   }
+  dependsOn: [
+    evaluatorDeployment
+  ]
 }
 
 resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
@@ -110,6 +114,19 @@ resource projectFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignmen
     )
     principalId: project.identity.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+resource evaluationOperatorFoundryUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(evaluationOperatorPrincipalId)) {
+  name: guid(account.id, evaluationOperatorPrincipalId, 'evaluation-operator-foundry-user')
+  scope: account
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+    )
+    principalId: evaluationOperatorPrincipalId
+    principalType: 'User'
   }
 }
 

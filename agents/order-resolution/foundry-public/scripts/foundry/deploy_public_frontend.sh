@@ -36,12 +36,6 @@ backend_name="$(required_env BACKEND_CONTAINER_APP_NAME)"
 frontend_name="$(required_env FRONTEND_CONTAINER_APP_NAME)"
 image_repository="$(required_env FRONTEND_IMAGE_REPOSITORY)"
 
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Frontend deployment requires the canonical public target." >&2
-  exit 1
-}
-
 az account set --subscription "$subscription_id"
 backend_fqdn="$(
   az containerapp show \

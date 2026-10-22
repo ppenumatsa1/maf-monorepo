@@ -2,25 +2,33 @@
 
 ## Backend
 
-- Python 3.12 for the API container and Python 3.13 for the hosted-agent
-  container
-- FastAPI + Uvicorn
-- Pydantic v2
-- httpx for MCP HTTP tool calls
-- OpenTelemetry SDK + OTLP exporter
-- Azure Monitor OpenTelemetry exporter for public Application Insights
+- Python 3.13 for both API and hosted-agent containers
+- Hash-locked runtime graph in `backend/requirements.lock`, with offline
+  CPython 3.13 Linux AMD64 wheelhouse installation in both images
+- FastAPI 0.156.3 + Uvicorn 0.54
+- Pydantic 2.14
+- Agent Framework Core 1.22, Orchestrations 1.3, and Foundry 1.15
+- Azure AI AgentServer Responses 2.3 and Activity 1.0 beta adapters
+- Azure AI Projects 2.7 and Azure Identity 1.26
+- Psycopg 3.3 and Psycopg Pool 3.3
+- Azure Monitor OpenTelemetry 1.8 and Azure Monitor Query 2.0
 
 ## Frontend
 
-- React 19
-- Vite 8
-- TypeScript
-- `@copilotkit/react-core` for the optional, read-only selected-thread view
+- React/React DOM 19.3
+- Vite 8.3
+- CopilotKit 1.79 and Zod 4.6
+- Playwright 1.64 and ESLint 10.12
+- TypeScript 7 executable with a TypeScript 6 compiler API alias for
+  `typescript-eslint`
 
 ## Data and Durability
 
 - PostgreSQL as the durable source of truth for workflow runs, events, conversation messages, checkpoints, approvals, sessions, and eval records
 - Psycopg v3 + connection pooling for backend persistence access
+- Administrator-owned schema DDL, externally managed production schema
+  validation, DML/sequence-only runtime grants, and hosted pool defaults
+  `0/2/30` (minimum/maximum/idle seconds)
 
 ## Integration
 
@@ -28,11 +36,15 @@
 - OTEL exporters configurable by environment variables
 - Public Azure: Foundry Responses, Container Apps, managed identity, PostgreSQL
   Flexible Server, and Application Insights
+- Additive Foundry Activity hosting, Azure Bot Service, `MsTeamsChannel`,
+  Adaptive Cards, and Shared Microsoft 365 publication automation
 - App Insights enabled through `APPLICATIONINSIGHTS_CONNECTION_STRING`; FastAPI
   health and SSE request spans are excluded to keep workflow telemetry visible
 - AG-UI-compatible selected-thread SSE and CopilotKit are redacted durable-event
   projections; they do not receive MCP/RAG content, order/policy payloads, raw
   model output, or credentials
+
+This is the checked-in source baseline, not a live-deployment statement.
 
 ## Skills Baseline
 

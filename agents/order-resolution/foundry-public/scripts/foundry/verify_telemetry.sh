@@ -26,11 +26,6 @@ APPLICATION_INSIGHTS_NAME="${APPLICATION_INSIGHTS_NAME:-$(get_env APPLICATION_IN
   echo "Selected AZD environment must provide AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, and APPLICATION_INSIGHTS_NAME." >&2
   exit 1
 }
-[[ "$SUBSCRIPTION_ID" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$RESOURCE_GROUP" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Telemetry verification requires the canonical public target." >&2
-  exit 1
-}
 LOOKBACK_MINUTES="${TELEMETRY_LOOKBACK_MINUTES:-30}"
 MAX_ATTEMPTS="${TELEMETRY_MAX_ATTEMPTS:-12}"
 EVIDENCE_FILE="${HOSTED_E2E_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-e2e-evidence.json}"

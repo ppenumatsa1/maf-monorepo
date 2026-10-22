@@ -31,7 +31,10 @@ hosted_agent_name="$(get_env HOSTED_AGENT_NAME)"
 set_if_missing FOUNDRY_PROJECTS_ENDPOINT "$project_endpoint"
 set_if_missing FOUNDRY_PROJECT_ENDPOINT "$project_endpoint"
 set_if_missing FOUNDRY_HOSTED_AGENT_NAME "$hosted_agent_name"
-set_if_missing FOUNDRY_RUNTIME_CONNECTION_NAME orderresolutionruntimesecrets
+[[ -n "$(get_env FOUNDRY_RUNTIME_CONNECTION_NAME)" ]] || {
+  echo "FOUNDRY_RUNTIME_CONNECTION_NAME must come from the external profile." >&2
+  exit 1
+}
 set_if_missing FOUNDRY_RESPONSES_ENDPOINT "${project_endpoint}/agents/${hosted_agent_name}/endpoint/protocols/openai/responses?api-version=v1"
 set_if_missing APPINSIGHTS_CONNECTION_STRING "$(get_env APPLICATIONINSIGHTS_CONNECTION_STRING)"
 set_if_missing APP_ENV aca-public

@@ -14,15 +14,20 @@ write_release_context \
 
 source_validation_log="$RELEASE_LOGS_DIR/source-validation.log"
 bicep_build_log="$RELEASE_LOGS_DIR/bicep-build.log"
+capacity_preflight_log="$RELEASE_LOGS_DIR/capacity-preflight.log"
 source_validation_file="$(release_artifact_path source-validation.json)"
 
 make --no-print-directory release-source-validation >"$source_validation_log" 2>&1 &
 source_validation_pid=$!
 make --no-print-directory bicep-build >"$bicep_build_log" 2>&1 &
 bicep_build_pid=$!
+"$ROOT_DIR/scripts/release/run-capacity-preflight.sh" \
+  >"$capacity_preflight_log" 2>&1 &
+capacity_preflight_pid=$!
 
 source_validation_status="passed"
 bicep_build_status="passed"
+capacity_preflight_status="passed"
 overall_status="passed"
 
 wait "$source_validation_pid" || {
@@ -31,6 +36,10 @@ wait "$source_validation_pid" || {
 }
 wait "$bicep_build_pid" || {
   bicep_build_status="failed"
+  overall_status="failed"
+}
+wait "$capacity_preflight_pid" || {
+  capacity_preflight_status="failed"
   overall_status="failed"
 }
 
@@ -45,7 +54,9 @@ python3 - "$source_validation_file" \
   "$source_validation_status" \
   "logs/$(basename "$source_validation_log")" \
   "$bicep_build_status" \
-  "logs/$(basename "$bicep_build_log")" <<'PY'
+  "logs/$(basename "$bicep_build_log")" \
+  "$capacity_preflight_status" \
+  "logs/$(basename "$capacity_preflight_log")" <<'PY'
 import json
 import sys
 from datetime import UTC, datetime
@@ -64,6 +75,8 @@ from pathlib import Path
     source_validation_log,
     bicep_build_status,
     bicep_build_log,
+    capacity_preflight_status,
+    capacity_preflight_log,
 ) = sys.argv[1:]
 
 payload = {
@@ -91,6 +104,11 @@ payload = {
             "name": "bicep-build",
             "status": bicep_build_status,
             "log": bicep_build_log,
+        },
+        {
+            "name": "read-only-capacity-preflight",
+            "status": capacity_preflight_status,
+            "log": capacity_preflight_log,
         },
     ],
 }

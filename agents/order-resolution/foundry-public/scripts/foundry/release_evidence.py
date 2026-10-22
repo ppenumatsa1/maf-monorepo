@@ -16,6 +16,7 @@ from typing import Any
 RELEASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_GATES = {
+    "preview": ("evidence/infrastructure-preview.json", "passed"),
     "model_preflight": ("evidence/model-preflight.json", "passed"),
     "deployment_verification": ("evidence/deployment-verification.json", "passed"),
     "hosted_smoke": ("evidence/hosted-smoke.json", "passed"),
@@ -33,8 +34,8 @@ TIMING_STAGES = (
     "verification",
     "smoke",
     "hosted_e2e",
-    "evaluation",
     "telemetry",
+    "evaluation",
     "final_evidence",
 )
 MAX_APP_TO_TELEMETRY_MS = 15 * 60 * 1000
@@ -57,8 +58,11 @@ SECRET_VALUE_PATTERNS = (
 
 
 def utc_timestamp(value: datetime | None = None) -> str:
-    return (value or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace(
-        "+00:00", "Z"
+    return (
+        (value or datetime.now(timezone.utc))
+        .astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
     )
 
 
@@ -75,9 +79,15 @@ def assert_secret_free(value: object, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             normalized = str(key).lower()
-            forbidden_key = any(part in normalized for part in SECRET_KEY_PARTS) or (
-                "database_url" in normalized
-                and not normalized.endswith(("_sha256", "_matches"))
+            token_usage_metric = normalized.endswith("_tokens") and (
+                item is None or isinstance(item, (int, float))
+            )
+            forbidden_key = any(
+                part in normalized
+                for part in SECRET_KEY_PARTS
+                if part != "token"
+            ) or ("token" in normalized and not token_usage_metric) or (
+                "database_url" in normalized and not normalized.endswith(("_sha256", "_matches"))
             )
             if forbidden_key:
                 raise ValueError(f"Secret-bearing key is not allowed in evidence: {path}.{key}")
@@ -156,7 +166,9 @@ def record_stage_timing(
         raise ValueError("Timing action must be start or end")
     if action == "end" and status not in {"succeeded", "failed"}:
         raise ValueError("Timing end requires succeeded or failed status")
-    moment = parse_timestamp(timestamp, "timing timestamp") if timestamp else datetime.now(timezone.utc)
+    moment = (
+        parse_timestamp(timestamp, "timing timestamp") if timestamp else datetime.now(timezone.utc)
+    )
     release_dir = release_directory(project_root, release_id)
     record_path = release_dir / "release.json"
     with release_lock(release_dir):
@@ -167,7 +179,10 @@ def record_stage_timing(
         stages = timing["stages"]
         existing = stages.get(stage)
         if action == "start":
-            if existing is not None:
+            if isinstance(existing, dict) and existing.get("status") == "failed":
+                stages.pop(stage)
+                existing = None
+            elif existing is not None:
                 raise ValueError(f"Timing stage already started: {stage}")
             stages[stage] = {
                 "status": "running",
@@ -213,8 +228,8 @@ def resume_release(
     *,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
-    moment = parse_timestamp(timestamp, "resume timestamp") if timestamp else datetime.now(
-        timezone.utc
+    moment = (
+        parse_timestamp(timestamp, "resume timestamp") if timestamp else datetime.now(timezone.utc)
     )
     release_dir = release_directory(project_root, release_id)
     record_path = release_dir / "release.json"
@@ -272,9 +287,7 @@ def validate_release_timing(record: dict[str, Any]) -> None:
     if app_end != parsed["telemetry"][1]:
         raise ValueError("app_only timing must end at telemetry success")
     for stage in TIMING_STAGES[1:-1]:
-        if parsed[stage][0] < app_start or (
-            stage != "evaluation" and parsed[stage][1] > app_end
-        ):
+        if parsed[stage][0] < app_start or (stage != "evaluation" and parsed[stage][1] > app_end):
             raise ValueError(f"Release timing stage is outside app_only: {stage}")
     ordered_after = (
         ("package_build", "backend_deployment"),
@@ -285,8 +298,8 @@ def validate_release_timing(record: dict[str, Any]) -> None:
         ("hosted_deployment_activation", "verification"),
         ("verification", "smoke"),
         ("smoke", "hosted_e2e"),
-        ("smoke", "evaluation"),
         ("hosted_e2e", "telemetry"),
+        ("telemetry", "evaluation"),
         ("telemetry", "final_evidence"),
         ("evaluation", "final_evidence"),
     )
@@ -379,7 +392,9 @@ def parse_profile(profile_path: Path) -> dict[str, str]:
     if not profile_path.is_file() or profile_path.is_symlink():
         raise ValueError("Deployment profile must be a regular non-symlink file")
     values: dict[str, str] = {}
-    for line_number, raw_line in enumerate(profile_path.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, raw_line in enumerate(
+        profile_path.read_text(encoding="utf-8").splitlines(), 1
+    ):
         if not raw_line or raw_line.startswith("#"):
             continue
         if "=" not in raw_line:
@@ -460,7 +475,37 @@ def initialize_release(
         "artifacts": [],
         "durable_artifact": None,
         "extensions": {
-            "release_authority": "code_only",
+            "release_authority": {
+                "mode": "app_only",
+                "allowed_mutations": [
+                    "hosted_agent_version",
+                    "backend_container_app_revision",
+                    "frontend_container_app_revision",
+                ],
+                "forbidden_mutations": [
+                    "shared_infrastructure",
+                    "stateful_infrastructure",
+                    "model_deployments",
+                    "rbac",
+                    "networking",
+                    "postgresql",
+                    "bot_service",
+                    "teams_channel",
+                ],
+            },
+            "rollback_authority": {
+                "authority": "operator_review_required",
+                "allowed": [
+                    "reactivate_prior_hosted_agent_version",
+                    "restore_prior_backend_revision",
+                    "restore_prior_frontend_revision",
+                ],
+                "forbidden": [
+                    "delete_stateful_resources",
+                    "reconcile_shared_infrastructure",
+                    "remove_teams_catalog_entries_automatically",
+                ],
+            },
             "validation_state": "prepared_not_live_validated",
             "release_timing": {
                 "version": 1,
@@ -575,6 +620,7 @@ def finalize_release(
                     expected_status,
                 )
                 record["gates"][name] = {"status": "succeeded", "artifact": relative_path}
+            record["extensions"]["validation_state"] = "live_validated"
             record["failed_stage"] = None
             record["error"] = None
         else:
@@ -594,6 +640,113 @@ def finalize_release(
         assert_secret_free(record)
         atomic_write_json(record_path, record)
         return record
+
+
+def validated_conversation_ids(payload: dict[str, Any], evidence_name: str) -> list[str]:
+    conversation_ids = payload.get("conversation_ids")
+    if not isinstance(conversation_ids, list) or len(conversation_ids) != 3:
+        raise ValueError(f"{evidence_name} evidence must contain three conversation IDs")
+    if (
+        not all(
+            isinstance(value, str) and value and value == value.strip()
+            for value in conversation_ids
+        )
+        or len(set(conversation_ids)) != 3
+    ):
+        raise ValueError(f"{evidence_name} conversation IDs must be non-empty and unique")
+    return conversation_ids
+
+
+def validate_hosted_agent_evidence(payload: dict[str, Any]) -> None:
+    hosted_agent = payload.get("hosted_agent")
+    if not isinstance(hosted_agent, dict):
+        raise ValueError("Deployment verification is missing hosted-agent metadata")
+    image = hosted_agent.get("image")
+    if not isinstance(image, str) or not re.fullmatch(r".+@sha256:[0-9a-f]{64}", image):
+        raise ValueError("Hosted-agent evidence must contain an immutable image digest")
+    if not isinstance(hosted_agent.get("version"), str) or not hosted_agent["version"]:
+        raise ValueError("Hosted-agent evidence must contain the activated version")
+    if not isinstance(hosted_agent.get("principal_id"), str) or not hosted_agent["principal_id"]:
+        raise ValueError("Hosted-agent evidence must contain the runtime principal")
+    if str(hosted_agent.get("status", "")).lower() != "active":
+        raise ValueError("Hosted-agent evidence must describe the active version")
+    checks = hosted_agent.get("checks")
+    required_checks = {
+        "active",
+        "name_matches",
+        "version_matches",
+        "image_is_immutable",
+        "image_matches",
+        "responses_protocol_matches",
+        "activity_protocol_matches",
+        "database_connection_placeholder_matches",
+        "runtime_database_connection_placeholder_matches",
+        "schema_managed_externally",
+        "hosted_pool_matches",
+        "principal_id_present",
+    }
+    if not isinstance(checks, dict) or any(
+        checks.get(name) is not True for name in required_checks
+    ):
+        raise ValueError("Hosted-agent immutable metadata checks did not all pass")
+
+
+def validate_strict_evaluation_evidence(
+    payload: dict[str, Any],
+    *,
+    expected_conversation_ids: list[str],
+) -> None:
+    if validated_conversation_ids(payload, "Evaluation") != expected_conversation_ids:
+        raise ValueError("Evaluation evidence does not cover the hosted E2E conversations")
+    result_counts = payload.get("result_counts")
+    expected_total = len(expected_conversation_ids)
+    if not isinstance(result_counts, dict) or any(
+        int(result_counts.get(name, 0)) != expected
+        for name, expected in (
+            ("passed", expected_total),
+            ("failed", 0),
+            ("errored", 0),
+            ("skipped", 0),
+            ("expected", 0),
+            ("total", expected_total),
+        )
+    ):
+        raise ValueError(
+            "Evaluation evidence must pass every hosted E2E conversation with zero "
+            "failed, errored, or skipped results"
+        )
+
+    evaluators = payload.get("evaluators")
+    run_details = payload.get("run_details")
+    criteria_results = (
+        run_details.get("per_testing_criteria_results") if isinstance(run_details, dict) else None
+    )
+    if not isinstance(evaluators, list) or not evaluators or not isinstance(criteria_results, list):
+        raise ValueError("Evaluation evidence is missing per-evaluator results")
+    results_by_name = {
+        result.get("testing_criteria"): result
+        for result in criteria_results
+        if isinstance(result, dict) and isinstance(result.get("testing_criteria"), str)
+    }
+    if (
+        len(criteria_results) != len(evaluators)
+        or len(results_by_name) != len(criteria_results)
+        or set(results_by_name) != set(evaluators)
+    ):
+        raise ValueError("Evaluation evidence evaluator results do not match configuration")
+    for evaluator in evaluators:
+        result = results_by_name[evaluator]
+        if any(
+            int(result.get(name, 0)) != expected
+            for name, expected in (
+                ("passed", expected_total),
+                ("failed", 0),
+                ("errored", 0),
+                ("skipped", 0),
+                ("expected", 0),
+            )
+        ):
+            raise ValueError(f"Evaluation evidence for {evaluator} is not a strict complete pass")
 
 
 def build_release_report(
@@ -616,14 +769,55 @@ def build_release_report(
             )
         if payload.get("release_id") != release_id:
             raise ValueError(f"{name} evidence release_id does not match the release context")
-        if parse_timestamp(payload.get("generated_at"), f"{name} generated_at") < release_started_at:
+        if (
+            parse_timestamp(payload.get("generated_at"), f"{name} generated_at")
+            < release_started_at
+        ):
             raise ValueError(f"{name} evidence predates the release window")
         assert_secret_free(payload, f"$.artifacts.{name}")
-    conversation_ids = artifacts["hosted_e2e"].get("conversation_ids")
-    if not isinstance(conversation_ids, list) or len(conversation_ids) != 3:
-        raise ValueError("Hosted E2E evidence must contain three conversation IDs")
-    if len({value for value in conversation_ids if isinstance(value, str) and value}) != 3:
-        raise ValueError("Hosted E2E conversation IDs must be non-empty and unique")
+    hosted_e2e = artifacts["hosted_e2e"]
+    conversation_ids = validated_conversation_ids(hosted_e2e, "Hosted E2E")
+    e2e_started_at = parse_timestamp(hosted_e2e.get("started_at"), "hosted_e2e started_at")
+    if e2e_started_at < release_started_at:
+        raise ValueError("Hosted E2E evidence started before the release window")
+    if (
+        parse_timestamp(hosted_e2e.get("release_started_at"), "hosted_e2e release_started_at")
+        != release_started_at
+    ):
+        raise ValueError("Hosted E2E evidence release start does not match the release context")
+
+    telemetry_ids = validated_conversation_ids(artifacts["telemetry"], "Telemetry")
+    if telemetry_ids != conversation_ids:
+        raise ValueError("Telemetry evidence does not cover the hosted E2E conversations")
+    if (
+        parse_timestamp(
+            artifacts["telemetry"].get("release_started_at"),
+            "telemetry release_started_at",
+        )
+        != release_started_at
+    ):
+        raise ValueError("Telemetry evidence release start does not match the release context")
+
+    evaluation = artifacts["evaluation"]
+    if (
+        parse_timestamp(evaluation.get("release_started_at"), "evaluation release_started_at")
+        != release_started_at
+    ):
+        raise ValueError("Evaluation evidence release start does not match the release context")
+    if (
+        parse_timestamp(evaluation.get("e2e_started_at"), "evaluation e2e_started_at")
+        != e2e_started_at
+    ):
+        raise ValueError("Evaluation evidence references a different hosted E2E window")
+    if parse_timestamp(
+        evaluation.get("e2e_generated_at"), "evaluation e2e_generated_at"
+    ) != parse_timestamp(hosted_e2e.get("generated_at"), "hosted_e2e generated_at"):
+        raise ValueError("Evaluation evidence references stale hosted E2E evidence")
+    validate_strict_evaluation_evidence(
+        evaluation,
+        expected_conversation_ids=conversation_ids,
+    )
+    validate_hosted_agent_evidence(artifacts["deployment_verification"])
     report = {
         "schema_version": 1,
         "evidence_type": "release_window",

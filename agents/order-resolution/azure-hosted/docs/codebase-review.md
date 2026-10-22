@@ -45,6 +45,5 @@ the inspector remains disabled.
 - Preserve deterministic HITL coverage for low-risk, high-risk, resume, reject,
   and duplicate-response scenarios.
 - Preserve normal app-only release behavior and PostgreSQL identity. Bicep
-  reconciliation requires explicit reviewed approval and fresh release
-  smoke/E2E/evaluation/telemetry correlation evidence before a deployment
-  statement.
+  reconciliation requires an explicit operator command and fresh
+  smoke/E2E/telemetry/evaluation evidence before a deployment statement.

@@ -36,6 +36,9 @@ def build_environment_variables() -> dict[str, str]:
         "APP_ENV": require("APP_ENV"),
         "STORE_PROVIDER": require("STORE_PROVIDER"),
         "DB_SCHEMA_MANAGED_EXTERNALLY": require("DB_SCHEMA_MANAGED_EXTERNALLY"),
+        "DB_POOL_MIN_SIZE": os.getenv("DB_POOL_MIN_SIZE", "0"),
+        "DB_POOL_MAX_SIZE": os.getenv("DB_POOL_MAX_SIZE", "2"),
+        "DB_POOL_MAX_IDLE_SECONDS": os.getenv("DB_POOL_MAX_IDLE_SECONDS", "30"),
         "ENABLE_TELEMETRY": require("ENABLE_TELEMETRY"),
         "ENABLE_INSTRUMENTATION": require("ENABLE_INSTRUMENTATION"),
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
@@ -53,7 +56,10 @@ def build_hosted_agent_definition() -> HostedAgentDefinition:
         memory="1Gi",
         container_configuration=ContainerConfiguration(image=require("FOUNDRY_IMAGE")),
         environment_variables=build_environment_variables(),
-        protocol_versions=[ProtocolVersionRecord(protocol="responses", version="2.0.0")],
+        protocol_versions=[
+            ProtocolVersionRecord(protocol="responses", version="2.0.0"),
+            ProtocolVersionRecord(protocol="activity", version="2.0.0"),
+        ],
     )
 
 

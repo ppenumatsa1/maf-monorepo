@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 
-for command in az azd curl sha256sum; do
+for command in az azd curl; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Missing required binary: $command" >&2
     exit 1
@@ -48,45 +48,31 @@ fi
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 resource_group="$(required_env AZURE_RESOURCE_GROUP)"
 target_location="$(required_env AZURE_LOCATION)"
-name_prefix="$(required_env NAME_PREFIX)"
-normalized_prefix="$(printf '%s' "$name_prefix" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
-resource_name_suffix="$(printf '%s' "${subscription_id}/${resource_group}" | sha256sum | cut -c1-8)"
-resource_name_base="${normalized_prefix:0:12}${resource_name_suffix}"
-set_if_missing FOUNDRY_ACCOUNT_NAME "${resource_name_base}ai"
-set_if_missing FOUNDRY_PROJECT_NAME order-resolution
-set_if_missing HOSTED_AGENT_NAME order-resolution-hosted
-set_if_missing FOUNDRY_RUNTIME_CONNECTION_NAME orderresolutionruntimesecrets
-set_if_missing FOUNDRY_MODEL_DEPLOYMENT_NAME order-resolution-gpt-4-1-mini
-set_if_missing FOUNDRY_MODEL_FORMAT OpenAI
-set_if_missing FOUNDRY_MODEL_NAME gpt-4.1-mini
-set_if_missing FOUNDRY_MODEL_VERSION 2025-04-14
-set_if_missing FOUNDRY_MODEL_SKU_NAME Standard
-set_if_missing FOUNDRY_MODEL_CAPACITY 2500
-set_if_missing FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME order-resolution-text-embedding-3-small
-set_if_missing FOUNDRY_EMBEDDINGS_MODEL_VERSION 1
-set_if_missing FOUNDRY_EMBEDDINGS_MODEL_CAPACITY 120
-set_if_missing FOUNDRY_EVAL_MODEL order-resolution-gpt-4-1-mini-evaluation
-set_if_missing FOUNDRY_EVALUATION_MODEL_CAPACITY 250
-set_if_missing FOUNDRY_RAI_POLICY_NAME Microsoft.Default
-set_if_missing CONTAINER_REGISTRY_NAME "${resource_name_base}acr"
-set_if_missing POSTGRES_SERVER_NAME "${resource_name_base}pg"
-set_if_missing POSTGRES_DATABASE order_resolution
-set_if_missing POSTGRES_RUNTIME_USERNAME order_resolution_runtime
-set_if_missing POSTGRES_ADMIN_USERNAME pgadmin
-set_if_missing CONTAINER_APPS_ENVIRONMENT_NAME "${resource_name_base}-cae"
-set_if_missing BACKEND_CONTAINER_APP_NAME "${resource_name_base}-backend"
-set_if_missing FRONTEND_CONTAINER_APP_NAME "${resource_name_base}-frontend"
-set_if_missing PUBLIC_BACKEND_MANAGED_IDENTITY_NAME "${resource_name_base}-backend-mi"
-set_if_missing PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME "${resource_name_base}-frontend-mi"
-set_if_missing APPLICATION_INSIGHTS_NAME "${resource_name_base}-ai"
-set_if_missing LOG_ANALYTICS_WORKSPACE_NAME "${resource_name_base}-log"
-set_if_missing BACKEND_IMAGE_REPOSITORY order-resolution-public-backend
-set_if_missing FRONTEND_IMAGE_REPOSITORY order-resolution-public-frontend
-set_if_missing EVALUATION_STORAGE_ACCOUNT_NAME "${resource_name_base}eval"
-set_if_missing BOOTSTRAP_RUNTIME_DATABASE_URL reuse-placeholder
-set_if_missing POSTGRES_ADMIN_PASSWORD reuse-placeholder
+for key in \
+  FOUNDRY_ACCOUNT_NAME FOUNDRY_PROJECT_NAME FOUNDRY_CUSTOM_SUBDOMAIN_NAME \
+  HOSTED_AGENT_NAME FOUNDRY_RUNTIME_CONNECTION_NAME \
+  FOUNDRY_MODEL_DEPLOYMENT_NAME FOUNDRY_MODEL_FORMAT FOUNDRY_MODEL_NAME \
+  FOUNDRY_MODEL_VERSION FOUNDRY_MODEL_SKU_NAME FOUNDRY_MODEL_CAPACITY \
+  FOUNDRY_EMBEDDINGS_DEPLOYMENT_NAME FOUNDRY_EMBEDDINGS_MODEL_FORMAT \
+  FOUNDRY_EMBEDDINGS_MODEL_NAME FOUNDRY_EMBEDDINGS_MODEL_VERSION \
+  FOUNDRY_EMBEDDINGS_MODEL_SKU_NAME FOUNDRY_EMBEDDINGS_MODEL_CAPACITY \
+  FOUNDRY_EVAL_MODEL FOUNDRY_EVALUATION_MODEL_FORMAT \
+  FOUNDRY_EVALUATION_MODEL_NAME FOUNDRY_EVALUATION_MODEL_VERSION \
+  FOUNDRY_EVALUATION_MODEL_SKU_NAME FOUNDRY_EVALUATION_MODEL_CAPACITY \
+  FOUNDRY_RAI_POLICY_NAME CONTAINER_REGISTRY_NAME CONTAINER_REGISTRY_SKU_NAME \
+  POSTGRES_SERVER_NAME POSTGRES_DATABASE POSTGRES_RUNTIME_USERNAME \
+  POSTGRES_ADMIN_USERNAME CONTAINER_APPS_ENVIRONMENT_NAME \
+  BACKEND_CONTAINER_APP_NAME FRONTEND_CONTAINER_APP_NAME \
+  PUBLIC_BACKEND_MANAGED_IDENTITY_NAME PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME \
+  APPLICATION_INSIGHTS_NAME LOG_ANALYTICS_WORKSPACE_NAME \
+  BACKEND_IMAGE_REPOSITORY FRONTEND_IMAGE_REPOSITORY \
+  HOSTED_AGENT_IMAGE_REPOSITORY EVALUATION_STORAGE_ACCOUNT_NAME \
+  BOT_SERVICE_NAME BOT_SERVICE_SKU_NAME; do
+  required_env "$key" >/dev/null
+done
 foundry_account="$(required_env FOUNDRY_ACCOUNT_NAME)"
 foundry_project="$(required_env FOUNDRY_PROJECT_NAME)"
+foundry_custom_subdomain="$(required_env FOUNDRY_CUSTOM_SUBDOMAIN_NAME)"
 registry="$(required_env CONTAINER_REGISTRY_NAME)"
 postgres="$(required_env POSTGRES_SERVER_NAME)"
 environment="$(required_env CONTAINER_APPS_ENVIRONMENT_NAME)"
@@ -142,7 +128,7 @@ set_env AZURE_RESOURCE_GROUP "$resource_group"
 set_env AZURE_LOCATION "$location"
 set_env FOUNDRY_ACCOUNT_NAME "$foundry_account"
 set_env FOUNDRY_PROJECT_NAME "$foundry_project"
-set_env FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$foundry_account"
+set_env FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$foundry_custom_subdomain"
 set_env AZURE_AI_PROJECT_ENDPOINT "$project_endpoint"
 set_env AZURE_AI_PROJECT_ID "$project_id"
 set_env FOUNDRY_PROJECT_ENDPOINT "$project_endpoint"
@@ -181,5 +167,4 @@ set_env APPLICATIONINSIGHTS_CONNECTION_STRING "$appinsights_connection_string"
 set_env APPINSIGHTS_CONNECTION_STRING "$appinsights_connection_string"
 set_env APPLICATIONINSIGHTS_RESOURCE_ID "$appinsights_resource_id"
 
-printf 'Hydrated secret-free target outputs for %s/%s (%s, %s, %s, %s, %s).\n' \
-  "$subscription_id" "$resource_group" "$environment" "$backend" "$frontend" "$app_insights" "$log_analytics"
+echo "Hydrated secret-free outputs for the selected external target."

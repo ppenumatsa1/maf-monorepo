@@ -16,8 +16,7 @@ class SessionMemoryProvider(Protocol):
 
 class PostgresSessionMemoryStore:
     def __init__(self, _storage_dir: Path | None = None) -> None:
-        postgres_db.ensure_schema()
-        self._pool = postgres_db.get_pool()
+        self._pool = postgres_db.pool
 
     def get_messages(self, thread_id: str) -> list[dict[str, Any]]:
         with self._pool.connection() as conn:

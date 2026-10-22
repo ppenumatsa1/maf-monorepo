@@ -37,7 +37,7 @@ if grep -Eq '^(docker-compose\.yml|frontend/Dockerfile|frontend/nginx\.conf|back
   exit 0
 fi
 
-if grep -Eq '^(frontend/|backend/app/maf/|backend/app/api/v1/schemas/|backend/app/api/v1/routers/|backend/app/modules/order_resolution/|backend/evals/|backend/tests/test_workflow\.py|backend/evals/cases\.jsonl|docs/design/hitl-approval-conditions\.md)' <<<"$changed_files"; then
+if grep -Eq '^(frontend/|backend/app/maf/|backend/app/api/v1/schemas/|backend/app/api/v1/routers/|backend/app/modules/order_resolution/|backend/evals/|backend/tests/test_workflow\.py|backend/evals/cases\.jsonl|docs/hitl-approval-conditions\.md)' <<<"$changed_files"; then
   echo "deploy_mode=app_only"
   echo "validation_mode=full"
   echo "infrastructure_action=none"

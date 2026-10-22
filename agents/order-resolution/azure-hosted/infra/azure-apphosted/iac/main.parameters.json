@@ -26,6 +26,15 @@
     "postgresDatabaseName": {
       "value": "${POSTGRES_DATABASE_NAME}"
     },
+    "postgresSkuName": {
+      "value": "${POSTGRES_SKU_NAME}"
+    },
+    "postgresSkuTier": {
+      "value": "${POSTGRES_SKU_TIER}"
+    },
+    "postgresVersion": {
+      "value": "${POSTGRES_VERSION}"
+    },
     "backendImage": {
       "value": "${BACKEND_IMAGE}"
     },
@@ -43,6 +52,9 @@
     },
     "foundryProjectName": {
       "value": "${FOUNDRY_PROJECT_NAME}"
+    },
+    "foundryEvaluationOperatorPrincipalId": {
+      "value": "${FOUNDRY_EVALUATION_OPERATOR_PRINCIPAL_ID}"
     },
     "foundryChatDeploymentName": {
       "value": "${FOUNDRY_CHAT_DEPLOYMENT_NAME}"

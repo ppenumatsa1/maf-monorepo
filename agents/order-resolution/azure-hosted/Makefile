@@ -1,10 +1,11 @@
 SHELL := /bin/bash
+BACKEND_PYTHON ?= python3.13
 COMPOSE_ENV_FILE ?= backend/.env.example
 RELEASE_RUN_ID ?= $(shell python3 -c 'from datetime import UTC, datetime; import os; print(datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"-{os.getpid()}")')
 RELEASE_ID ?= $(RELEASE_RUN_ID)
 export RELEASE_RUN_ID RELEASE_ID RELEASE_STARTED_AT RELEASE_E2E_STARTED_AT
 
-.PHONY: help bootstrap venv-backend install-backend install-frontend ensure-backend-env ensure-test-postgres \
+.PHONY: help bootstrap venv-backend install-backend install-frontend python-wheelhouse validate-python-wheelhouse ensure-backend-env ensure-test-postgres \
 	ensure-frontend ensure-playwright run-backend run-frontend format format-check lint test test-backend test-backend-run \
 	eval-backend eval-backend-run eval-foundry eval-foundry-deployed eval-all test-e2e test-e2e-run test-e2e-selected manual-matrix \
 	parity-all run-mock-mcp up down logs ps docker-test validate-quick validate-full bicep-build release-source-validation \
@@ -24,6 +25,7 @@ help:
 	@echo "  test-e2e-selected - Run focused selected-thread Playwright coverage"
 	@echo "  test-e2e         - Run all workflow and selected-thread Playwright tests"
 	@echo "  docker-test      - Optional local Docker Compose E2E; cloud CI is authoritative"
+	@echo "  python-wheelhouse - Prepare the hash-verified CPython 3.13 Linux AMD64 backend wheelhouse"
 	@echo "  build-release-images - Build the exact backend/frontend images selected by BACKEND_IMAGE and FRONTEND_IMAGE"
 	@echo "  parity-all       - Run fast local and Azure app-hosted parity checks"
 	@echo "  release-profile-apply - Initialize the non-secret release context and artifact layout"
@@ -39,7 +41,7 @@ help:
 	@echo "  release-evidence - Aggregate canonical release evidence"
 	@echo "  release          - Run the canonical app-only release flow"
 	@echo "  release-app      - Preflight and deploy app revisions only (the default release path)"
-	@echo "  release-validate - Verify, smoke, hosted browser/domain E2E, evaluation, telemetry, and final evidence"
+	@echo "  release-validate - Verify, smoke, browser/domain E2E, telemetry, strict evaluation, and final evidence"
 	@echo "  release-infra-preview - Safety-checked infrastructure what-if; never deploys"
 	@echo "  release-infra-reconcile - Direct safety-checked infrastructure reconciliation"
 	@echo "  release-provision - Prepare the approved bootstrap environment contract"
@@ -49,10 +51,21 @@ help:
 bootstrap: install-backend install-frontend
 
 venv-backend:
-	cd backend && python3 -m venv .venv
+	@if [[ -x backend/.venv/bin/python ]] && \
+		! backend/.venv/bin/python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 13))'; then \
+		rm -rf backend/.venv; \
+	fi
+	@test -x backend/.venv/bin/python || (cd backend && $(BACKEND_PYTHON) -m venv .venv)
 
 install-backend: venv-backend
-	cd backend && . .venv/bin/activate && pip install -r requirements-dev.txt
+	cd backend && . .venv/bin/activate && pip install --require-hashes -r requirements-dev.lock
+
+python-wheelhouse:
+	PYTHON_BIN="$(BACKEND_PYTHON)" ./scripts/release/build_python_wheelhouse.sh
+
+validate-python-wheelhouse:
+	python3 ./scripts/release/validate_python_wheelhouse.py \
+		backend/.wheels backend/requirements.lock
 
 install-frontend:
 	cd frontend && npm install
@@ -60,7 +73,7 @@ install-frontend:
 
 ensure-backend-env:
 	test -d backend/.venv || $(MAKE) venv-backend
-	. backend/.venv/bin/activate && python -c "import pytest" >/dev/null 2>&1 || $(MAKE) install-backend
+	. backend/.venv/bin/activate && python -c "import pytest, sys; assert sys.version_info[:2] == (3, 13)" >/dev/null 2>&1 || $(MAKE) install-backend
 
 ensure-test-postgres:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/maf_workflow?sslmode=disable}" \
@@ -214,7 +227,7 @@ parity-all:
 run-mock-mcp: ensure-backend-env
 	. backend/.venv/bin/activate && uvicorn scripts.mcp.mock_mcp_server:app --reload --port 8011
 
-up:
+up: python-wheelhouse
 	docker compose --env-file $(COMPOSE_ENV_FILE) up --build -d backend frontend mock-mcp
 	@echo "Frontend: http://localhost:5173"
 	@echo "Backend health: http://localhost:8000/health"
@@ -228,7 +241,7 @@ logs:
 ps:
 	docker compose --env-file $(COMPOSE_ENV_FILE) ps
 
-docker-test: ensure-frontend ensure-playwright
+docker-test: python-wheelhouse ensure-frontend ensure-playwright
 	@set -euo pipefail; \
 	build_args=(); \
 	if [[ -z "$${BACKEND_IMAGE:-}" || -z "$${FRONTEND_IMAGE:-}" ]]; then \
@@ -251,7 +264,7 @@ docker-test: ensure-frontend ensure-playwright
 	PLAYWRIGHT_ARTIFACTS_DIR="/workspace/$${artifacts_dir}" \
 	docker compose --project-name "$${project}" --env-file $(COMPOSE_ENV_FILE) --profile test up "$${build_args[@]}" --abort-on-container-exit --exit-code-from playwright playwright
 
-build-release-images:
+build-release-images: python-wheelhouse
 	@set -euo pipefail; \
 	[[ -n "$${BACKEND_IMAGE:-}" ]] || { echo "BACKEND_IMAGE is required."; exit 1; }; \
 	[[ -n "$${FRONTEND_IMAGE:-}" ]] || { echo "FRONTEND_IMAGE is required."; exit 1; }; \
@@ -278,8 +291,10 @@ bicep-build:
 	bicep build infra/azure-apphosted/iac/main.bicep --stdout >/dev/null
 
 release-source-validation:
+	python3 ./scripts/release/tests/test_python_wheelhouse_contract.py
 	python3 ./scripts/release/tests/test_release_artifact_schema.py
 	bash ./scripts/release/tests/test_release_artifacts_contract.sh
+	bash ./scripts/release/tests/test_foundry_eval_retry_contract.sh
 	python3 ./scripts/release/tests/test_release_makefile_contract.py
 	bash ./scripts/release/validate-release-assets.sh
 	bash ./scripts/release/test-runtime-gates-contract.sh
@@ -294,6 +309,7 @@ prepare-bootstrap:
 	./scripts/release/prepare-bootstrap-environment.sh
 
 prepare-steady-state:
+	./scripts/azure/apply-postgres-schema.sh
 	./scripts/release/transition-bootstrap-to-steady-state.sh
 
 test-subscription-portability:
@@ -357,8 +373,9 @@ release-eval:
 	RELEASE_ID="$$RELEASE_ID" \
 	RELEASE_STARTED_AT="$$RELEASE_STARTED_AT" \
 	FOUNDRY_EVAL_OUTPUT_FILE="$$RELEASE_EVIDENCE_DIR/evaluation.json" \
+	FOUNDRY_EVAL_CAPTURE_FILE="$$RELEASE_LOGS_DIR/evaluation-http-output.json" \
 	FOUNDRY_EVAL_ENFORCE_PASS=true \
-	$(MAKE) --no-print-directory eval-foundry-deployed >"$$evaluation_log" 2>&1; \
+	./scripts/release/run-foundry-eval.sh >"$$evaluation_log" 2>&1; \
 	normalize_release_artifacts
 
 release-telemetry:
@@ -394,7 +411,7 @@ release-normalize-artifacts:
 	source "$$ROOT_DIR/scripts/release/release-artifacts.sh"; \
 	normalize_release_artifacts
 
-release-app: release-preflight
+release-app: python-wheelhouse release-preflight
 	./scripts/release/deploy-app-only.sh
 
 release-app-dry-run: release-preflight

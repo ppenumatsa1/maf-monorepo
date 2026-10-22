@@ -87,12 +87,13 @@ projection.
 Use this matrix as a repeatable parity suite for the local and Azure app-hosted
 runtime.
 
-For a quick executable check, run the script-backed matrix against any backend URL:
+For a quick executable check, run the script-backed matrix against a local
+backend URL or the deployed frontend's same-origin `/api` route:
 
 ```bash
 make manual-matrix
-API_URL="https://<backend-host>" make manual-matrix
-MANUAL_MATRIX_ARGS="--request-timeout 120 --timeout 90 --case-delay 15" API_URL="https://<backend-host>" make manual-matrix
+API_URL="https://<frontend-host>/api" make manual-matrix
+MANUAL_MATRIX_ARGS="--request-timeout 120 --timeout 90 --case-delay 15" API_URL="https://<frontend-host>/api" make manual-matrix
 scripts/manual/run-manual-matrix.sh http://localhost:8000 --case ORD-1009
 ```
 
@@ -139,8 +140,9 @@ For each row, capture:
 
 ## Azure App-Hosted Parity Smoke
 
-After an authorized Azure deployment, run the app-hosted smoke script with the
-backend and frontend URLs:
+After an authorized Azure deployment, obtain the internal backend value and
+external frontend value from the selected AZD environment and run the
+app-hosted smoke script from an authorized operator context:
 
 ```bash
 infra/azure-apphosted/runtime/smoke-test.sh "$API_URL" "$WEB_URL"
@@ -183,8 +185,8 @@ Required environment variables (which may be loaded with `PARITY_ENV_FILE`):
 ```bash
 PARITY_LOCAL_API_URL=http://localhost:8000
 PARITY_LOCAL_WEB_URL=http://localhost:5173
-PARITY_AZURE_API_URL=https://<azure-backend-host>
-PARITY_AZURE_WEB_URL=https://<azure-web-host>
+PARITY_AZURE_API_URL=https://<frontend-host>/api
+PARITY_AZURE_WEB_URL=https://<frontend-host>
 ```
 
 Commands:

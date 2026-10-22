@@ -166,6 +166,35 @@ fi
 backend_json="$(cat "$backend_json_file")"
 frontend_json="$(cat "$frontend_json_file")"
 
+backend_schema_managed="$(
+  python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+env = payload["properties"]["template"]["containers"][0].get("env", [])
+print(next((item.get("value", "") for item in env if item.get("name") == "DB_SCHEMA_MANAGED_EXTERNALLY"), ""))
+' <<<"$backend_json"
+)"
+backend_frontend_origin="$(
+  python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+env = payload["properties"]["template"]["containers"][0].get("env", [])
+print(next((item.get("value", "") for item in env if item.get("name") == "FRONTEND_ORIGIN"), ""))
+' <<<"$backend_json"
+)"
+[[ "${backend_schema_managed,,}" == "true" ]] || {
+  echo "Expected backend DB_SCHEMA_MANAGED_EXTERNALLY=true." >&2
+  exit 1
+}
+[[ "$backend_frontend_origin" == "${web_url%/}" ]] || {
+  echo "Expected backend FRONTEND_ORIGIN to match WEB_URL." >&2
+  exit 1
+}
+
 backend_external="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["properties"]["configuration"]["ingress"]["external"]).lower())' <<<"$backend_json")"
 frontend_external="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["properties"]["configuration"]["ingress"]["external"]).lower())' <<<"$frontend_json")"
 [[ "$backend_external" == "false" && "$frontend_external" == "true" ]] || {

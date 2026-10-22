@@ -38,11 +38,6 @@ subscription_id="$(require_env_value AZURE_SUBSCRIPTION_ID)"
 account_name="$(require_env_value FOUNDRY_ACCOUNT_NAME)"
 project_name="$(require_env_value FOUNDRY_PROJECT_NAME)"
 appinsights_resource_id="$(require_env_value APPLICATIONINSIGHTS_RESOURCE_ID)"
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] &&
-  [[ "$resource_group" == "rg-maf-ora-foundry-public" ]] || {
-  echo "Application Insights connection verification requires the canonical public target." >&2
-  exit 1
-}
 
 az account set --subscription "$subscription_id"
 connection_url="https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.CognitiveServices/accounts/${account_name}/projects/${project_name}/connections/ApplicationInsights?api-version=2025-04-01-preview"

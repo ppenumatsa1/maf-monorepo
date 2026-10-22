@@ -3,6 +3,9 @@ __pycache__/
 **/__pycache__/
 *.pyc
 .venv/
+backend/.wheels/*
+!backend/.wheels/.gitkeep
+backend/.lock-build/
 .pytest_cache/
 **/.pytest_cache/
 .coverage

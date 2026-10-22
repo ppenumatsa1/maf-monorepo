@@ -8,6 +8,7 @@ from typing import Any
 from app.core.telemetry import (
     workflow_stage_span,
 )
+from app.infrastructure.rag import NoopRAGProvider, RAGProvider
 from app.maf.clients import (
     has_llm_configuration,
     triage_mode_metadata,
@@ -18,8 +19,10 @@ from app.maf.middleware import (
     WorkflowEventEnricher,
     WorkflowMiddlewareContext,
     execute_with_failure_event,
+    safe_failure_payload,
 )
 from app.modules.order_resolution import events as event_types
+from app.modules.order_resolution.hitl import validate_approval_decision
 from app.modules.order_resolution.models import WorkflowContext, WorkflowEvent
 from app.modules.order_resolution.ports import (
     CheckpointRepository,
@@ -37,12 +40,14 @@ class OrderResolutionWorkflow:
         memory_store: SessionMemoryRepository,
         checkpoint_store: CheckpointRepository,
         mcp_tool: McpKnowledgePort,
+        rag_provider: RAGProvider | None = None,
         idempotency_store: IdempotencyRepository | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.memory_store = memory_store
         self.checkpoint_store = checkpoint_store
         self.mcp_tool = mcp_tool
+        self.rag_provider = rag_provider or NoopRAGProvider()
         if idempotency_store is None:
             from app.infrastructure.persistence import IdempotencyStore
 
@@ -58,7 +63,7 @@ class OrderResolutionWorkflow:
 
         self._SequentialBuilder = SequentialBuilder
         self._triage_executor = TriageExecutor(self._SequentialBuilder, self._usage_tracker)
-        self._policy_executor = PolicyExecutor(self.mcp_tool)
+        self._policy_executor = PolicyExecutor(self.rag_provider, self.mcp_tool)
         self._resolution_executor = ResolutionExecutor(
             idempotency_store=self.idempotency_store,
             memory_store=self.memory_store,
@@ -147,11 +152,13 @@ class OrderResolutionWorkflow:
                 "mcp_tool": "search",
                 "order": policy_input.order.__dict__,
                 "policy": policy_input.policy,
-                "policy_evidence_ids": [],
+                "policy_evidence_ids": [
+                    evidence.evidence_id for evidence in policy_input.rag_result.evidence
+                ],
                 "policy_retrieval": {
-                    "provider": "mcp",
-                    "query_id": policy_input.policy_query_id,
-                    "count": len(policy_input.mcp_result.get("results", [])),
+                    "provider": policy_input.rag_result.provider,
+                    "query_id": policy_input.rag_result.query_id,
+                    "count": len(policy_input.rag_result.evidence),
                 },
                 "mcp_result": policy_input.mcp_result,
             },
@@ -235,18 +242,35 @@ class OrderResolutionWorkflow:
         reviewer: str,
         comments: str | None,
     ) -> str:
+        decision = validate_approval_decision(decision)
         checkpoint = self._hitl_executor.load_checkpoint(checkpoint_id)
+        resume_context = WorkflowContext(
+            run_id=str(checkpoint["state"].get("run_id") or checkpoint["thread_id"]),
+            thread_id=str(checkpoint["thread_id"]),
+            session_id=str(checkpoint["state"].get("session_id") or checkpoint["thread_id"]),
+            customer_id=str(checkpoint["state"].get("customer_id") or "unknown"),
+            user_message="",
+        )
         with self._hitl_executor.resume_span(
             checkpoint_id=checkpoint_id,
             checkpoint=checkpoint,
             decision=decision,
         ):
-            return await self._handle_hitl_response_inner(
-                checkpoint=checkpoint,
-                checkpoint_id=checkpoint_id,
-                decision=decision,
-                reviewer=reviewer,
-                comments=comments,
+            return await execute_with_failure_event(
+                WorkflowMiddlewareContext(
+                    workflow="order_resolution",
+                    run=resume_context,
+                    metadata={"checkpoint_id": checkpoint_id},
+                ),
+                lambda: self._handle_hitl_response_inner(
+                    checkpoint=checkpoint,
+                    checkpoint_id=checkpoint_id,
+                    decision=decision,
+                    reviewer=reviewer,
+                    comments=comments,
+                    context=resume_context,
+                ),
+                self._emit_failure,
             )
 
     async def _handle_hitl_response_inner(
@@ -257,6 +281,7 @@ class OrderResolutionWorkflow:
         decision: str,
         reviewer: str,
         comments: str | None,
+        context: WorkflowContext,
     ) -> str:
         thread_id = checkpoint["thread_id"]
         workflow_run_id = str(checkpoint["state"].get("run_id") or thread_id)
@@ -280,6 +305,7 @@ class OrderResolutionWorkflow:
                 "reviewer": reviewer,
                 "comments": comments,
             },
+            context=context,
         )
 
         if decision == "approve":
@@ -289,7 +315,10 @@ class OrderResolutionWorkflow:
                 order_id=order_id,
                 action=action,
                 emit=lambda emit_thread, payload: self._emit(
-                    emit_thread, event_types.WORKFLOW_OUTPUT, payload
+                    emit_thread,
+                    event_types.WORKFLOW_OUTPUT,
+                    payload,
+                    context=context,
                 ),
             )
             return thread_id
@@ -301,6 +330,7 @@ class OrderResolutionWorkflow:
                 "message": "Request rejected by reviewer. Escalating to human support specialist.",
                 "status": "escalated",
             },
+            context=context,
         )
         self._hitl_executor.record_rejection_message(thread_id)
         return thread_id
@@ -351,10 +381,23 @@ class OrderResolutionWorkflow:
     def _triage_mode_metadata() -> dict[str, str]:
         return triage_mode_metadata()
 
-    async def _emit(self, thread_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        context = self._context_by_thread.get(thread_id)
+    async def _emit(
+        self,
+        thread_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        context: WorkflowContext | None = None,
+    ) -> None:
+        context = context or self._context_by_thread.get(thread_id)
+        event = WorkflowEvent(type=event_type, thread_id=thread_id, payload=payload)
         if context is not None:
-            payload = self._event_enricher.enrich(context, payload)
+            event.payload = self._event_enricher.enrich(
+                context,
+                payload,
+                event_id=event.id,
+            )
+        payload = event.payload
         span_stage = event_type.replace(".", "_")
         if event_type == event_types.WORKFLOW_STAGE:
             agent = str(payload.get("agent") or "").strip()
@@ -367,24 +410,22 @@ class OrderResolutionWorkflow:
             span_stage,
             {
                 "event.type": event_type,
+                "event.id": event.id,
                 "workflow.thread_id": thread_id,
+                "workflow.run_id": payload.get("workflow_run_id"),
+                "workflow.session_id": payload.get("session_id"),
                 "workflow.agent": payload.get("agent"),
                 "workflow.status": payload.get("status"),
             },
         ):
-            await self.event_bus.publish(
-                WorkflowEvent(type=event_type, thread_id=thread_id, payload=payload)
-            )
+            await self.event_bus.publish(event)
 
     async def _emit_failure(self, context: WorkflowContext, exc: Exception) -> None:
         await self._emit(
             context.thread_id,
             event_types.WORKFLOW_FAILED,
-            {
-                "status": "failed",
-                "code": exc.__class__.__name__,
-                "message": str(exc),
-            },
+            safe_failure_payload(exc),
+            context=context,
         )
 
     async def _retry_read_operation(self, operation: Callable[[], Awaitable[Any]]) -> Any:
@@ -409,15 +450,48 @@ class OrderResolutionWorkflow:
 
     def _build_explanation(self, thread_id: str) -> str:
         messages = self.memory_store.get_messages(thread_id)
-        for item in reversed(messages[:-1]):
-            role = str(item.get("role", "")).strip().lower()
-            content = str(item.get("content", "")).strip()
-            if role == "assistant" and content:
-                return (
-                    "The resolution was selected from order status and policy checks. "
-                    f"Previous result: {content}"
-                )
-        return (
-            "The resolution is selected from order status, policy evidence, "
-            "and HITL thresholds for high-risk or damaged-item cases."
+        prior_messages = messages[:-1]
+        prior_user_message = self._find_prior_user_message(prior_messages)
+        if not prior_user_message:
+            return "I could not find a prior user request to explain."
+
+        issue_type, order, policy = self._policy_executor.deterministic_inputs(prior_user_message)
+        decision = self._resolution_executor.decide(
+            issue_type=issue_type,
+            amount=order.total_amount,
+            policy=policy,
         )
+        hitl_factor = (
+            "HITL approval was required."
+            if decision.requires_approval
+            else "HITL approval was not required."
+        )
+        explanation = (
+            f"The prior request was for order {order.order_id}: issue {issue_type}, "
+            f"status {order.state}, policy {policy}, action {decision.action}, "
+            f"and amount ${decision.amount:.2f}. {hitl_factor}"
+        )
+        prior_outcome = self._find_prior_assistant_message(prior_messages)
+        if prior_outcome:
+            return f"{explanation} Previous result: {prior_outcome}"
+        return explanation
+
+    @staticmethod
+    def _find_prior_user_message(messages: list[dict[str, Any]]) -> str | None:
+        for item in reversed(messages):
+            if str(item.get("role", "")).strip().lower() != "user":
+                continue
+            content = str(item.get("content", "")).strip()
+            if content:
+                return content
+        return None
+
+    @staticmethod
+    def _find_prior_assistant_message(messages: list[dict[str, Any]]) -> str | None:
+        for item in reversed(messages):
+            if str(item.get("role", "")).strip().lower() != "assistant":
+                continue
+            content = str(item.get("content", "")).strip()
+            if content:
+                return content
+        return None

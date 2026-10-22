@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from app.core.config import get_config
-from app.core.database import postgres_db
 from app.core.telemetry import record_workflow_event
 from app.infrastructure.events import EventBus
 from app.infrastructure.foundry import ResponsesWorkflowClient
@@ -16,7 +15,6 @@ from app.maf.factory import create_workflow
 from app.modules.order_resolution.projections import WorkflowRunEventProjector
 from app.modules.order_resolution.service import OrderResolutionService
 
-postgres_db.ensure_schema()
 config = get_config()
 if config.store_provider != "postgres":
     raise RuntimeError(

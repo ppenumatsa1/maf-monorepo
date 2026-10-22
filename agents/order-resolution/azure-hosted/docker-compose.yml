@@ -64,7 +64,7 @@ services:
       VITE_PROXY_TARGET: http://backend:8000
 
   playwright:
-    image: mcr.microsoft.com/playwright:v1.62.1-noble
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
     user: "${DOCKER_E2E_UID:-1000}:${DOCKER_E2E_GID:-1000}"
     profiles: ["test"]
     depends_on:

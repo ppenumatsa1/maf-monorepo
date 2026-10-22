@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +13,15 @@ import yaml
 from app.maf.clients import get_foundry_models_config
 from azure.ai.projects.aio import AIProjectClient
 from azure.identity.aio import DefaultAzureCredential
+
+_REQUIRED_EVALUATORS = ("task_completion", "coherence")
+_REQUIRED_CASE_IDS = (
+    "ord-1001-low-risk-late",
+    "ord-1004-damaged-approve",
+    "ord-1009-high-amount",
+)
+_TERMINAL_EVAL_STATUSES = {"completed", "failed", "canceled"}
+_FUTURE_CLOCK_SKEW = timedelta(minutes=5)
 
 
 def _read_eval_config(path: Path) -> dict[str, object]:
@@ -93,17 +102,191 @@ def _normalize_status(value: object) -> str:
         candidate = text.rsplit(".", 1)[-1]
         if candidate:
             text = candidate
-    return text.lower()
+    normalized = text.lower()
+    return "canceled" if normalized == "cancelled" else normalized
+
+
+def _integer_count(payload: dict[str, object], name: str) -> int:
+    value = payload.get(name, 0)
+    if isinstance(value, bool):
+        raise RuntimeError(f"Foundry eval returned invalid {name} count")
+    try:
+        count = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Foundry eval returned invalid {name} count") from exc
+    if count < 0:
+        raise RuntimeError(f"Foundry eval returned negative {name} count")
+    return count
+
+
+def _validate_result_counts(result_counts: object, *, expected_total: int) -> None:
+    if not isinstance(result_counts, dict):
+        raise RuntimeError("Foundry eval did not return result counts")
+    passed = _integer_count(result_counts, "passed")
+    failed = _integer_count(result_counts, "failed")
+    errored = _integer_count(result_counts, "errored")
+    skipped = _integer_count(result_counts, "skipped")
+    expected = _integer_count(result_counts, "expected")
+    total = _integer_count(result_counts, "total")
+    if (
+        passed != expected_total
+        or failed != 0
+        or errored != 0
+        or skipped != 0
+        or expected != 0
+        or total != expected_total
+    ):
+        raise RuntimeError(
+            "Foundry eval did not pass every captured HTTP workflow output: "
+            f"passed={passed}, failed={failed}, errored={errored}, skipped={skipped}, "
+            f"expected={expected}, total={total}, required_total={expected_total}"
+        )
+
+
+def _validate_testing_criteria_results(
+    criteria_results: object,
+    *,
+    expected_evaluators: Sequence[str],
+    expected_total: int,
+) -> None:
+    if not isinstance(criteria_results, list):
+        raise RuntimeError("Foundry eval did not return per-evaluator result counts")
+    results_by_name: dict[str, dict[str, object]] = {}
+    for result in criteria_results:
+        if not isinstance(result, dict):
+            raise RuntimeError("Foundry eval returned invalid per-evaluator results")
+        name = result.get("testing_criteria")
+        if not isinstance(name, str) or not name or name in results_by_name:
+            raise RuntimeError("Foundry eval returned invalid evaluator names")
+        results_by_name[name] = result
+    if set(results_by_name) != set(expected_evaluators):
+        raise RuntimeError("Foundry eval evaluator results do not match configured evaluators")
+    for evaluator in expected_evaluators:
+        result = results_by_name[evaluator]
+        passed = _integer_count(result, "passed")
+        failed = _integer_count(result, "failed")
+        errored = _integer_count(result, "errored")
+        skipped = _integer_count(result, "skipped")
+        expected = _integer_count(result, "expected")
+        total = passed + failed + errored + skipped + expected
+        if (
+            passed != expected_total
+            or failed != 0
+            or errored != 0
+            or skipped != 0
+            or expected != 0
+            or total != expected_total
+        ):
+            raise RuntimeError(
+                f"Foundry evaluator {evaluator} did not pass every captured HTTP workflow "
+                f"output: passed={passed}, failed={failed}, errored={errored}, "
+                f"skipped={skipped}, expected={expected}, total={total}, "
+                f"required_total={expected_total}"
+            )
+
+
+def _strict_eval_error(
+    *,
+    run_status: str,
+    result_counts: object,
+    captures: Sequence[dict[str, object]],
+    evaluators: Sequence[str],
+    run_details: object,
+) -> str | None:
+    if run_status != "completed":
+        return f"Foundry eval run ended with status: {run_status}"
+    if not captures or any(capture.get("terminal_status") != "completed" for capture in captures):
+        return "Captured HTTP workflow outputs did not all reach completed terminal state"
+    try:
+        _validate_result_counts(result_counts, expected_total=len(captures))
+        criteria_results = (
+            run_details.get("per_testing_criteria_results")
+            if isinstance(run_details, dict)
+            else None
+        )
+        _validate_testing_criteria_results(
+            criteria_results,
+            expected_evaluators=evaluators,
+            expected_total=len(captures),
+        )
+    except RuntimeError as exc:
+        return str(exc)
+    return None
 
 
 def _release_eval_passed(
-    *, run_status: str, result_counts: dict[str, object], captures: Sequence[dict[str, object]]
+    *,
+    run_status: str,
+    result_counts: dict[str, object],
+    captures: Sequence[dict[str, object]],
+    evaluators: Sequence[str],
+    run_details: object,
 ) -> bool:
-    if run_status != "completed":
-        return False
-    if _count_blocking_result_rows(result_counts) != 0:
-        return False
-    return all(capture.get("terminal_status") == "completed" for capture in captures)
+    return (
+        _strict_eval_error(
+            run_status=run_status,
+            result_counts=result_counts,
+            captures=captures,
+            evaluators=evaluators,
+            run_details=run_details,
+        )
+        is None
+    )
+
+
+def _is_transient_eval_poll_error(error: Exception) -> bool:
+    return isinstance(error, (json.JSONDecodeError, EOFError)) or isinstance(
+        getattr(error, "__cause__", None),
+        (json.JSONDecodeError, EOFError),
+    )
+
+
+def _build_testing_criteria(evaluators: Sequence[str], judge_model: str) -> list[dict[str, object]]:
+    return [
+        {
+            "type": "azure_ai_evaluator",
+            "name": evaluator_name,
+            "evaluator_name": f"builtin.{evaluator_name}",
+            "initialization_parameters": {
+                "deployment_name" if evaluator_name == "task_completion" else "model": judge_model
+            },
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+            },
+        }
+        for evaluator_name in evaluators
+    ]
+
+
+def _validate_release_started_at(value: str) -> datetime:
+    try:
+        started_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("RELEASE_STARTED_AT must be ISO 8601") from exc
+    if started_at.tzinfo is None or started_at.utcoffset() != timedelta(0):
+        raise ValueError("RELEASE_STARTED_AT must be UTC")
+    now = datetime.now(UTC)
+    if started_at > now + _FUTURE_CLOCK_SKEW:
+        raise ValueError("RELEASE_STARTED_AT is in the future")
+    return started_at
+
+
+def _release_capture_relative_path(capture_path: Path, release_output_file: Path) -> str:
+    evidence_dir = release_output_file.resolve().parent
+    if evidence_dir.name != "evidence":
+        raise ValueError("FOUNDRY_EVAL_OUTPUT_FILE must be under a release evidence directory")
+    release_dir = evidence_dir.parent
+    resolved_capture = capture_path.resolve()
+    try:
+        relative = resolved_capture.relative_to(release_dir)
+    except ValueError as exc:
+        raise ValueError(
+            "FOUNDRY_EVAL_CAPTURE_FILE must remain inside the release directory"
+        ) from exc
+    if not relative.parts or relative.parts[0] != "logs" or ".." in relative.parts:
+        raise ValueError("FOUNDRY_EVAL_CAPTURE_FILE must be under the release logs directory")
+    return relative.as_posix()
 
 
 def _workflow_run_id(events: Sequence[dict[str, object]]) -> str:
@@ -236,6 +419,7 @@ def _build_release_artifact(
     eval_id: str | None,
     run_id: str | None,
     report_url: str | None,
+    run_details: object,
     error: object,
 ) -> dict[str, object]:
     status = (
@@ -244,6 +428,8 @@ def _build_release_artifact(
             run_status=provider_status,
             result_counts=result_counts,
             captures=captures,
+            evaluators=evaluators,
+            run_details=run_details,
         )
         else "failed"
     )
@@ -258,6 +444,7 @@ def _build_release_artifact(
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "target": _release_target_payload(api_url),
         "provider": "foundry",
+        "evaluation_mode": "report_only",
         "run_status": provider_status,
         "provider_status": provider_status,
         "case_ids": list(case_ids),
@@ -270,13 +457,22 @@ def _build_release_artifact(
         "eval_id": eval_id,
         "run_id": run_id,
         "report_url": report_url,
+        "run_details": _to_jsonable(run_details),
         "error": _to_jsonable(error),
     }
 
 
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_to_jsonable(payload), indent=2) + "\n", encoding="utf-8")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8") as stream:
+            stream.write(json.dumps(_to_jsonable(payload), indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 async def run_foundry_eval() -> None:
@@ -307,6 +503,11 @@ async def run_foundry_eval() -> None:
     report_case_ids = [str(case_id) for case_id in report_case_ids_raw]
     if len(set(report_case_ids)) != len(report_case_ids):
         raise ValueError("backend/eval.yaml foundry.report_case_ids must not contain duplicates")
+    if report_case_ids != list(_REQUIRED_CASE_IDS):
+        raise ValueError(
+            "backend/eval.yaml foundry.report_case_ids must match the three canonical "
+            "Azure HTTP evaluation cases"
+        )
     selected_cases = _load_report_cases(dataset_path, report_case_ids)
 
     evaluators_raw = foundry_cfg.get("evaluators", [])
@@ -315,6 +516,10 @@ async def run_foundry_eval() -> None:
     ):
         raise ValueError("backend/eval.yaml foundry.evaluators must be a list of evaluator names")
     evaluators = [str(name) for name in evaluators_raw]
+    if evaluators != list(_REQUIRED_EVALUATORS):
+        raise ValueError(
+            "backend/eval.yaml foundry.evaluators must be exactly task_completion, coherence"
+        )
     poll_interval = float(
         os.getenv("FOUNDRY_EVAL_POLL_INTERVAL", foundry_cfg.get("poll_interval", 5.0))
     )
@@ -338,6 +543,7 @@ async def run_foundry_eval() -> None:
     report_url: str | None = None
     eval_id: str | None = None
     run_id: str | None = None
+    run_details: object = {}
     raw_payload: dict[str, object] = {
         "status": provider_status,
         "provider": "foundry",
@@ -365,29 +571,24 @@ async def run_foundry_eval() -> None:
         openai_client = project_client.get_openai_client()
 
         captures = await _capture_app_outputs(selected_cases, api_url)
+        capture_payload: dict[str, object] = {
+            "provider": "http",
+            "target": _release_target_payload(api_url),
+            "case_ids": report_case_ids,
+            "captures": captures,
+            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        }
+        if release_id:
+            capture_payload["release_id"] = release_id
+        if release_started_at:
+            _validate_release_started_at(release_started_at)
+            capture_payload["release_started_at"] = release_started_at
         _write_json(
             capture_path,
-            {
-                "provider": "http",
-                "target": _release_target_payload(api_url),
-                "case_ids": report_case_ids,
-                "captures": captures,
-            },
+            capture_payload,
         )
 
-        testing_criteria = [
-            {
-                "type": "azure_ai_evaluator",
-                "name": evaluator_name,
-                "evaluator_name": f"builtin.{evaluator_name}",
-                "initialization_parameters": {"deployment_name": judge_model},
-                "data_mapping": {
-                    "query": "{{item.query}}",
-                    "response": "{{item.response}}",
-                },
-            }
-            for evaluator_name in evaluators
-        ]
+        testing_criteria = _build_testing_criteria(evaluators, judge_model)
 
         eval_object = await openai_client.evals.create(
             name=eval_name,
@@ -428,17 +629,26 @@ async def run_foundry_eval() -> None:
         )
 
         start = asyncio.get_running_loop().time()
-        while _normalize_status(eval_run.status) not in {"completed", "failed", "cancelled"}:
+        while _normalize_status(eval_run.status) not in _TERMINAL_EVAL_STATUSES:
             if asyncio.get_running_loop().time() - start > timeout:
                 raise TimeoutError(f"Foundry eval run timed out after {timeout} seconds")
             await asyncio.sleep(poll_interval)
-            eval_run = await openai_client.evals.runs.retrieve(
-                run_id=eval_run.id,
-                eval_id=eval_object.id,
-            )
+            try:
+                eval_run = await openai_client.evals.runs.retrieve(
+                    run_id=eval_run.id,
+                    eval_id=eval_object.id,
+                )
+            except Exception as error:
+                if not _is_transient_eval_poll_error(error):
+                    raise
+                print(
+                    "Foundry evaluation polling returned an empty or malformed "
+                    "in-progress JSON response; retrying within the run timeout."
+                )
 
         provider_status = _normalize_status(eval_run.status)
         result_counts = _normalize_result_counts(getattr(eval_run, "result_counts", None))
+        run_details = _to_jsonable(eval_run)
         eval_id = getattr(eval_object, "id", None)
         run_id = getattr(eval_run, "id", None)
         report_url = f"{models_cfg.project_endpoint.rstrip('/')}/evaluation/evaluations/{eval_id}/runs/{run_id}"
@@ -454,6 +664,7 @@ async def run_foundry_eval() -> None:
             "captures": captures,
             "capture_path": str(capture_path),
             "report_url": report_url,
+            "run_details": run_details,
             "error": _to_jsonable(getattr(eval_run, "error", None)),
         }
     except Exception as exc:  # noqa: BLE001
@@ -475,6 +686,8 @@ async def run_foundry_eval() -> None:
             raw_payload["run_id"] = run_id
             raw_payload["run_status"] = _normalize_status(getattr(eval_run, "status", "unknown"))
             provider_status = raw_payload["run_status"]
+            run_details = _to_jsonable(eval_run)
+            raw_payload["run_details"] = run_details
         if eval_id and run_id and "models_cfg" in locals():
             report_url = f"{models_cfg.project_endpoint.rstrip('/')}/evaluation/evaluations/{eval_id}/runs/{run_id}"
             raw_payload["report_url"] = report_url
@@ -493,6 +706,8 @@ async def run_foundry_eval() -> None:
             raise RuntimeError(
                 "RELEASE_ID and RELEASE_STARTED_AT are required when FOUNDRY_EVAL_OUTPUT_FILE is set."
             )
+        _validate_release_started_at(release_started_at)
+        release_output_path = Path(release_output_file)
         release_payload = _build_release_artifact(
             release_id=release_id,
             release_started_at=release_started_at,
@@ -502,13 +717,17 @@ async def run_foundry_eval() -> None:
             evaluators=evaluators,
             result_counts=result_counts,
             captures=captures,
-            http_output_capture=os.path.relpath(capture_path, Path(release_output_file).parent),
+            http_output_capture=_release_capture_relative_path(
+                capture_path,
+                release_output_path,
+            ),
             eval_id=eval_id,
             run_id=run_id,
             report_url=report_url,
+            run_details=run_details,
             error=raw_payload.get("error"),
         )
-        _write_json(Path(release_output_file), release_payload)
+        _write_json(release_output_path, release_payload)
 
     print(json.dumps(raw_payload, indent=2))
     print(f"Foundry report saved to: {report_path}")
@@ -516,15 +735,16 @@ async def run_foundry_eval() -> None:
         print(f"HTTP output capture saved to: {capture_path}")
 
     enforce_pass = os.getenv("FOUNDRY_EVAL_ENFORCE_PASS", "false").lower() in {"1", "true", "yes"}
-    if enforce_pass and not _release_eval_passed(
-        run_status=provider_status,
-        result_counts=result_counts,
-        captures=captures,
-    ):
-        raise RuntimeError(
-            "Foundry eval gate failed: run_status must be completed, captured scenarios must "
-            "complete, and failed/errored result counts must be zero."
+    if enforce_pass:
+        strict_error = _strict_eval_error(
+            run_status=provider_status,
+            result_counts=result_counts,
+            captures=captures,
+            evaluators=evaluators,
+            run_details=run_details,
         )
+        if strict_error:
+            raise RuntimeError(f"Foundry eval gate failed: {strict_error}")
 
 
 if __name__ == "__main__":

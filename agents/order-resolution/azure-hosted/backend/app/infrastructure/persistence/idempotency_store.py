@@ -12,8 +12,7 @@ class IdempotencyInProgressError(RuntimeError):
 
 class IdempotencyStore:
     def __init__(self) -> None:
-        postgres_db.ensure_schema()
-        self._pool = postgres_db.get_pool()
+        self._pool = postgres_db.pool
 
     @staticmethod
     def compose_key(workflow_run_id: str, step_name: str, business_id: str) -> str:

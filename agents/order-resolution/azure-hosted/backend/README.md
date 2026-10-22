@@ -1,14 +1,14 @@
-# Backend - MAF Order Resolution
+# Backend - Azure-Hosted MAF Order Resolution
 
-## Runtime
+## Runtime status
 
-FastAPI is the sole application host for the MAF workflow. The same workflow
-runs locally and in the planned Azure Container Apps deployment. Foundry is
-used only for triage model inference and report-only evaluation.
+FastAPI is the only application host for the MAF workflow. The same sequential
+workflow runs locally and in the internal backend Container App. Foundry is
+limited to optional model inference and report-only evaluation of captured HTTP
+results.
 
-There is one business workflow rooted at
-`app/maf/workflows/order_resolution.py`, with prompts, agents, tools,
-executors, runner, and workflow kept as separate concerns.
+There is no hosted-agent, Responses, Activity, Bot, Teams, or Adaptive Card
+runtime in this lane.
 
 ## Run locally
 
@@ -22,8 +22,18 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Set `FOUNDRY_PROJECTS_ENDPOINT` and `FOUNDRY_MODEL_DEPLOYMENT_NAME` to enable
-model inference. Without them, only deterministic triage falls back; MAF
-orchestration does not change.
+model inference. If they are absent, only triage summary generation falls back
+deterministically; MAF orchestration remains the same.
+
+## Internal boundaries
+
+- `app/api/v1/routers/*` owns HTTP and SSE routes.
+- `app/api/v1/schemas/*` owns API contracts.
+- `app/modules/order_resolution/*` owns application services, ports, models,
+  and event projections.
+- `app/core/*` owns configuration, database, telemetry, and composition.
+- `app/infrastructure/*` owns persistence and external adapters.
+- `app/maf/*` owns prompts, agents, tools, executors, runner, and workflow.
 
 ## APIs
 
@@ -40,35 +50,35 @@ orchestration does not change.
 - `GET /api/sessions/{session_id}/messages`
 - `GET /health` and `GET /api/health`
 
-## Stable SSE event types
+## Event and selected-thread contracts
 
-`workflow.stage`, `tool.call`, `checkpoint.created`, `hitl.request`,
-`hitl.response`, and `workflow.output`.
+Stable native events:
 
-## Additive selected-thread projections
+- `workflow.stage`
+- `tool.call`
+- `checkpoint.created`
+- `hitl.request`
+- `hitl.response`
+- `workflow.output`
 
-The native stream and `/rich` envelope retain their existing contracts. In
-particular, `/rich` retains native event data and is not safe assistant input.
+`/rich` preserves native payloads and is not assistant input. AG-UI and
+CopilotKit select only an existing durable thread and expose an allowlisted
+redacted projection. They cannot start, approve, reject, resume, or otherwise
+mutate a workflow.
 
-`/ag-ui` is a separate durable-event projection: it accepts only a valid,
-already persisted thread ID and sends allowlisted lifecycle/tool labels,
-validated checkpoint IDs and approval decisions, plus generic terminal/error
-text. It does not stream raw native payloads.
+## PostgreSQL
 
-CopilotKit is an optional selected-thread UI integration, not the GitHub
-Copilot SDK. Its GET endpoints are static discovery. Its POST bridge selects
-one existing `threadId`; `runId`, messages, state, tools, context, and
-`forwardedProps` are accepted solely for protocol compatibility and discarded.
-The bridge never starts, resumes, or mutates a workflow.
-
-## HITL conditions
-
-HITL is required when the amount/risk is at least 100, the issue is
-`damaged_item`, or policy requires `manual_review`. `ORD-1009` requires HITL;
-`ORD-1001` normally does not.
+PostgreSQL stores workflow runs, events, messages, checkpoints, approvals, and
+idempotency state. Azure runtime access uses managed identity. Do not add a
+stored-password fallback or recreate the retained database during an app-only
+release.
 
 ## Evaluation
 
-`make eval-backend` is the deterministic contract gate. `make eval-foundry`
-captures canonical FastAPI workflow results for a non-blocking, report-only
-Foundry evaluation.
+- `make eval-backend` runs deterministic workflow contract evaluation.
+- `make eval-foundry` captures FastAPI workflow results and submits them for
+  report-only evaluation.
+- Foundry evaluation never invokes or mutates application workflows.
+
+See the [technical specification](../docs/technical-spec.md) and
+[business rules](../docs/business-rules.md).

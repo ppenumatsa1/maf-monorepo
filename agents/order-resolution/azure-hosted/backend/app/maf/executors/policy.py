@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
+from app.infrastructure.rag import RAGProvider, RetrievalRequest, RetrievalResult
 from app.maf.tools import OrderStatus, fetch_order_status, fetch_policy
 from app.modules.order_resolution.hitl import classify_issue, extract_order_id
 from app.modules.order_resolution.ports import McpKnowledgePort
@@ -14,13 +16,22 @@ class PolicyResolutionInput:
     issue_type: str
     order: OrderStatus
     policy: str
-    policy_query_id: str
+    rag_result: RetrievalResult
     mcp_result: dict[str, object]
 
 
 class PolicyExecutor:
-    def __init__(self, mcp_tool: McpKnowledgePort) -> None:
+    def __init__(self, rag_provider: RAGProvider, mcp_tool: McpKnowledgePort) -> None:
+        self._rag_provider = rag_provider
         self._mcp_tool = mcp_tool
+
+    @staticmethod
+    def deterministic_inputs(user_message: str) -> tuple[str, OrderStatus, str]:
+        message = user_message.lower()
+        order_id = extract_order_id(message)
+        issue_type = classify_issue(message)
+        order = fetch_order_status(order_id)
+        return issue_type, order, fetch_policy(issue_type)
 
     async def resolve_inputs(
         self,
@@ -30,34 +41,47 @@ class PolicyExecutor:
         retry_read_operation,
         emit: Callable[[str, dict[str, Any]], Awaitable[None]],
     ) -> PolicyResolutionInput:
-        message = user_message.lower()
-        order_id = extract_order_id(message)
-        issue_type = classify_issue(message)
-        order = fetch_order_status(order_id)
-        policy = fetch_policy(issue_type)
+        issue_type, order, policy = self.deterministic_inputs(user_message)
         await emit(
             "workflow.stage",
             {"agent": "policy_retrieval", "status": "started"},
         )
-        mcp_result = await retry_read_operation(
-            lambda: self._mcp_tool.search(f"Policy guidance for {issue_type}")
-        )
+        try:
+            rag_result = await retry_read_operation(
+                lambda: self._rag_provider.retrieve(
+                    RetrievalRequest(
+                        thread_id=thread_id,
+                        query=f"Policy guidance for {issue_type}",
+                        issue_type=issue_type,
+                        top_k=3,
+                    )
+                )
+            )
+        except Exception:
+            rag_result = RetrievalResult(
+                provider="rag-fallback",
+                query_id=str(uuid4()),
+                evidence=[],
+            )
         await emit(
             "workflow.stage",
             {
                 "agent": "policy_retrieval",
                 "status": "completed",
                 "result": {
-                    "provider": "mcp",
-                    "query_id": f"mcp:{thread_id}:{issue_type}",
-                    "count": len(mcp_result.get("results", [])),
+                    "provider": rag_result.provider,
+                    "query_id": rag_result.query_id,
+                    "count": len(rag_result.evidence),
                 },
             },
+        )
+        mcp_result = await retry_read_operation(
+            lambda: self._mcp_tool.search(f"Policy guidance for {issue_type}")
         )
         return PolicyResolutionInput(
             issue_type=issue_type,
             order=order,
             policy=policy,
-            policy_query_id=f"mcp:{thread_id}:{issue_type}",
+            rag_result=rag_result,
             mcp_result=mcp_result,
         )

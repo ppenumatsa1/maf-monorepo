@@ -22,7 +22,7 @@ from app.modules.order_resolution.durable_events import iter_durable_workflow_ev
 from app.modules.order_resolution.models import WorkflowContext, WorkflowEvent
 from app.modules.order_resolution.projections import WorkflowRunEventProjector
 from app.modules.order_resolution.rich_events import rich_events_for_workflow_event
-from app.modules.order_resolution.service import OrderResolutionService
+from app.modules.order_resolution.service import ApprovalChannelError, OrderResolutionService
 
 
 class FakeWorkflow:
@@ -59,6 +59,8 @@ class FakeWorkflowRunRepository:
         self.pending_approvals: list[tuple[str, dict[str, Any]]] = []
         self.resolved_approvals: list[dict[str, Any]] = []
         self.responses_dispatches: dict[str, dict[str, str]] = {}
+        self.origins_by_thread: dict[str, str] = {"thread-123": "api"}
+        self.pending_approval_status = "pending"
 
     def create_workflow_run(
         self,
@@ -66,15 +68,21 @@ class FakeWorkflowRunRepository:
         input_text: str,
         session_id: str | None = None,
         customer_id: str | None = None,
+        origin_channel: str = "api",
     ) -> None:
+        self.origins_by_thread[thread_id] = origin_channel
         self.created_runs.append(
             {
                 "thread_id": thread_id,
                 "input_text": input_text,
                 "session_id": session_id,
                 "customer_id": customer_id,
+                "origin_channel": origin_channel,
             }
         )
+
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None:
+        return self.origins_by_thread.get(thread_id)
 
     def append_workflow_event(self, _thread_id: str, event: WorkflowEvent) -> None:
         self.events.append(event)
@@ -111,7 +119,10 @@ class FakeWorkflowRunRepository:
 
     def get_pending_approval_context(self, checkpoint_id: str) -> dict[str, str] | None:
         if checkpoint_id == "checkpoint-123":
-            return {"thread_id": "thread-123"}
+            return {
+                "thread_id": "thread-123",
+                "status": self.pending_approval_status,
+            }
         return None
 
     def create_or_get_responses_dispatch(
@@ -126,7 +137,7 @@ class FakeWorkflowRunRepository:
         if existing is not None:
             if existing["request_hash"] != request_hash:
                 raise ValueError("Idempotency key was already used with a different request.")
-            return existing
+            return {**existing, "created": False}
         dispatch = {
             "request_hash": request_hash,
             "run_id": run_id,
@@ -134,7 +145,7 @@ class FakeWorkflowRunRepository:
             "status": "pending",
         }
         self.responses_dispatches[idempotency_key] = dispatch
-        return dispatch
+        return {**dispatch, "created": True}
 
     def update_responses_dispatch_status(self, idempotency_key: str, status: str) -> None:
         self.responses_dispatches[idempotency_key]["status"] = status
@@ -148,8 +159,20 @@ class FakeResponsesWorkflow:
         self.started: list[dict[str, str]] = []
         self.responses: list[dict[str, str]] = []
 
-    async def start_workflow(self, *, thread_id: str, message: str) -> str:
-        self.started.append({"thread_id": thread_id, "message": message})
+    async def start_workflow(
+        self,
+        *,
+        thread_id: str,
+        message: str,
+        create_conversation: bool = True,
+    ) -> str:
+        self.started.append(
+            {
+                "thread_id": thread_id,
+                "message": message,
+                "create_conversation": create_conversation,
+            }
+        )
         return thread_id
 
     async def respond_to_hitl(
@@ -200,6 +223,7 @@ async def test_order_resolution_service_starts_workflow_through_facade() -> None
             "input_text": "Order ORD-1001 arrived late.",
             "session_id": "session-123",
             "customer_id": "cust-123",
+            "origin_channel": "api",
         }
     ]
 
@@ -236,6 +260,7 @@ async def test_order_resolution_service_delegates_to_responses_without_second_wo
     workflow = FakeWorkflow()
     repository = FakeWorkflowRunRepository()
     responses = FakeResponsesWorkflow()
+    repository.origins_by_thread["thread-123"] = "responses"
     service = OrderResolutionService(
         workflow=workflow,
         workflow_run_repository=repository,
@@ -253,7 +278,11 @@ async def test_order_resolution_service_delegates_to_responses_without_second_wo
     assert workflow.started_context is None
     assert repository.created_runs == []
     assert responses.started == [
-        {"thread_id": "thread-123", "message": "Order ORD-1001 arrived late."}
+        {
+            "thread_id": "thread-123",
+            "message": "Order ORD-1001 arrived late.",
+            "create_conversation": False,
+        }
     ]
     assert hitl_response.thread_id == "thread-123"
     assert responses.responses == [
@@ -287,6 +316,49 @@ async def test_responses_wrapper_does_not_replay_an_ambiguous_dispatch() -> None
     assert first_response == second_response
     assert len(responses.started) == 1
     assert repository.responses_dispatches["request-123"]["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_responses_wrapper_does_not_repeat_resolved_hitl_response() -> None:
+    workflow = FakeWorkflow()
+    repository = FakeWorkflowRunRepository()
+    repository.origins_by_thread["thread-123"] = "responses"
+    responses = FakeResponsesWorkflow()
+    service = OrderResolutionService(
+        workflow=workflow,
+        workflow_run_repository=repository,
+        responses_client=responses,
+    )
+
+    await service.respond_hitl(
+        HitlResponseRequest(checkpoint_id="checkpoint-123", decision="approve")
+    )
+    repository.pending_approval_status = "resolved"
+    replay = await service.respond_hitl(
+        HitlResponseRequest(checkpoint_id="checkpoint-123", decision="approve")
+    )
+
+    assert replay.accepted is True
+    assert len(responses.responses) == 1
+
+
+@pytest.mark.asyncio
+async def test_api_cannot_resolve_responses_or_teams_originated_approval() -> None:
+    workflow = FakeWorkflow()
+    repository = FakeWorkflowRunRepository()
+    service = OrderResolutionService(
+        workflow=workflow,
+        workflow_run_repository=repository,
+    )
+
+    for origin in ("responses", "teams_activity"):
+        repository.origins_by_thread["thread-123"] = origin
+        with pytest.raises(ApprovalChannelError, match="not authorized"):
+            await service.respond_hitl(
+                HitlResponseRequest(checkpoint_id="checkpoint-123", decision="approve")
+            )
+
+    assert workflow.hitl_response is None
 
 
 def test_workflow_run_event_projector_syncs_hitl_and_output_events() -> None:

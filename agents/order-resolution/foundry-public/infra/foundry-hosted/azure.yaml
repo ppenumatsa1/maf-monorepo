@@ -43,6 +43,8 @@ services:
         protocols:
             - protocol: responses
               version: 2.0.0
+            - protocol: activity
+              version: 2.0.0
         startupCommand: python -m foundry.main
 infra:
     provider: bicep

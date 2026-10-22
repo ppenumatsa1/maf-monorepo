@@ -226,7 +226,7 @@ def test_workflow_run_event_projector_syncs_hitl_and_output_events() -> None:
     ]
 
 
-def test_workflow_event_enricher_adds_correlation_without_overwriting_payload() -> None:
+def test_workflow_event_enricher_uses_trusted_correlation_values() -> None:
     context = WorkflowContext(
         run_id="run-123",
         thread_id="thread-123",
@@ -240,8 +240,9 @@ def test_workflow_event_enricher_adds_correlation_without_overwriting_payload() 
 
     assert enriched == {
         "agent": "triage",
-        "workflow_run_id": "existing-run",
+        "workflow_run_id": "run-123",
         "session_id": "session-123",
+        "thread_id": "thread-123",
     }
     assert payload == {"agent": "triage", "workflow_run_id": "existing-run"}
 

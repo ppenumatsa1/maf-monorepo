@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import re
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+from uuid import uuid4
 
-FORBIDDEN_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|bearer[_-]?token|connection[_-]?string|password|secret|database_url|runtime_database_url|access[_-]?token)",
-    re.IGNORECASE,
+SECRET_KEY_PARTS = (
+    "password",
+    "secret",
+    "credential",
+    "api_key",
+    "apikey",
+    "connection_string",
+    "connectionstring",
+    "database_url",
 )
 FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"AccountKey=", re.IGNORECASE),
@@ -17,6 +27,7 @@ FORBIDDEN_VALUE_PATTERNS = [
     re.compile(r"DefaultEndpointsProtocol=", re.IGNORECASE),
     re.compile(r"://[^/\s:@]+:[^@\s]+@"),
     re.compile(r"-----BEGIN [A-Z ]+-----"),
+    re.compile(r"\b(?:sk|ghp|github_pat|eyJ)[-_A-Za-z0-9.]{20,}\b"),
 ]
 REQUIRED_ARTIFACTS = {
     "release-context.json": "release_context",
@@ -38,6 +49,7 @@ REQUIRED_EVALUATION_CASE_IDS = {
     "ord-1004-damaged-approve",
     "ord-1009-high-amount",
 }
+REQUIRED_EVALUATORS = {"task_completion", "coherence"}
 
 
 def parse_timestamp(value: str, *, field_name: str) -> datetime:
@@ -61,7 +73,18 @@ def scan_forbidden(value: Any, *, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             key_text = str(key)
-            if FORBIDDEN_KEY_PATTERN.search(key_text):
+            normalized = key_text.lower()
+            numeric_token_metric = normalized.endswith("_tokens") and (
+                item is None or (isinstance(item, (int, float)) and not isinstance(item, bool))
+            )
+            credential_token = "token" in normalized and (
+                not numeric_token_metric
+                or any(
+                    part in normalized
+                    for part in ("access", "refresh", "bearer", "auth", "credential", "client")
+                )
+            )
+            if any(part in normalized for part in SECRET_KEY_PARTS) or credential_token:
                 raise ValueError(f"Forbidden key in release evidence at {path}.{key_text}")
             if key_text in {"hosted_agent", "runtime_connection", "hosted-agent"}:
                 raise ValueError(f"Unexpected Foundry hosted-agent field at {path}.{key_text}")
@@ -75,6 +98,57 @@ def scan_forbidden(value: Any, *, path: str = "$") -> None:
         for pattern in FORBIDDEN_VALUE_PATTERNS:
             if pattern.search(value):
                 raise ValueError(f"Forbidden value detected in release evidence at {path}")
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    scan_forbidden(payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8") as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def release_lock(release_dir: Path) -> Any:
+    lock_path = release_dir / ".release.lock"
+    if lock_path.is_symlink():
+        raise ValueError("Release lock may not be a symlink.")
+    with lock_path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def safe_release_path(release_dir: Path, relative: str, *, must_exist: bool = True) -> Path:
+    pure = PurePosixPath(relative)
+    if (
+        not relative
+        or pure.is_absolute()
+        or ".." in pure.parts
+        or pure.parts[0] not in {"evidence", "logs"}
+    ):
+        raise ValueError(f"Unsafe release artifact path: {relative}")
+    current = release_dir
+    for part in pure.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"Release artifact path contains a symlink: {relative}")
+    resolved = current.resolve(strict=must_exist)
+    resolved_root = release_dir.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise ValueError(f"Release artifact path escapes release directory: {relative}")
+    if must_exist and not resolved.is_file():
+        raise ValueError(f"Required release artifact is not a regular file: {relative}")
+    return resolved
 
 
 def expect(payload: dict[str, Any], artifact_type: str, release_id: str, release_started_at: str) -> None:
@@ -95,6 +169,8 @@ def expect(payload: dict[str, Any], artifact_type: str, release_id: str, release
         release_started_at, field_name=f"{artifact_type}.release_started_at"
     ):
         raise ValueError(f"{artifact_type} generated_at predates the release window.")
+    if payload.get("release_started_at") != release_started_at:
+        raise ValueError(f"{artifact_type} uses a different release window.")
     scan_forbidden(payload)
 
 
@@ -251,12 +327,15 @@ def validate_smoke(payload: dict[str, Any]) -> None:
         seen_pairs.add(pair_key)
 
 
-def validate_browser_e2e_log(release_dir: Path) -> None:
-    browser_log = release_dir / "logs" / "browser-e2e.log"
-    if not browser_log.is_file():
-        raise ValueError("Missing required hosted browser E2E evidence: logs/browser-e2e.log")
+def validate_browser_e2e_log(release_dir: Path, release_started_at: str) -> None:
+    browser_log = safe_release_path(release_dir, "logs/browser-e2e.log")
     if browser_log.stat().st_size <= 0:
         raise ValueError("Hosted browser E2E evidence log is empty.")
+    if datetime.fromtimestamp(browser_log.stat().st_mtime, tz=UTC) < parse_timestamp(
+        release_started_at,
+        field_name="release_started_at",
+    ):
+        raise ValueError("Hosted browser E2E evidence predates the release window.")
 
 
 def validate_domain_e2e(payload: dict[str, Any]) -> None:
@@ -334,14 +413,14 @@ def blocking_result_rows(result_counts: dict[str, Any]) -> int:
     return total
 
 
-def validate_evaluation(payload: dict[str, Any]) -> None:
+def validate_evaluation(payload: dict[str, Any], release_dir: Path) -> None:
     if payload.get("status") != "passed":
         raise ValueError("evaluation.json did not pass.")
+    if payload.get("provider") != "foundry" or payload.get("evaluation_mode") != "report_only":
+        raise ValueError("evaluation.json must remain a report-only Foundry evaluation.")
     result_counts = payload.get("result_counts")
     if not isinstance(result_counts, dict):
         raise ValueError("evaluation.json must include result_counts.")
-    if blocking_result_rows(result_counts) != 0:
-        raise ValueError("evaluation.json contains errored rows.")
 
     case_ids = payload.get("case_ids")
     if not isinstance(case_ids, list) or not all(isinstance(case_id, str) for case_id in case_ids):
@@ -352,6 +431,59 @@ def validate_evaluation(payload: dict[str, Any]) -> None:
         artifact_name="evaluation.json",
         field_name="case IDs",
     )
+    expected_total = len(REQUIRED_EVALUATION_CASE_IDS)
+    strict_counts = {
+        "passed": expected_total,
+        "failed": 0,
+        "errored": 0,
+        "skipped": 0,
+        "expected": 0,
+        "total": expected_total,
+    }
+    if any(int(result_counts.get(name, 0)) != expected for name, expected in strict_counts.items()):
+        raise ValueError(
+            "evaluation.json must pass every case with zero failed, errored, skipped, "
+            "or expected-only rows."
+        )
+    if payload.get("query_count") != expected_total:
+        raise ValueError("evaluation.json query_count does not match the required cases.")
+    evaluators = payload.get("evaluators")
+    if (
+        not isinstance(evaluators, list)
+        or len(evaluators) != len(REQUIRED_EVALUATORS)
+        or set(evaluators) != REQUIRED_EVALUATORS
+    ):
+        raise ValueError("evaluation.json evaluators do not match the strict configured set.")
+    run_details = payload.get("run_details")
+    criteria_results = (
+        run_details.get("per_testing_criteria_results")
+        if isinstance(run_details, dict)
+        else None
+    )
+    if not isinstance(criteria_results, list):
+        raise ValueError("evaluation.json is missing per-evaluator result counts.")
+    results_by_name: dict[str, dict[str, Any]] = {}
+    for result in criteria_results:
+        if not isinstance(result, dict):
+            raise ValueError("evaluation.json contains malformed per-evaluator results.")
+        name = result.get("testing_criteria")
+        if not isinstance(name, str) or not name or name in results_by_name:
+            raise ValueError("evaluation.json contains duplicate or malformed evaluator names.")
+        results_by_name[name] = result
+    if set(results_by_name) != REQUIRED_EVALUATORS:
+        raise ValueError("evaluation.json per-evaluator results do not match configuration.")
+    for evaluator, result in results_by_name.items():
+        evaluator_counts = {
+            "passed": expected_total,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0,
+            "expected": 0,
+        }
+        if any(int(result.get(name, 0)) != expected for name, expected in evaluator_counts.items()):
+            raise ValueError(
+                f"evaluation.json evaluator {evaluator} is not a strict complete pass."
+            )
 
     captures = payload.get("captures")
     if not isinstance(captures, list) or len(captures) != len(REQUIRED_EVALUATION_CASE_IDS):
@@ -388,6 +520,49 @@ def validate_evaluation(payload: dict[str, Any]) -> None:
 
     if not isinstance(payload.get("http_output_capture"), str) or not payload["http_output_capture"]:
         raise ValueError("evaluation.json must include the HTTP output capture path.")
+    capture_payload = load_json(
+        safe_release_path(release_dir, payload["http_output_capture"])
+    )
+    if (
+        capture_payload.get("provider") != "http"
+        or capture_payload.get("release_id") != payload.get("release_id")
+        or capture_payload.get("release_started_at") != payload.get("release_started_at")
+    ):
+        raise ValueError("evaluation.json HTTP output capture uses a different release window.")
+    if capture_payload.get("case_ids") != payload.get("case_ids"):
+        raise ValueError("evaluation.json HTTP output capture uses different case IDs.")
+    captured_outputs = capture_payload.get("captures")
+    if not isinstance(captured_outputs, list) or len(captured_outputs) != expected_total:
+        raise ValueError("evaluation.json HTTP output capture is incomplete.")
+    captured_pairs = {
+        (
+            item.get("scenario_id"),
+            item.get("thread_id"),
+            item.get("workflow_run_id"),
+        )
+        for item in captured_outputs
+        if isinstance(item, dict)
+    }
+    evaluated_pairs = {
+        (
+            item.get("scenario_id"),
+            item.get("thread_id"),
+            item.get("workflow_run_id"),
+        )
+        for item in captures
+    }
+    if len(captured_pairs) != expected_total or captured_pairs != evaluated_pairs:
+        raise ValueError("evaluation.json HTTP output capture does not match evaluated outputs.")
+    capture_generated_at = capture_payload.get("generated_at")
+    if not isinstance(capture_generated_at, str) or parse_timestamp(
+        capture_generated_at,
+        field_name="evaluation HTTP capture generated_at",
+    ) < parse_timestamp(
+        str(payload.get("release_started_at")),
+        field_name="evaluation release_started_at",
+    ):
+        raise ValueError("evaluation.json HTTP output capture predates the release window.")
+    scan_forbidden(capture_payload, path="$.evaluation_http_output_capture")
 
     terminal_status = payload.get("run_status") or payload.get("terminal_status") or payload.get("provider_status")
     if terminal_status != "completed":
@@ -445,12 +620,12 @@ def validate_telemetry(payload: dict[str, Any]) -> None:
 
 
 def aggregate(release_dir: Path) -> dict[str, Any]:
+    if release_dir.is_symlink():
+        raise ValueError("Release directory may not be a symlink.")
     evidence_dir = release_dir / "evidence"
     artifacts: dict[str, dict[str, Any]] = {}
-    for filename, artifact_type in REQUIRED_ARTIFACTS.items():
-        path = evidence_dir / filename
-        if not path.is_file():
-            raise ValueError(f"Missing required release artifact: {filename}")
+    for filename in REQUIRED_ARTIFACTS:
+        path = safe_release_path(release_dir, f"evidence/{filename}")
         artifacts[filename] = load_json(path)
 
     context = artifacts["release-context.json"]
@@ -471,10 +646,10 @@ def aggregate(release_dir: Path) -> dict[str, Any]:
     validate_images(artifacts["images.json"])
     validate_deployment(artifacts["deployment.json"])
     validate_smoke(artifacts["smoke.json"])
-    validate_browser_e2e_log(release_dir)
+    validate_browser_e2e_log(release_dir, release_started_at)
     validate_domain_e2e(artifacts["domain-e2e.json"])
-    validate_evaluation(artifacts["evaluation.json"])
     validate_telemetry(artifacts["telemetry.json"])
+    validate_evaluation(artifacts["evaluation.json"], release_dir)
 
     images = artifacts["images.json"]
     deployment = artifacts["deployment.json"]
@@ -489,7 +664,9 @@ def aggregate(release_dir: Path) -> dict[str, Any]:
             )
 
     if (evidence_dir / "infrastructure.json").is_file():
-        infrastructure = load_json(evidence_dir / "infrastructure.json")
+        infrastructure = load_json(
+            safe_release_path(release_dir, "evidence/infrastructure.json")
+        )
         expect(infrastructure, "infrastructure", release_id, release_started_at)
         if infrastructure.get("status") != "passed":
             raise ValueError("infrastructure.json exists but did not pass.")
@@ -528,41 +705,40 @@ def main() -> int:
         if len(sys.argv) > 1
         else Path.cwd() / ".artifacts" / "releases" / (Path.cwd().name)
     )
-    evidence_path = release_dir / "evidence" / "release-evidence.json"
-    try:
-        payload = aggregate(release_dir)
-    except Exception as exc:  # noqa: BLE001
-        failure_payload = {
-            "schema_version": 1,
-            "contract": "azure-hosted-release/v1",
-            "lane": "azure-hosted",
-            "artifact_type": "release_evidence",
-            "status": "failed",
-            "release_id": None,
-            "release_started_at": None,
-            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "error": str(exc),
-        }
-        if (release_dir / "evidence" / "release-context.json").is_file():
-            try:
-                context = load_json(release_dir / "evidence" / "release-context.json")
-                failure_payload["release_id"] = context.get("release_id")
-                failure_payload["release_started_at"] = context.get("release_started_at")
-                failure_payload["target"] = context.get("target")
-            except Exception:  # noqa: BLE001
-                pass
-        evidence_path.parent.mkdir(parents=True, exist_ok=True)
-        evidence_path.write_text(
-            json.dumps(failure_payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        print(str(exc), file=sys.stderr)
+    if release_dir.is_symlink():
+        print("Release directory may not be a symlink.", file=sys.stderr)
         return 1
+    evidence_path = release_dir / "evidence" / "release-evidence.json"
+    release_dir.mkdir(parents=True, exist_ok=True)
+    with release_lock(release_dir):
+        try:
+            payload = aggregate(release_dir)
+        except Exception as exc:  # noqa: BLE001
+            failure_payload = {
+                "schema_version": 1,
+                "contract": "azure-hosted-release/v1",
+                "lane": "azure-hosted",
+                "artifact_type": "release_evidence",
+                "status": "failed",
+                "release_id": None,
+                "release_started_at": None,
+                "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "error": "Release evidence aggregation failed.",
+            }
+            context_path = release_dir / "evidence" / "release-context.json"
+            if context_path.is_file() and not context_path.is_symlink():
+                try:
+                    context = load_json(context_path)
+                    failure_payload["release_id"] = context.get("release_id")
+                    failure_payload["release_started_at"] = context.get("release_started_at")
+                    failure_payload["target"] = context.get("target")
+                except Exception:  # noqa: BLE001
+                    pass
+            atomic_write_json(evidence_path, failure_payload)
+            print(str(exc), file=sys.stderr)
+            return 1
 
-    evidence_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+        atomic_write_json(evidence_path, payload)
     print(f"Aggregated release evidence: {evidence_path}")
     return 0
 

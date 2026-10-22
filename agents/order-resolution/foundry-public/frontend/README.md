@@ -2,9 +2,29 @@
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
+
+## Frontend toolchain
+
+- Direct runtime baseline: React/React DOM 19.3, CopilotKit 1.79, and Zod
+  4.6.
+- Direct build/test baseline: Vite 8.3, Playwright 1.64, ESLint 10.12,
+  TypeScript ESLint 8.71, and the React plugin 6.1 line.
+- `@typescript/native` provides the TypeScript 7 `tsc` executable used by
+  `npm run typecheck` and `npm run build`.
+- The `typescript` dependency aliases `@typescript/typescript6` because
+  `typescript-eslint` still requires the TypeScript 6 compiler API. Do not
+  replace the alias with TypeScript 7 until `typescript-eslint` supports the
+  TypeScript 7 API.
+- Zod 4 satisfies CopilotKit's `zod >=3.25` peer dependency. The application
+  does not currently import Zod directly.
+- Package installation uses the Microsoft npm proxy configured in `.npmrc`.
+
+This baseline is represented by `package.json` and `package-lock.json`.
+Successful local install/build/typecheck does not establish that a frontend
+revision has been deployed.
 
 The app defaults to backend `http://localhost:8000` during Vite development.
 Container deployments use the built-in same-origin `/api` base. At startup,

@@ -10,8 +10,10 @@ This repository implements a Microsoft Agent Framework (MAF SDK) customer order 
 - Preserve the existing sequential `FoundryChatClient` / `SequentialBuilder`
   MAF workflow; do not create a parallel orchestration path in the API wrapper,
   frontend, or an assistant integration.
-- Keep Foundry hosting Responses-native through `backend/foundry/main.py` and
-  `backend/Dockerfile.hosted`; do not reintroduce legacy invocations adapter paths.
+- Keep Foundry browser/programmatic hosting Responses-native through
+  `backend/foundry/main.py` and `backend/Dockerfile.hosted`; Teams Activity is
+  an additive host in the same process, not a replacement or second workflow.
+  Do not reintroduce legacy invocations adapter paths.
 - Keep durable checkpoint-keyed HITL pause/resume behavior deterministic and
   testable.
 - Keep PostgreSQL schema DDL administrator-owned. Production runtime
@@ -41,10 +43,10 @@ Canonical operating contract: `docs/design/engineering-operating-model.md`.
 Canonical deployment stages and command mapping:
 `docs/design/deployment-flow.md`.
 
-The portable public Foundry deployment configuration targets subscription
-`7df95e88-701c-4693-af77-3159f83b558d`, resource group
-`rg-maf-ora-foundry-public`, and `eastus2`; repository configuration is not
-evidence of a currently deployed endpoint.
+The portable public Foundry deployment target is supplied through a validated,
+ignored external profile; never commit tenant, subscription, user, resource,
+region, or endpoint identifiers. Repository configuration is not evidence of a
+currently deployed endpoint.
 GitHub Actions is credential-free CI only. Use `make foundry-provision` only
 for an explicitly approved bootstrap or non-mutating reuse operation; use the
 local authenticated `make foundry-release` flow for app-only deployment,
@@ -57,7 +59,8 @@ receives only account-scoped `Cognitive Services OpenAI User`, and
 `make foundry-verify` plus `make foundry-evidence` own live proof and
 secret-free release-window aggregation.
 The release authority must reject app-only-to-telemetry durations above 15
-minutes; the latest verified public release completed in 14m 01.1s.
+minutes. Do not use historical release timing as evidence for the current
+parity source.
 Hosted database variables must use the deterministic project `CustomKeys`
 connection placeholder; never put the resolved runtime URL in a hosted
 definition, agent metadata, deployment metadata, or evidence.
@@ -69,6 +72,21 @@ must use persisted workflow events. The initial wrapper dispatch is non-streamin
 the browser obtains live updates by polling durable state and subscribing to SSE.
 FastAPI health and SSE request spans are intentionally excluded from Application
 Insights request telemetry so workflow/HITL spans remain the operational signal.
+
+Teams uses Azure Bot Service, `MsTeamsChannel`, and the Foundry Activity
+Protocol endpoint. Endpoint reconciliation must retain Responses and Entra,
+Shared publication must use `BotServiceRbac`, and Adaptive Card decisions must
+use opaque repository-backed tokens bound to the Teams-origin checkpoint,
+decision, user, and conversation. Do not add VNet/private endpoint/private
+runner resources to the public Teams topology.
+
+Both backend images use Python 3.13 and offline, hash-verified wheels generated
+from `backend/requirements.lock` for CPython 3.13 Linux AMD64. Keep the direct
+backend and frontend dependency baselines synchronized with the lockfiles.
+Source and local contract validation are not Azure deployment evidence; only a
+fresh reviewed preview/apply, live verification, smoke/E2E, evaluation,
+telemetry, evidence aggregation, and rollback record can establish the current
+release.
 
 `GET /api/copilotkit/info` (with `GET /api/copilotkit` as an alias) returns
 static, redacted runtime discovery only. `POST /api/copilotkit` verifies and

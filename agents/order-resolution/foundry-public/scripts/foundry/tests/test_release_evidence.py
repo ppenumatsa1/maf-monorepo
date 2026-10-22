@@ -39,23 +39,90 @@ def artifact(
 
 def all_artifacts() -> dict[str, dict[str, object]]:
     return {
+        "preview": {
+            **artifact("infrastructure_preview"),
+            "mode": "reuse",
+            "mutating_changes": [],
+        },
         "model_preflight": artifact("model_preflight"),
         "deployment_verification": {
             **artifact("deployment_verification"),
             "target": {
-                "subscription_id": "7df95e88-701c-4693-af77-3159f83b558d",
-                "resource_group": "rg-maf-ora-foundry-public",
-                "location": "eastus2",
+                "subscription_id": "11111111-1111-4111-8111-111111111111",
+                "resource_group": "rg-portable-fixture",
+                "location": "regionone",
+            },
+            "hosted_agent": {
+                "name": "order-resolution-hosted",
+                "version": "12",
+                "status": "active",
+                "image": "example.azurecr.io/order-resolution@sha256:" + "a" * 64,
+                "principal_id": "principal-id",
+                "checks": {
+                    "active": True,
+                    "name_matches": True,
+                    "version_matches": True,
+                    "image_is_immutable": True,
+                    "image_matches": True,
+                    "responses_protocol_matches": True,
+                    "activity_protocol_matches": True,
+                    "database_connection_placeholder_matches": True,
+                    "runtime_database_connection_placeholder_matches": True,
+                    "schema_managed_externally": True,
+                    "hosted_pool_matches": True,
+                    "principal_id_present": True,
+                },
             },
         },
         "hosted_smoke": artifact("hosted_smoke"),
         "hosted_e2e": {
             **artifact("hosted_e2e"),
+            "release_started_at": "2026-08-15T20:00:00Z",
+            "started_at": "2026-08-15T20:03:00Z",
             "conversation_ids": ["conv-low", "conv-high", "conv-damaged"],
         },
         "appinsights_connection": artifact("appinsights_connection"),
-        "telemetry": artifact("telemetry"),
-        "evaluation": artifact("evaluation", status="completed"),
+        "telemetry": {
+            **artifact("telemetry"),
+            "release_started_at": "2026-08-15T20:00:00Z",
+            "conversation_ids": ["conv-low", "conv-high", "conv-damaged"],
+        },
+        "evaluation": {
+            **artifact("evaluation", status="completed"),
+            "release_started_at": "2026-08-15T20:00:00Z",
+            "e2e_started_at": "2026-08-15T20:03:00Z",
+            "e2e_generated_at": "2026-08-15T20:05:00Z",
+            "conversation_ids": ["conv-low", "conv-high", "conv-damaged"],
+            "evaluators": ["task_completion", "coherence"],
+            "result_counts": {
+                "passed": 3,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+                "expected": 0,
+                "total": 3,
+            },
+            "run_details": {
+                "per_testing_criteria_results": [
+                    {
+                        "testing_criteria": "task_completion",
+                        "passed": 3,
+                        "failed": 0,
+                        "errored": 0,
+                        "skipped": 0,
+                        "expected": 0,
+                    },
+                    {
+                        "testing_criteria": "coherence",
+                        "passed": 3,
+                        "failed": 0,
+                        "errored": 0,
+                        "skipped": 0,
+                        "expected": 0,
+                    },
+                ]
+            },
+        },
     }
 
 
@@ -64,9 +131,9 @@ def write_profile(path: Path) -> None:
         "\n".join(
             (
                 "AZURE_ENV_NAME=order-resolution-foundry-public",
-                "AZURE_SUBSCRIPTION_ID=7df95e88-701c-4693-af77-3159f83b558d",
-                "AZURE_RESOURCE_GROUP=rg-maf-ora-foundry-public",
-                "AZURE_LOCATION=eastus2",
+                "AZURE_SUBSCRIPTION_ID=11111111-1111-4111-8111-111111111111",
+                "AZURE_RESOURCE_GROUP=rg-portable-fixture",
+                "AZURE_LOCATION=regionone",
             )
         )
         + "\n",
@@ -112,17 +179,15 @@ SUCCESS_TIMINGS = {
     "verification": ("2026-08-15T20:06:00.500Z", "2026-08-15T20:07:00.500Z"),
     "smoke": ("2026-08-15T20:07:00.600Z", "2026-08-15T20:07:10.600Z"),
     "hosted_e2e": ("2026-08-15T20:07:10.700Z", "2026-08-15T20:09:00.700Z"),
-    "evaluation": ("2026-08-15T20:07:10.800Z", "2026-08-15T20:09:30.800Z"),
     "telemetry": ("2026-08-15T20:09:00.800Z", "2026-08-15T20:10:00.000Z"),
-    "final_evidence": ("2026-08-15T20:10:00.100Z", "2026-08-15T20:10:01.100Z"),
+    "evaluation": ("2026-08-15T20:10:00.100Z", "2026-08-15T20:11:00.100Z"),
+    "final_evidence": ("2026-08-15T20:11:00.200Z", "2026-08-15T20:11:01.200Z"),
 }
 
 
 def write_success_timings(project_root: Path) -> None:
     for stage, (started_at, ended_at) in SUCCESS_TIMINGS.items():
-        record_stage_timing(
-            project_root, "release-1", stage, "start", timestamp=started_at
-        )
+        record_stage_timing(project_root, "release-1", stage, "start", timestamp=started_at)
         record_stage_timing(
             project_root,
             "release-1",
@@ -143,6 +208,46 @@ def test_build_release_report_requires_one_fresh_three_conversation_window() -> 
     assert report["conversation_ids"] == ["conv-low", "conv-high", "conv-damaged"]
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda values: values["telemetry"].update(
+                conversation_ids=["conv-low", "conv-high", "conv-stale"]
+            ),
+            "Telemetry evidence does not cover",
+        ),
+        (
+            lambda values: values["evaluation"].update(e2e_generated_at="2026-08-15T20:04:59Z"),
+            "stale hosted E2E evidence",
+        ),
+        (
+            lambda values: values["evaluation"]["result_counts"].update(failed=1, passed=2),
+            "must pass every hosted E2E conversation",
+        ),
+        (
+            lambda values: values["deployment_verification"]["hosted_agent"].update(
+                image="example.azurecr.io/order-resolution:latest"
+            ),
+            "immutable image digest",
+        ),
+    ],
+)
+def test_build_release_report_rejects_mixed_stale_or_mutable_evidence(
+    mutation: object,
+    message: str,
+) -> None:
+    artifacts = all_artifacts()
+    mutation(artifacts)  # type: ignore[operator]
+
+    with pytest.raises(ValueError, match=message):
+        build_release_report(
+            {"release_id": "release-1", "started_at": "2026-08-15T20:00:00Z"},
+            artifacts,
+            generated_at=datetime(2026, 8, 15, 20, 10, tzinfo=timezone.utc),
+        )
+
+
 def test_initialize_and_finalize_hashes_required_gate_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -153,11 +258,29 @@ def test_initialize_and_finalize_hashes_required_gate_artifacts(
     record = finalize_release(tmp_path, "release-1", "succeeded")
 
     assert record["status"] == "succeeded"
+    assert record["extensions"]["validation_state"] == "live_validated"
     assert all(gate["status"] == "succeeded" for gate in record["gates"].values())
     assert {item["path"] for item in record["artifacts"]} == {
         relative_path for relative_path, _ in REQUIRED_GATES.values()
     }
     assert all(len(item["sha256"]) == 64 for item in record["artifacts"])
+
+
+def test_initialize_records_app_only_and_rollback_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release_dir = initialized_release(tmp_path, monkeypatch)
+    record = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
+
+    authority = record["extensions"]["release_authority"]
+    assert authority["mode"] == "app_only"
+    assert "shared_infrastructure" in authority["forbidden_mutations"]
+    assert "stateful_infrastructure" in authority["forbidden_mutations"]
+    assert "rbac" in authority["forbidden_mutations"]
+
+    rollback = record["extensions"]["rollback_authority"]
+    assert rollback["authority"] == "operator_review_required"
+    assert "delete_stateful_resources" in rollback["forbidden"]
 
 
 @pytest.mark.parametrize(
@@ -257,8 +380,15 @@ def test_timing_preserves_parallel_overlap_and_exact_durations(
     validate_release_timing(record)
 
     stages = record["extensions"]["release_timing"]["stages"]
-    assert stages["hosted_e2e"]["started_at"] < stages["evaluation"]["started_at"]
-    assert stages["evaluation"]["started_at"] < stages["hosted_e2e"]["ended_at"]
+    def timestamp(value: str) -> datetime:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    assert timestamp(stages["hosted_e2e"]["ended_at"]) < timestamp(
+        stages["telemetry"]["started_at"]
+    )
+    assert timestamp(stages["telemetry"]["ended_at"]) < timestamp(
+        stages["evaluation"]["started_at"]
+    )
     assert stages["package_build"]["duration_ms"] == 60_000
     assert record["extensions"]["release_timing"]["total"]["duration_ms"] == 540_000
 
@@ -297,8 +427,42 @@ def test_failed_finalize_closes_running_stage_and_total(
     assert timing["total"]["failed_stage"] == "package_build"
 
 
+def test_failed_timing_stage_can_be_retried_while_release_is_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    initialized_release(tmp_path, monkeypatch)
+    record_stage_timing(
+        tmp_path,
+        "release-1",
+        "final_evidence",
+        "start",
+        timestamp="2026-08-15T20:10:00Z",
+    )
+    record_stage_timing(
+        tmp_path,
+        "release-1",
+        "final_evidence",
+        "end",
+        status="failed",
+        timestamp="2026-08-15T20:10:01Z",
+    )
+
+    retried = record_stage_timing(
+        tmp_path,
+        "release-1",
+        "final_evidence",
+        "start",
+        timestamp="2026-08-15T20:10:02Z",
+    )
+
+    assert retried["status"] == "running"
+    assert retried["started_at"] == "2026-08-15T20:10:02Z"
+    assert retried["ended_at"] is None
+
+
 def test_resume_failed_release_resets_selected_and_downstream_timing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     initialized_release(tmp_path, monkeypatch)
     write_success_timings(tmp_path)
@@ -382,6 +546,19 @@ def test_secret_free_guard_rejects_secret_bearing_evidence(
 ) -> None:
     with pytest.raises(ValueError, match="Secret-bearing"):
         assert_secret_free(payload)
+
+
+def test_secret_free_guard_allows_numeric_token_usage_metrics() -> None:
+    assert_secret_free(
+        {
+            "usage": {
+                "prompt_tokens": 2140,
+                "completion_tokens": 125,
+                "total_tokens": 2265,
+                "max_completion_tokens": None,
+            }
+        }
+    )
 
 
 def test_migration_is_dry_run_and_requires_both_deletion_markers(tmp_path: Path) -> None:

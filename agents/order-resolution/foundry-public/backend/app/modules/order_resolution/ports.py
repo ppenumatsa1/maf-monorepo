@@ -61,7 +61,13 @@ class McpKnowledgePort(Protocol):
 
 
 class ResponsesWorkflowPort(Protocol):
-    async def start_workflow(self, *, thread_id: str, message: str) -> str: ...
+    async def start_workflow(
+        self,
+        *,
+        thread_id: str,
+        message: str,
+        create_conversation: bool = True,
+    ) -> str: ...
 
     async def respond_to_hitl(
         self,
@@ -79,6 +85,7 @@ class WorkflowRunRepositoryPort(Protocol):
         input_text: str,
         session_id: str | None = None,
         customer_id: str | None = None,
+        origin_channel: str = "api",
     ) -> dict[str, Any] | None: ...
 
     def append_workflow_event(self, thread_id: str, event: WorkflowEvent) -> None: ...
@@ -101,6 +108,8 @@ class WorkflowRunRepositoryPort(Protocol):
     def update_latest_output(self, thread_id: str, output: dict[str, Any]) -> None: ...
 
     def get_pending_approval_context(self, checkpoint_id: str) -> dict[str, Any] | None: ...
+
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None: ...
 
     def create_or_get_responses_dispatch(
         self,

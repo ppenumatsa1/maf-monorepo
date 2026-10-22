@@ -13,6 +13,18 @@ from app.modules.order_resolution.ports import (
     WorkflowRunRepositoryPort,
 )
 
+TRUSTED_WORKFLOW_ORIGINS = frozenset({"api", "responses", "teams_activity"})
+
+
+class ApprovalChannelError(ValueError):
+    pass
+
+
+def _trusted_origin(origin_channel: str) -> str:
+    if origin_channel not in TRUSTED_WORKFLOW_ORIGINS:
+        raise ValueError(f"Unsupported workflow origin channel: {origin_channel}")
+    return origin_channel
+
 
 class OrderResolutionService:
     def __init__(
@@ -26,7 +38,13 @@ class OrderResolutionService:
         self._workflow_run_repository = workflow_run_repository
         self._responses_client = responses_client
 
-    async def start_chat_run(self, request: ChatRunRequest) -> ChatRunResponse:
+    async def start_chat_run(
+        self,
+        request: ChatRunRequest,
+        *,
+        origin_channel: str = "api",
+    ) -> ChatRunResponse:
+        origin_channel = _trusted_origin(origin_channel)
         run_id = str(uuid4())
         thread_id = request.thread_id or str(uuid4())
         session_id = request.session_id or thread_id
@@ -37,8 +55,8 @@ class OrderResolutionService:
                 json.dumps(
                     {
                         "message": request.message,
-                        "thread_id": thread_id,
-                        "session_id": session_id,
+                        "thread_id": request.thread_id,
+                        "session_id": request.session_id,
                         "customer_id": request.customer_id,
                     },
                     sort_keys=True,
@@ -51,7 +69,7 @@ class OrderResolutionService:
                 run_id=run_id,
                 thread_id=thread_id,
             )
-            if dispatch["status"] != "pending":
+            if not dispatch["created"]:
                 return ChatRunResponse(
                     run_id=str(dispatch["run_id"]),
                     thread_id=str(dispatch["thread_id"]),
@@ -60,6 +78,7 @@ class OrderResolutionService:
                 resolved_thread_id = await self._responses_client.start_workflow(
                     thread_id=thread_id,
                     message=request.message,
+                    create_conversation=request.thread_id is None,
                 )
             except Exception:
                 self._workflow_run_repository.update_responses_dispatch_status(
@@ -87,19 +106,40 @@ class OrderResolutionService:
             input_text=request.message,
             session_id=session_id,
             customer_id=request.customer_id,
+            origin_channel=origin_channel,
         )
         await self._workflow.start(context)
 
         return ChatRunResponse(run_id=run_id, thread_id=thread_id)
 
-    async def respond_hitl(self, request: HitlResponseRequest) -> HitlResponseResult:
-        if self._responses_client is not None:
-            pending_context = self._workflow_run_repository.get_pending_approval_context(
-                request.checkpoint_id
+    async def respond_hitl(
+        self,
+        request: HitlResponseRequest,
+        *,
+        origin_channel: str = "api",
+    ) -> HitlResponseResult:
+        expected_origin = (
+            "responses" if self._responses_client is not None else _trusted_origin(origin_channel)
+        )
+        pending_context = self._workflow_run_repository.get_pending_approval_context(
+            request.checkpoint_id
+        )
+        if pending_context is None:
+            raise ValueError(f"Pending approval not found: {request.checkpoint_id}")
+        thread_id = str(pending_context["thread_id"])
+        actual_origin = self._workflow_run_repository.get_workflow_origin_channel(thread_id)
+        if actual_origin != expected_origin:
+            raise ApprovalChannelError(
+                f"Approval channel is not authorized for checkpoint: {request.checkpoint_id}"
             )
-            if pending_context is None:
-                raise ValueError(f"Pending approval not found: {request.checkpoint_id}")
-            thread_id = str(pending_context["thread_id"])
+
+        if self._responses_client is not None:
+            if pending_context["status"] != "pending":
+                return HitlResponseResult(
+                    accepted=True,
+                    checkpoint_id=request.checkpoint_id,
+                    thread_id=thread_id,
+                )
             await self._responses_client.respond_to_hitl(
                 thread_id=thread_id,
                 checkpoint_id=request.checkpoint_id,
@@ -111,7 +151,7 @@ class OrderResolutionService:
                 thread_id=thread_id,
             )
 
-        thread_id = await self._workflow.handle_hitl_response(
+        resolved_thread_id = await self._workflow.handle_hitl_response(
             checkpoint_id=request.checkpoint_id,
             decision=request.decision,
             reviewer=request.reviewer,
@@ -120,5 +160,5 @@ class OrderResolutionService:
         return HitlResponseResult(
             accepted=True,
             checkpoint_id=request.checkpoint_id,
-            thread_id=thread_id,
+            thread_id=resolved_thread_id,
         )

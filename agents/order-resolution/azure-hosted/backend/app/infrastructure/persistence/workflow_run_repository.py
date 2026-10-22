@@ -42,8 +42,7 @@ def _duration_ms(started_at: str | None, completed_at: str | None) -> int | None
 
 class WorkflowRunRepository:
     def __init__(self) -> None:
-        postgres_db.ensure_schema()
-        self._pool = postgres_db.get_pool()
+        self._pool = postgres_db.pool
 
     def create_workflow_run(
         self,

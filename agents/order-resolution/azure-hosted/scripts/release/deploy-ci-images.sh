@@ -72,6 +72,18 @@ resolve_app_name() {
 
 backend_app="$(resolve_app_name backend)"
 frontend_app="$(resolve_app_name frontend)"
+frontend_fqdn="$(
+  az containerapp show \
+    --name "$frontend_app" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --subscription "$AZURE_SUBSCRIPTION_ID" \
+    --query properties.configuration.ingress.fqdn \
+    --output tsv
+)"
+[[ -n "$frontend_fqdn" ]] || {
+  echo "Unable to resolve the trusted frontend origin." >&2
+  exit 1
+}
 
 for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
   [[ "$image" == "$AZURE_CONTAINER_REGISTRY_ENDPOINT/"* ]] || {
@@ -117,6 +129,15 @@ deploy_image() {
   local repository="$4"
   local deploy_log="$RELEASE_LOGS_DIR/$service_name.image-deploy.log"
   local digest=""
+  local runtime_args=()
+
+  if [[ "$service_name" == "backend" ]]; then
+    runtime_args=(
+      --set-env-vars
+      "DB_SCHEMA_MANAGED_EXTERNALLY=true"
+      "FRONTEND_ORIGIN=https://$frontend_fqdn"
+    )
+  fi
 
   {
     docker push "$source_image"
@@ -127,6 +148,7 @@ deploy_image() {
       --subscription "$AZURE_SUBSCRIPTION_ID" \
       --image "$AZURE_CONTAINER_REGISTRY_ENDPOINT/$repository@$digest" \
       --revision-suffix "$revision_suffix" \
+      "${runtime_args[@]}" \
       --only-show-errors
   } >"$deploy_log" 2>&1
   printf '%s\n' "$digest"

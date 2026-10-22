@@ -18,6 +18,8 @@ Build a demo-ready multi-agent orchestration using Microsoft Agent Framework-ali
   projections and a read-only CopilotKit bridge.
 - React + Vite UI consuming the stable FastAPI API/SSE contract locally and
   through the public same-origin wrapper deployment.
+- Additive Microsoft Teams channel through Foundry Activity, with
+  privacy-minimized Adaptive Card approval actions and no second workflow path.
 
 ## Non-Goals (v1)
 
@@ -37,6 +39,12 @@ Build a demo-ready multi-agent orchestration using Microsoft Agent Framework-ali
 7. Eval harness produces report with pass/fail metrics.
 8. Public browser traffic remains same-origin through the wrapper; it never
    receives a Foundry or database credential.
+9. Responses and Teams decisions are channel-bound and structured; free-form
+   approval text cannot resolve a checkpoint.
+
+These acceptance criteria describe the source contract. Live public acceptance
+still requires reviewed deployment, evaluation, telemetry, evidence, and
+rollback verification.
 
 ## Delivery contract
 

@@ -1,44 +1,66 @@
 # Frontend - React + Vite
 
+## Run locally
+
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-The app defaults to backend `http://localhost:8000` during Vite development.
-Containers default browser requests to same-origin `/api`; Nginx renders that
-proxy from `NGINX_API_UPSTREAM`. Docker Compose points it to
-`http://backend:8000`, while Azure points it to the deployed backend HTTPS URL.
-`API_BASE` (or `VITE_API_BASE_URL` / `VITE_API_BASE`) may override the base for
-an isolated deployment.
+The Vite app defaults to `http://localhost:8000` for local API calls.
 
-Optional selected-thread integrations can be configured at runtime with
-`AG_UI_URL` and `COPILOTKIT_URL`, or at build time with `VITE_AG_UI_URL` and
-`VITE_COPILOTKIT_URL`. When unset they use same-origin
-`/api/chat/stream/{threadId}/ag-ui` and `/api/copilotkit`. They are read-only:
-the native SSE timeline and HITL controls remain the source of truth.
+## Frontend toolchain
 
-Runtime configuration injected in `env-config.js` wins over Vite values:
-`API_BASE`, `AG_UI_URL`, and `COPILOTKIT_URL` are read from
-`window.__APP_CONFIG__`. This permits one browser bundle to be configured for
-the deployed frontend proxy without rebuilding it.
+- Runtime: React/React DOM 19.3, CopilotKit 1.79, and Zod 4.6.
+- Build/test: Vite 8.3, Playwright 1.64, ESLint 10.12, TypeScript ESLint
+  8.71, and the React plugin 6.1 line.
+- `@typescript/native` supplies the TypeScript 7 `tsc` executable used by
+  `npm run typecheck` and `npm run build`.
+- The `typescript` dependency aliases `@typescript/typescript6` because
+  `typescript-eslint` still requires the TypeScript 6 compiler API.
+- Installation uses the Microsoft npm proxy configured in `.npmrc`.
 
-Workflow Studio runtime info:
+The exact baseline is captured in `package.json` and `package-lock.json`.
 
-- Runtime badge reads backend `/health` metadata to display active environment/mode.
-- In deployed frontend containers the badge uses proxied `/api/health` first so
-  it does not read the frontend container's own `/health` endpoint.
+## Deployed topology
 
-UI highlights:
+The frontend Container App is the only browser-facing service. Nginx proxies
+same-origin `/api` to the internal FastAPI backend through
+the required `NGINX_API_UPSTREAM`. The browser must not receive the internal
+backend URL, database settings, or Foundry credentials.
 
-- Workflow history uses paginated API calls (`/api/workflows?page=<n>&page_size=<n>`).
-- Event timeline uses rich SSE (`/api/chat/stream/{thread_id}/rich`) for live updates, while polling details remains as fallback.
-- Right panel includes a RAG Evidence view that surfaces retrieved policy evidence and chunk IDs from workflow events/details when available.
-- AG-UI and CopilotKit panels are optional read-only selected-thread views.
-  CopilotKit receives only allowlisted thread metadata, never raw native rich
-  events or workflow payloads, and its inspector is disabled.
+Docker Compose points the proxy to `http://backend:8000`. Azure injects the
+profile-selected internal backend upstream at deployment time.
 
-CopilotKit (`@copilotkit/react-core`) is not the GitHub Copilot SDK. Its POST
-bridge only selects an existing durable thread; it cannot perform a chat,
-approval, resume, or other workflow mutation.
+## Runtime configuration
+
+`env-config.js` values take precedence over Vite build-time values:
+
+- `API_BASE`
+- `AG_UI_URL`
+- `COPILOTKIT_URL`
+
+When optional selected-thread URLs are unset, the application uses
+same-origin `/api/chat/stream/{threadId}/ag-ui` and `/api/copilotkit`.
+
+## UI contracts
+
+- Native SSE and durable workflow history are authoritative.
+- The rich stream is a native-payload contract and must not be passed into an
+  assistant UI.
+- AG-UI and CopilotKit are read-only selected-thread views.
+- CopilotKit means `@copilotkit/react-core`, not the GitHub Copilot SDK.
+- The CopilotKit inspector remains disabled.
+- Optional selected-thread failures must not block native history, timeline,
+  or HITL controls.
+
+## Build constraints
+
+The release image retains Node 20 Alpine and Nginx Alpine. The package graph
+includes the Rolldown Linux x64 musl binding, and the Docker build retries the
+approved-feed install while verifying that the TypeScript 7 `tsc` executable
+was installed before building.
+
+See the [user flow](../docs/userflow.md) and
+[technical specification](../docs/technical-spec.md).

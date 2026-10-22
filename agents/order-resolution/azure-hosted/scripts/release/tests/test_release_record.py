@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "release" / "release-record.py"
 SCHEMA = ROOT / ".artifacts" / "releases" / "_contract" / "release-v1.schema.json"
@@ -21,8 +20,8 @@ TIMING = {
     "smoke": ("2026-08-15T17:05:00Z", "2026-08-15T17:05:30Z"),
     "browser_e2e": ("2026-08-15T17:05:30Z", "2026-08-15T17:06:00Z"),
     "domain_e2e": ("2026-08-15T17:06:00Z", "2026-08-15T17:06:30Z"),
-    "evaluation": ("2026-08-15T17:06:30Z", "2026-08-15T17:08:00Z"),
-    "telemetry": ("2026-08-15T17:08:00Z", "2026-08-15T17:09:00Z"),
+    "telemetry": ("2026-08-15T17:06:30Z", "2026-08-15T17:08:00Z"),
+    "evaluation": ("2026-08-15T17:08:00Z", "2026-08-15T17:09:00Z"),
     "final_evidence": ("2026-08-15T17:09:05Z", "2026-08-15T17:09:06Z"),
 }
 
@@ -51,11 +50,11 @@ def initialize(tmp_path: Path) -> Path:
             "--environment",
             "maf-ora-azure",
             "--subscription-id",
-            "7df95e88-701c-4693-af77-3159f83b558d",
+            "11111111-1111-4111-8111-111111111111",
             "--resource-group",
-            "rg-maf-ora-azure",
+            "rg-portable-azure",
             "--location",
-            "northcentralus",
+            "regionone",
         ],
         check=True,
     )
@@ -227,13 +226,14 @@ def test_atomic_init_and_finalize_match_common_schema(tmp_path: Path) -> None:
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     Draft202012Validator(schema).validate(final)
     assert final["status"] == "succeeded"
+    assert final["extensions"]["validation_state"] == "live_validated"
     assert len(final["artifacts"]) == len(final["gates"])
     assert all(len(item["sha256"]) == 64 for item in final["artifacts"])
     azure = final["extensions"]["azure"]
     assert azure["stages"]["package_build"]["duration_ms"] == 59_900
     assert azure["stages"]["app_deployment"]["duration_ms"] == 179_800
-    assert azure["telemetry_succeeded_at"] == "2026-08-15T17:09:00Z"
-    assert azure["benchmark_duration_ms"] == 480_000
+    assert azure["telemetry_succeeded_at"] == "2026-08-15T17:08:00Z"
+    assert azure["benchmark_duration_ms"] == 420_000
 
 
 @pytest.mark.parametrize(
@@ -343,6 +343,41 @@ def test_failed_finalize_records_safe_summary_without_all_gates(tmp_path: Path) 
     }
 
 
+def test_failed_finalize_preserves_record_when_existing_evidence_is_invalid(
+    tmp_path: Path,
+) -> None:
+    release_dir = initialize(tmp_path)
+    invalid = release_dir / "evidence" / "deployment.json"
+    invalid.parent.mkdir(parents=True, exist_ok=True)
+    invalid.write_text('{"refresh_token":"credential-value"}\n', encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "finalize",
+            "--release-dir",
+            str(release_dir),
+            "--status",
+            "failed",
+            "--completed-at",
+            COMPLETED,
+            "--failed-stage",
+            "deployment",
+            "--error",
+            "Release validation stage failed.",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    record = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert record["gates"]["deployment"]["status"] == "failed"
+    assert record["artifacts"] == []
+
+
 def test_finalize_rejects_modified_gate_declaration(tmp_path: Path) -> None:
     release_dir = initialize(tmp_path)
     populate_required(release_dir)
@@ -422,10 +457,10 @@ def test_succeeded_finalize_rejects_final_evidence_before_telemetry(
     completed = finalize(release_dir)
 
     assert completed.returncode == 1
-    assert "final evidence may not start before telemetry" in completed.stderr
+    assert "invalid Azure timing order for stage: final_evidence" in completed.stderr
 
 
-def test_succeeded_finalize_rejects_telemetry_before_evaluation(
+def test_succeeded_finalize_rejects_evaluation_before_telemetry(
     tmp_path: Path,
 ) -> None:
     release_dir = initialize(tmp_path)
@@ -433,7 +468,7 @@ def test_succeeded_finalize_rejects_telemetry_before_evaluation(
     populate_timing(release_dir)
     record_path = release_dir / "release.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
-    record["extensions"]["azure"]["stages"]["telemetry"].update(
+    record["extensions"]["azure"]["stages"]["evaluation"].update(
         started_at="2026-08-15T17:07:59Z",
         duration_ms=61_000,
     )
@@ -442,4 +477,102 @@ def test_succeeded_finalize_rejects_telemetry_before_evaluation(
     completed = finalize(release_dir)
 
     assert completed.returncode == 1
-    assert "invalid Azure timing order for stage: telemetry" in completed.stderr
+    assert "invalid Azure timing order for stage: evaluation" in completed.stderr
+
+
+def test_failed_final_evidence_timing_can_retry_while_release_is_running(
+    tmp_path: Path,
+) -> None:
+    release_dir = initialize(tmp_path)
+    assert timing(
+        release_dir, "app-only-start", "2026-08-15T17:01:00Z"
+    ).returncode == 0
+    assert timing(
+        release_dir,
+        "stage-start",
+        "2026-08-15T17:09:00Z",
+        stage="final_evidence",
+    ).returncode == 0
+    assert timing(
+        release_dir,
+        "stage-end",
+        "2026-08-15T17:09:01Z",
+        stage="final_evidence",
+        status="failed",
+    ).returncode == 0
+
+    retried = timing(
+        release_dir,
+        "stage-start",
+        "2026-08-15T17:09:02Z",
+        stage="final_evidence",
+    )
+
+    assert retried.returncode == 0, retried.stderr
+    record = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
+    assert record["extensions"]["azure"]["stages"]["final_evidence"] == {
+        "status": "running",
+        "started_at": "2026-08-15T17:09:02Z",
+        "ended_at": None,
+        "duration_ms": None,
+    }
+
+
+def test_finalize_allows_numeric_token_metrics_but_rejects_credential_token_fields(
+    tmp_path: Path,
+) -> None:
+    release_dir = initialize(tmp_path)
+    populate_required(release_dir)
+    populate_timing(release_dir)
+    deployment = release_dir / "evidence" / "deployment.json"
+    payload = json.loads(deployment.read_text(encoding="utf-8"))
+    payload["usage"] = {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+    }
+    deployment.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    completed = finalize(release_dir)
+    assert completed.returncode == 0, completed.stderr
+
+    second_release = initialize(tmp_path / "second")
+    populate_required(second_release)
+    populate_timing(second_release)
+    deployment = second_release / "evidence" / "deployment.json"
+    payload = json.loads(deployment.read_text(encoding="utf-8"))
+    payload["refresh_token"] = "credential-value"
+    deployment.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    completed = finalize(second_release)
+    assert completed.returncode == 1
+    assert "secret-like key" in completed.stderr
+
+
+def test_finalize_rejects_mismatched_release_window(tmp_path: Path) -> None:
+    release_dir = initialize(tmp_path)
+    populate_required(release_dir)
+    populate_timing(release_dir)
+    deployment = release_dir / "evidence" / "deployment.json"
+    payload = json.loads(deployment.read_text(encoding="utf-8"))
+    payload["release_started_at"] = "2026-08-15T17:00:01Z"
+    deployment.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    completed = finalize(release_dir)
+
+    assert completed.returncode == 1
+    assert "cross-window evidence" in completed.stderr
+
+
+def test_finalize_rejects_duplicate_existing_artifact_inventory(tmp_path: Path) -> None:
+    release_dir = initialize(tmp_path)
+    populate_required(release_dir)
+    populate_timing(release_dir)
+    record_path = release_dir / "release.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    duplicate = {"path": "evidence/deployment.json", "sha256": "0" * 64, "size_bytes": 1}
+    record["artifacts"] = [duplicate, duplicate]
+    record_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    completed = finalize(release_dir)
+
+    assert completed.returncode == 1
+    assert "duplicate artifact paths" in completed.stderr

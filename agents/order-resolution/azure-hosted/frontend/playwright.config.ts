@@ -17,6 +17,8 @@ export default defineConfig({
         env: {
           ...process.env,
           VITE_API_BASE: apiBase,
+          VITE_AG_UI_URL: "/vite-ag-ui/{threadId}",
+          VITE_COPILOTKIT_URL: "/vite-copilotkit",
         },
         port: 4175,
         reuseExistingServer: true,

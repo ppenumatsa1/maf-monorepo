@@ -4,6 +4,9 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 param databaseName string = 'maf_workflow'
+param skuName string = 'Standard_B1ms'
+param skuTier string = 'Burstable'
+param version string = '16'
 @description('Optional public IPv4 address of the AZD runner that performs the Entra grant bootstrap.')
 param bootstrapAllowedIp string = ''
 
@@ -12,11 +15,11 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' =
   location: location
   tags: tags
   sku: {
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    name: skuName
+    tier: skuTier
   }
   properties: {
-    version: '16'
+    version: version
     authConfig: {
       activeDirectoryAuth: 'Enabled'
       passwordAuth: 'Disabled'

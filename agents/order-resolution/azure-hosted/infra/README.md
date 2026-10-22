@@ -1,22 +1,33 @@
 # Infrastructure
 
-`azure-apphosted/` is the single Azure package for the React frontend, FastAPI
-MAF backend, PostgreSQL, observability, ACR, and Foundry model and report-only
-evaluation resources.
+`azure-apphosted/` is the Azure package for:
 
-The backend Container App is the only MAF application host. The planned target
-is subscription `7df95e88-701c-4693-af77-3159f83b558d`,
-`rg-maf-ora-azure`, in North Central US; no deployment is claimed.
+- an external React/Nginx frontend Container App;
+- an internal FastAPI/MAF backend Container App;
+- retained Azure Database for PostgreSQL;
+- Azure Container Registry, Log Analytics, and Application Insights;
+- managed identities and scoped RBAC; and
+- optional Foundry model inference and report-only evaluation resources.
 
-Routine release scope is backend/frontend revisions only. The package must
-retain the existing PostgreSQL server and `maf_workflow` database. Bicep
-reconciliation is an explicit exception: invoking its validated workflow is
-execution intent, and it obtains a fresh what-if that must prove PostgreSQL is
-excluded from steady-state deployment before apply. Changed infrastructure files never authorize an
-implicit provision or database recreation, and no separate approval/reference
-or caller-supplied digest is required.
+FastAPI is the only MAF application host. This lane excludes private
+networking, Foundry hosted-agent/Responses, Bot, Activity, Teams, and Adaptive
+Cards.
 
-Target selection is owned by `deployment/profiles/azure-hosted.env`. Routine
-release proof is written under `.artifacts/releases/<release-id>/evidence/`
-with logs in the sibling `logs/` directory. Infrastructure evidence is emitted
-only for an explicitly requested preview or reconciliation.
+## Target selection
+
+Tenant, subscription, resource group, region, names, and endpoints come from a
+validated, ignored operator profile and the selected AZD environment. Tracked
+infrastructure docs contain no concrete environment values.
+
+## Lifecycle
+
+- Fresh bootstrap creates the initial profile-selected platform.
+- Transition to steady state removes temporary bootstrap access and retains
+  PostgreSQL.
+- `make release-app` updates application revisions only.
+- `make release-infra-preview` is non-mutating.
+- `make release-infra-reconcile` is an explicit exceptional action.
+
+Generated release proof belongs under
+`.artifacts/releases/<release-id>/evidence/`, with logs in the sibling
+`logs/` directory.

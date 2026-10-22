@@ -36,8 +36,14 @@ class ResponsesWorkflowClient:
             raise ValueError("FOUNDRY_RESPONSES_TIMEOUT_SECONDS must be positive")
         return cls(endpoint, timeout_seconds=timeout_seconds)
 
-    async def start_workflow(self, *, thread_id: str, message: str) -> str:
-        if self._is_loopback:
+    async def start_workflow(
+        self,
+        *,
+        thread_id: str,
+        message: str,
+        create_conversation: bool = True,
+    ) -> str:
+        if self._is_loopback or not create_conversation:
             await self._invoke(
                 {
                     "conversation": {"id": thread_id},

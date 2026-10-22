@@ -1,88 +1,65 @@
 # Scripts
 
-Scripts support local validation and the planned Azure app-hosted package.
+Scripts support local validation, target preparation, app-only release,
+explicit infrastructure reconciliation, telemetry, evaluation, and evidence.
 
 ## Key paths
 
-- `playwright/`: browser workflow and selected-thread scenarios.
-- `parity/`: local and Azure endpoint parity runner.
+- `local/`: isolated local PostgreSQL and test helpers.
+- `playwright/`: workflow and selected-thread browser scenarios.
+- `parity/`: local and Azure endpoint comparison.
+- `manual/`: repeatable workflow scenario matrix.
 - `rubric/`: end-to-end quality rubric.
-- `skills/design-review-skill.sh`: deterministic review gate.
-- `skills/deployment-mode-router.sh`: validation/deployment routing.
-- `azure/grant-postgres-identity.sh`: AZD post-provision PostgreSQL Entra grant.
-- `release/`: app-only deployment, guarded infrastructure reconciliation, and
-  release evidence collection.
-- `release/prepare-bootstrap-environment.sh`: validates the approved
-  target-only profile and prepares local AZD bootstrap values.
-- `release/transition-bootstrap-to-steady-state.sh`: verifies retained
-  PostgreSQL identities, deletes and verifies removal of the exact bootstrap
-  operator firewall rule, then excludes PostgreSQL from future IaC. A retry
-  accepts confirmed rule absence after a partial AZD update, but lookup/auth
-  failures remain blocking.
+- `skills/`: deterministic design and release routing checks.
+- `azure/`: managed-identity PostgreSQL bootstrap helpers.
+- `release/`: target checks, bootstrap transition, app release, telemetry,
+  report-only evaluation, and evidence aggregation.
 
-## Local browser test
+## Local browser validation
+
+From the package root:
 
 ```bash
-cd scripts/playwright
-npm install
-npx playwright install
-PLAYWRIGHT_BASE_URL=http://localhost:5173 npm run test:e2e
+make test-e2e-selected
+make test-e2e
+make docker-test
 ```
 
-From the package root, prefer the isolated targets:
-
-```bash
-make test-e2e-selected  # selected-thread AG-UI and CopilotKit contract
-make test-e2e           # complete workflow plus selected-thread suite
-make docker-test        # separate Docker Compose suite on dynamic ports
-```
+Use the frontend's same-origin URL for deployed browser validation. The
+internal backend is not a browser-facing endpoint.
 
 ## Endpoint parity
 
 ```bash
 PARITY_LOCAL_API_URL=http://localhost:8000
 PARITY_LOCAL_WEB_URL=http://localhost:5173
-PARITY_AZURE_API_URL=https://<backend-host>
+PARITY_AZURE_API_URL=https://<frontend-host>/api
 PARITY_AZURE_WEB_URL=https://<frontend-host>
 make parity-all
 ```
 
-The Azure variables are for authorized post-deployment validation only; this
-branch currently makes no deployment claim.
+Resolve `<frontend-host>` from the selected AZD environment; do not store it in
+tracked files.
 
 ## Release evidence
 
-Use `make release-app` for normal backend/frontend releases. It does not
-provision infrastructure or recreate PostgreSQL. `make release-validate`
-collects deployment verification, low/high-risk smoke evidence, hosted
-Playwright, the three HTTP domain scenarios, report-only Foundry evaluation,
-exact Application Insights correlation, and final evidence in one fresh release
-window.
-Tracked release inputs remain in `deployment/profiles/` and the checked-in
-design/deployment contract docs; the generated release bundle is written to
-`.artifacts/releases/<release-id>/`.
+`make release-app` performs the routine app-only path. It must not provision
+infrastructure or recreate PostgreSQL.
 
-The generated bundle is the release-local evidence handoff and includes:
+The proof order is:
 
-- `release.json`
-- `evidence/release-context.json`
-- `evidence/source-validation.json`
-- `evidence/images.json`
-- `evidence/deployment.json`
-- `evidence/smoke.json`
-- `evidence/domain-e2e.json`
-- `evidence/evaluation.json`
-- `evidence/telemetry.json`
-- `evidence/release-evidence.json`
-- `logs/` (including `browser-e2e.log`)
+1. deployment verification;
+2. smoke;
+3. browser E2E;
+4. three HTTP/durable domain scenarios;
+5. exact Application Insights correlation;
+6. report-only Foundry evaluation; and
+7. final evidence.
 
-`release-eval` passes the canonical evaluation output path to the evaluator and
-enforces a completed run with zero failed or errored rows. `release-validate`
-uses `validate-hosted-release.sh`, whose exit trap writes a failed final
-evidence record even when an intermediate gate stops the release.
+Foundry evaluation judges captured HTTP results only and cannot invoke or
+mutate workflows. The validation wrapper must preserve failed final evidence
+when an intermediate gate stops the release.
 
-Use `make release-infra-preview` for a non-mutating Bicep/AZD preview.
-`make release-infra-reconcile` is a separate direct guarded action: it obtains
-and validates a fresh steady-state what-if before apply and rejects any
-PostgreSQL entry. Do not use a historical successful query or previous thread as
-evidence for a new release.
+Use `make release-infra-preview` for a non-mutating preview and
+`make release-infra-reconcile` only for an explicit steady-state infrastructure
+operation.

@@ -57,12 +57,16 @@ for required in (
     'make --no-print-directory release-smoke',
     'make --no-print-directory release-browser-e2e',
     'make --no-print-directory release-domain-e2e',
-    'make --no-print-directory release-eval',
     'make --no-print-directory release-telemetry',
+    'make --no-print-directory release-eval',
     'make --no-print-directory release-evidence',
     'Hosted release validation failed:',
 ):
     require(release_validation, required, "release validation orchestration")
+if release_validation.index("run_stage \"telemetry correlation\"") > release_validation.index(
+    "run_stage \"Foundry evaluation\""
+):
+    raise SystemExit("Telemetry must run before strict Foundry evaluation.")
 
 run_browser_e2e = Path("scripts/release/run-browser-e2e.sh").read_text(encoding="utf-8")
 for required in (
@@ -84,6 +88,8 @@ for required in (
     'source "$ROOT_DIR/scripts/release/release-artifacts.sh"',
     "RELEASE_LOGS_DIR",
     'converge_ingress "$backend_app" internal 8000',
+    'DB_SCHEMA_MANAGED_EXTERNALLY=true',
+    'Backend FRONTEND_ORIGIN must match the deployed frontend before release.',
     'NGINX_API_UPSTREAM=https://$backend_fqdn',
     'converge_ingress "$frontend_app" external 5173',
 ):
@@ -97,6 +103,8 @@ for required in (
     'service_name.image-deploy.log',
     "--type internal",
     "--type external",
+    'DB_SCHEMA_MANAGED_EXTERNALLY=true',
+    'FRONTEND_ORIGIN=https://$frontend_fqdn',
     'NGINX_API_UPSTREAM=https://$backend_fqdn',
 ):
     require(deploy_ci_images, required, "CI image release path")
@@ -104,15 +112,47 @@ for required in (
 verify_deployment = Path("scripts/release/verify-release-deployment.sh").read_text(
     encoding="utf-8"
 )
-for required in ('"target_identity"', '"active_revision"', '"image_digest"', '"artifact_type": "deployment"'):
+for required in (
+    '"target_identity"',
+    '"active_revision"',
+    '"image_digest"',
+    '"artifact_type": "deployment"',
+    'Expected backend DB_SCHEMA_MANAGED_EXTERNALLY=true.',
+    'Expected backend FRONTEND_ORIGIN to match WEB_URL.',
+):
     require(verify_deployment, required, "deployment evidence contract")
 
+main_bicep = Path("infra/azure-apphosted/iac/main.bicep").read_text(encoding="utf-8")
+for required in (
+    "name: 'DB_SCHEMA_MANAGED_EXTERNALLY'",
+    "name: 'FRONTEND_ORIGIN'",
+    "value: frontendOrigin",
+):
+    require(main_bicep, required, "backend runtime environment")
+
 foundry_eval_runner = Path("backend/evals/foundry_eval_runner.py").read_text(encoding="utf-8")
-for required in ('FOUNDRY_EVAL_OUTPUT_FILE', 'http_output_capture', 'blocking_result_rows', 'run_status'):
+for required in (
+    'FOUNDRY_EVAL_OUTPUT_FILE',
+    'http_output_capture',
+    'per_testing_criteria_results',
+    'run_status',
+    'evaluation_mode',
+):
     require(foundry_eval_runner, required, "Foundry evaluation gate")
 
 eval_yaml = Path("backend/eval.yaml").read_text(encoding="utf-8")
 require(eval_yaml, 'ord-1004-damaged-approve', "stable damaged evaluation scenario")
+require(eval_yaml, 'task_completion', "strict task-completion evaluator")
+require(eval_yaml, 'coherence', "strict coherence evaluator")
+
+eval_retry = Path("scripts/release/run-foundry-eval.sh").read_text(encoding="utf-8")
+for required in (
+    'FOUNDRY_EVAL_ERROR_RETRY_ATTEMPTS',
+    'FOUNDRY_EVAL_ERROR_RETRY_SECONDS',
+    '("failed", "skipped", "expected")',
+    'errors += int(result.get("errored", 0))',
+):
+    require(eval_retry, required, "Foundry evaluator retry contract")
 PY
 
 echo "Azure-hosted runtime gates contract passed"

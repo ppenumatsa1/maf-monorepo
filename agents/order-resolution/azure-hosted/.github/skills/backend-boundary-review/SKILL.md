@@ -23,7 +23,7 @@ Use this skill when reviewing backend changes for repository boundary compliance
 - Keep API and emitted event contracts stable unless the task explicitly requests a contract change.
 - Do not remove or rename event types without updating frontend consumers, tests, and docs.
 - Require tests and eval cases for HITL behavior changes.
-- Require updates to `docs/design/hitl-approval-conditions.md` when HITL decision logic changes.
+- Require updates to `docs/hitl-approval-conditions.md` when HITL decision logic changes.
 
 ## Required checks
 

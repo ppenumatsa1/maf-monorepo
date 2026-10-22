@@ -26,6 +26,32 @@ async def test_responses_client_maps_new_workflow_to_conversation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_responses_client_reuses_server_selected_conversation() -> None:
+    payloads: list[dict[str, Any]] = []
+
+    async def capture(payload: dict[str, Any]) -> None:
+        payloads.append(payload)
+
+    client = ResponsesWorkflowClient(
+        "https://example.services.ai.azure.com/responses?api-version=v1",
+        transport=capture,
+    )
+    conversation_id = await client.start_workflow(
+        thread_id="conv_existing",
+        message="Continue ORD-1001",
+        create_conversation=False,
+    )
+
+    assert conversation_id == "conv_existing"
+    assert payloads == [
+        {
+            "conversation": {"id": "conv_existing"},
+            "input": "Continue ORD-1001",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_responses_client_preserves_checkpoint_resume_wire_format() -> None:
     payloads: list[dict[str, Any]] = []
 

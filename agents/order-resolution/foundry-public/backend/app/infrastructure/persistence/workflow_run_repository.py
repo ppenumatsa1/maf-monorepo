@@ -42,8 +42,7 @@ def _duration_ms(started_at: str | None, completed_at: str | None) -> int | None
 
 class WorkflowRunRepository:
     def __init__(self) -> None:
-        postgres_db.ensure_schema()
-        self._pool = postgres_db.get_pool()
+        self._pool = postgres_db.pool
 
     def create_workflow_run(
         self,
@@ -51,6 +50,7 @@ class WorkflowRunRepository:
         input_text: str,
         session_id: str | None = None,
         customer_id: str | None = None,
+        origin_channel: str = "api",
     ) -> dict[str, Any]:
         now = _utc_now_iso()
         with self._pool.connection() as conn:
@@ -71,8 +71,8 @@ class WorkflowRunRepository:
                     """
                     INSERT INTO workflow_runs (
                         thread_id, session_id, status, input, input_summary,
-                        created_at, updated_at, started_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        created_at, updated_at, started_at, origin_channel
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (thread_id) DO NOTHING
                     """,
                     (
@@ -84,6 +84,7 @@ class WorkflowRunRepository:
                         now,
                         now,
                         now,
+                        origin_channel,
                     ),
                 )
                 cur.execute(
@@ -108,6 +109,23 @@ class WorkflowRunRepository:
                     "updated_at": _as_iso(row["updated_at"]),
                 }
 
+    def get_workflow_origin_channel(self, thread_id: str) -> str | None:
+        with self._pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT origin_channel
+                    FROM workflow_runs
+                    WHERE thread_id = %s
+                    """,
+                    (thread_id,),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        value = str(row["origin_channel"] or "").strip()
+        return value or None
+
     def create_or_get_responses_dispatch(
         self,
         *,
@@ -125,23 +143,29 @@ class WorkflowRunRepository:
                         idempotency_key, request_hash, run_id, thread_id, status, created_at, updated_at
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (idempotency_key) DO NOTHING
+                    RETURNING idempotency_key, request_hash, run_id, thread_id, status
                     """,
                     (idempotency_key, request_hash, run_id, thread_id, "pending", now, now),
                 )
-                cur.execute(
-                    """
-                    SELECT idempotency_key, request_hash, run_id, thread_id, status
-                    FROM responses_dispatches
-                    WHERE idempotency_key = %s
-                    """,
-                    (idempotency_key,),
-                )
                 row = cur.fetchone()
+                created = row is not None
+                if row:
+                    row = dict(row)
+                else:
+                    cur.execute(
+                        """
+                        SELECT idempotency_key, request_hash, run_id, thread_id, status
+                        FROM responses_dispatches
+                        WHERE idempotency_key = %s
+                        """,
+                        (idempotency_key,),
+                    )
+                    row = cur.fetchone()
                 if not row:
                     raise RuntimeError(f"Failed to create Responses dispatch: {idempotency_key}")
                 if row["request_hash"] != request_hash:
                     raise ValueError("Idempotency key was already used with a different request.")
-                return dict(row)
+                return {**dict(row), "created": created}
 
     def update_responses_dispatch_status(self, idempotency_key: str, status: str) -> None:
         with self._pool.connection() as conn:

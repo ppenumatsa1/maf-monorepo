@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import psycopg
 import pytest
+from app.core.database import postgres_db
 
 
 def _database_available() -> bool:
@@ -18,6 +20,9 @@ def _database_available() -> bool:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_database_available() -> None:
+def ensure_database_available() -> Iterator[None]:
     if not _database_available():
         pytest.skip("PostgreSQL is required for backend tests in this repository.")
+    postgres_db.ensure_schema()
+    yield
+    postgres_db.close()
