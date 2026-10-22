@@ -160,7 +160,7 @@ durable history, or HITL controls unavailable. CopilotKit here means
 
 - Git
 - Make
-- Python 3.12
+- Python 3.13
 - Node.js 20 and npm
 - Docker with Docker Compose
 - Chromium dependencies when running Playwright outside its container
@@ -716,7 +716,7 @@ remain coherent.
 
 | Symptom | Action |
 | --- | --- |
-| `python3 -m venv` fails | Install Python 3.12 and recreate `backend/.venv`; do not reuse an incompatible environment. |
+| `python3 -m venv` fails | Install Python 3.13 and recreate `backend/.venv`; do not reuse an incompatible environment. |
 | Backend imports or `pytest` are missing | Run `make install-backend`, then `make test`. |
 | Frontend packages or Vite are missing | Run `make install-frontend`, then `npm run build` from `frontend/`. |
 | Playwright browser is missing | From `scripts/playwright/`, run `npx playwright install --with-deps chromium`, then rerun the E2E target. |

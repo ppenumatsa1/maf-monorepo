@@ -16,8 +16,30 @@ and correlation identifiers remain in ignored/generated release evidence.
 - The current East US 2 release is live-validated: deployment, smoke, hosted
   browser, domain scenarios, telemetry, Foundry evaluation, and final evidence
   passed.
+- CI source validation is aligned with Python 3.13 and ignored external target
+  profiles. The remaining CI blocker is Azure RBAC for the GitHub OIDC release
+  identity, not an application or deployment failure.
 - Historical release evidence does not prove the current source revision is
   deployed; every release requires a fresh evidence window.
+
+## 2026-10-22 - CI parity follow-up; OIDC RBAC pending
+
+- Azure Hosted CI now installs Python 3.13 for backend, browser, design-review,
+  release, and quick-validation jobs, matching the lane's runtime contract.
+- The tracked concrete Azure target profile was removed. CI generates an
+  ignored profile from the protected GitHub environment and validates the
+  complete PostgreSQL and Foundry chat, embedding, and evaluator selector
+  contract before release preflight.
+- The protected GitHub environment location was corrected to East US 2 so
+  capacity validation targets the live deployment region.
+- Shared profile tests, generated-profile resolution, release source
+  contracts, and the Bicep build pass. Backend, frontend, browser E2E,
+  design-review, and image-cache jobs also pass in the authoritative workflow.
+- The read-only preflight stops at Azure OIDC login with `No subscriptions
+  found`. The configured federated identity needs reviewed least-privilege
+  subscription/resource assignments before capacity preflight or app-only CI
+  deployment can run. This authentication gate is not bypassed; the already
+  validated live application remains healthy.
 
 ## 2026-10-22 - Fresh East US 2 deployment and release validated
 
