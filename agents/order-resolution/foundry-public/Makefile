@@ -182,7 +182,7 @@ test-e2e-selected-thread:
 		cd frontend && npm run test:e2e -- tests/e2e/selected-thread-integrations.spec.ts; \
 	fi
 
-test-e2e:
+test-e2e: foundry-python-wheelhouse
 	@set -euo pipefail; \
 	if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
 		cd scripts/playwright && npm run test:e2e; \

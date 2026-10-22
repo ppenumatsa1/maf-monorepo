@@ -33,6 +33,7 @@ grep -Fq '.artifacts/releases/$FOUNDRY_RELEASE_ID' \
 grep -Fq 'FOUNDRY_PREVIEW_EVIDENCE_FILE' \
   "$root_dir/scripts/foundry/deploy_public_dev.sh"
 grep -Fq 'release_evidence.py finalize' "$root_dir/Makefile"
+grep -Fq 'test-e2e: foundry-python-wheelhouse' "$root_dir/Makefile"
 
 grep -Fq 'Cognitive Services OpenAI User' \
   "$root_dir/scripts/foundry/ensure_hosted_agent_rbac.sh"
