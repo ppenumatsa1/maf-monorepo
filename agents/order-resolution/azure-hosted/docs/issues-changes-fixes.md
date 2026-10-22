@@ -17,12 +17,12 @@ and correlation identifiers remain in ignored/generated release evidence.
   browser, domain scenarios, telemetry, Foundry evaluation, and final evidence
   passed.
 - CI source validation is aligned with Python 3.13 and ignored external target
-  profiles. The remaining CI blocker is Azure RBAC for the GitHub OIDC release
-  identity, not an application or deployment failure.
+  profiles. Validation-only changes do not impersonate a production release;
+  real app-only releases remain fail-closed on Azure OIDC and RBAC.
 - Historical release evidence does not prove the current source revision is
   deployed; every release requires a fresh evidence window.
 
-## 2026-10-22 - CI parity follow-up; OIDC RBAC pending
+## 2026-10-22 - CI parity follow-up and release routing correction
 
 - Azure Hosted CI now installs Python 3.13 for backend, browser, design-review,
   release, and quick-validation jobs, matching the lane's runtime contract.
@@ -35,11 +35,15 @@ and correlation identifiers remain in ignored/generated release evidence.
 - Shared profile tests, generated-profile resolution, release source
   contracts, and the Bicep build pass. Backend, frontend, browser E2E,
   design-review, and image-cache jobs also pass in the authoritative workflow.
-- The read-only preflight stops at Azure OIDC login with `No subscriptions
-  found`. The configured federated identity needs reviewed least-privilege
-  subscription/resource assignments before capacity preflight or app-only CI
-  deployment can run. This authentication gate is not bypassed; the already
-  validated live application remains healthy.
+- Documentation and workflow-only commits were incorrectly routed as
+  production app-only releases, causing them to request Azure OIDC before any
+  deployable application changed. They now run full validation without Azure
+  authentication or mutation.
+- Real application changes still require the read-only capacity preflight,
+  tested immutable images, Azure OIDC, app-only Container Apps deployment, and
+  final release evidence. The configured federated identity still needs
+  reviewed least-privilege Azure assignments before that future automated
+  release route can run; the gate is not bypassed.
 
 ## 2026-10-22 - Fresh East US 2 deployment and release validated
 

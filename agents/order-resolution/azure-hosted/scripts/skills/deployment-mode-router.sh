@@ -14,10 +14,18 @@ changed_files="$(
 )"
 
 if [[ -z "$changed_files" ]]; then
-  echo "deploy_mode=app_only"
+  echo "deploy_mode=validate_only"
   echo "validation_mode=quick"
   echo "infrastructure_action=none"
   echo "reason=no_changed_files"
+  exit 0
+fi
+
+if ! grep -Ev '(^|/)[^/]+\.md$' <<<"$changed_files" | grep -q .; then
+  echo "deploy_mode=validate_only"
+  echo "validation_mode=quick"
+  echo "infrastructure_action=none"
+  echo "reason=documentation_only_change"
   exit 0
 fi
 

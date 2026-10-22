@@ -25,6 +25,8 @@ python3 scripts/release/tests/test_python_wheelhouse_contract.py
 
 grep -Fq "host: containerapp" azure.yaml
 grep -Fq "deploy_mode=app_only" scripts/skills/deployment-mode-router.sh
+grep -Fq "deploy_mode=validate_only" scripts/skills/deployment-mode-router.sh
+grep -Fq "reason=documentation_only_change" scripts/skills/deployment-mode-router.sh
 grep -Fq "^(frontend/" scripts/skills/deployment-mode-router.sh
 grep -Fq 'user: "${DOCKER_E2E_UID:-1000}:${DOCKER_E2E_GID:-1000}"' docker-compose.yml
 grep -Fq 'DOCKER_E2E_UID="$$(id -u)"' Makefile
@@ -299,6 +301,9 @@ for required in (
     "Build the immutable release images",
     "Deploy the tested immutable images",
     "Validate hosted release and aggregate final evidence",
+    "Run source-only release validation",
+    "deploy_mode=validate_only",
+    "needs.routing.outputs.deploy_mode == 'app_only'",
     "make release-profile-apply",
     "make release-preflight",
     "make deploy-ci-images",

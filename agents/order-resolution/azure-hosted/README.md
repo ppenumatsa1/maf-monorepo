@@ -581,7 +581,12 @@ Pull requests do not deploy Container Apps or mutate Azure infrastructure.
 
 ### Protected `main` release
 
-On a qualifying `main` push, the protected **Required cloud Docker E2E** job:
+Workflow-only and documentation-only changes are validation-only: they run the
+applicable source, Bicep, browser, design-review, image-build, and Docker E2E
+gates without authenticating to or mutating Azure.
+
+On a qualifying application `main` push routed as `app_only`, the protected
+**Required cloud Docker E2E** job:
 
 1. authenticates with GitHub OIDC through the configured GitHub environment;
 2. builds the backend and frontend images once;
