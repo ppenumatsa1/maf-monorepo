@@ -9,6 +9,19 @@ claim requires a dated entry with the relevant smoke, hosted E2E, evaluation,
 and telemetry facts. Keep MCP/RAG execution behind the backend; record only
 safe identifiers and aggregate outcomes here.
 
+## 2026-10-22 - Current-state documentation and design-review CI synchronized
+
+- Current-state architecture, user-flow, Teams, operating-model, agent, and
+  script documentation now points to the finalized release ledger instead of
+  repeating obsolete source-only or pending-release claims.
+- The completed temporary private/public parity inventory was removed after
+  its durable contracts were absorbed into the canonical documentation.
+- Full validation exposed that the deterministic design-review job installed
+  only the frontend Playwright package and browser revision even though the
+  gate also executes the standalone `scripts/playwright` harness. The job now
+  installs Chromium from both independently pinned package roots before
+  running the gate.
+
 ## 2026-10-22 - CI parity follow-up
 
 - Public backend and design-review jobs now install Python 3.13, matching the
