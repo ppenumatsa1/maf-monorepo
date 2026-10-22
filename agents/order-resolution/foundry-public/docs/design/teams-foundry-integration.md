@@ -1,8 +1,10 @@
 # Public Foundry Agent in Microsoft Teams
 
-**Status:** Implemented in source with credential-free contract coverage.
-Reviewed Bot/Teams deployment, Shared publication, live Activity acceptance,
-telemetry, and rollback evidence are pending.
+**Status:** Implemented, deployed, and published to Shared scope. Activity
+behavior, telemetry boundaries, publication, and rollback are covered by the
+credential-free contract suites. The canonical release ledger records the
+exact live evidence scope; source documentation alone is not deployment
+evidence.
 
 ## Runtime and topology
 

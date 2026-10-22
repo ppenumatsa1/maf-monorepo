@@ -165,9 +165,9 @@ Reviewed Azure preview/apply and shared-infrastructure convergence are
 complete. Hosted activation, Bot/Teams deployment, backend/frontend release,
 Responses or Teams live acceptance, Foundry evaluation, Application Insights
 correlation, aggregate release evidence, and rollback verification are still
-pending. The temporary
-`foundry-private-upgrade.md` inventory remains until those gates complete and
-the final evidence is reviewed.
+pending. The temporary parity inventory was retained at that time and removed
+after the 2026-10-22 final evidence was reviewed and the durable contracts were
+absorbed into the canonical documentation.
 
 ## 2026-08-15 - Deployment documentation synchronized
 

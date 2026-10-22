@@ -33,9 +33,10 @@ telemetry, rollback, and evidence record is maintained in
 describes the supported target; only the generated release-window verification
 and reviewed ledger entry are evidence that a deployment is live.
 
-Current parity status is implementation plus focused local contract
-validation. Comprehensive local validation and every Azure deployment/live
-acceptance gate remain separate work and must not be inferred from source.
+The current parity release is deployed and validated as recorded in the
+canonical ledger. Source and configuration still do not prove future
+revisions; every deployment-impacting change requires a fresh release window
+and the applicable acceptance, evaluation, telemetry, and rollback evidence.
 
 ## Non-negotiable contracts
 
@@ -160,10 +161,11 @@ For every deployment-impacting change, record in
   the configured evaluator threshold;
 - known deferrals.
 
-For the current parity synchronization, the required deferral is explicit:
-reviewed full-infrastructure convergence or non-mutating reuse, app-only
-deployment, Responses and Teams acceptance, evaluation, telemetry, evidence,
-and rollback verification are pending.
+For the completed parity synchronization, reviewed infrastructure convergence,
+app-only deployment, hosted Responses/browser acceptance, Foundry evaluation,
+telemetry, aggregate evidence, and rollback readiness are recorded in the
+canonical ledger. Bot/Teams deployment and Shared publication are complete;
+Activity behavior and rollback remain guarded by the dedicated contract suites.
 
 ## Baseline scenarios
 

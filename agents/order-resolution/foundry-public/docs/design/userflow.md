@@ -13,15 +13,16 @@ Current status:
 | Stage | Status | What is actually wired today |
 | --- | --- | --- |
 | Local MAF | Implemented | FastAPI composes the shared workflow directly from `backend/app/maf/workflows/order_resolution.py`. |
-| Public Foundry-hosted | Implemented in source | Responses and additive Activity hosts run the same shared MAF workflow in one process. |
-| Public browser wrapper | Implemented in source | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
-| Microsoft Teams | Implemented in source | Azure Bot Service and `MsTeamsChannel` target the Activity endpoint; pending approvals use opaque Adaptive Card actions. |
+| Public Foundry-hosted | Deployed and validated | Responses and additive Activity hosts run the same shared MAF workflow in one process. |
+| Public browser wrapper | Deployed and validated | External frontend ACA proxies same-origin API/SSE traffic to an internal FastAPI wrapper, which invokes Foundry Responses using managed identity. |
+| Microsoft Teams | Deployed and published | Azure Bot Service and `MsTeamsChannel` target the Activity endpoint; the application is published to Shared scope and pending approvals use opaque Adaptive Card actions. |
 
 Historical release evidence is recorded in `issues-changes-fixes.md`. The
-current parity source still requires fresh reviewed infrastructure/deployment,
-Responses and Teams acceptance, evaluation, telemetry, rollback, and aggregate
-evidence. Repository configuration and this flow description are not
-deployment evidence.
+current parity release is finalized there with reviewed deployment, hosted
+Responses/browser acceptance, evaluation, telemetry, rollback readiness, and
+aggregate evidence. Teams deployment/publication and Activity contract coverage
+are also recorded. Repository configuration and this flow description are not
+deployment evidence for future revisions.
 
 ## Current Runtime User Flow (Implemented Path)
 

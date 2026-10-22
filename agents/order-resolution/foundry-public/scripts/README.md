@@ -73,10 +73,11 @@ release path.
 Each release writes fresh gitignored evidence for its own window. Legacy
 evidence paths are inventory-only and are not release authority.
 
-Current source/local contract results are not live-release evidence. The
-current parity changes still require reviewed Azure execution, Responses and
-Teams acceptance, evaluation, telemetry, aggregate evidence, and rollback
-verification.
+Source/local contract results alone are not live-release evidence. The current
+parity release's reviewed Azure execution, hosted Responses/browser acceptance,
+evaluation, telemetry, aggregate evidence, rollback readiness, Teams
+deployment/publication, and Activity contract coverage are recorded in the
+canonical ledger. Future revisions require fresh evidence.
 
 Run the UI suite against the public frontend with
 `PLAYWRIGHT_BASE_URL="<frontend-url>" make test-e2e`; the internal backend

@@ -995,8 +995,6 @@ filenames.
   [.azure/deployment-plan.md](.azure/deployment-plan.md)
 - Canonical dated release and incident evidence:
   [docs/design/issues-changes-fixes.md](docs/design/issues-changes-fixes.md)
-- Private/public parity contract:
-  [docs/design/foundry-private-upgrade.md](docs/design/foundry-private-upgrade.md)
 
 Read [agents.md](agents.md) and
 [.github/copilot-instructions.md](.github/copilot-instructions.md) before

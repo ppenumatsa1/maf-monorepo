@@ -49,10 +49,11 @@ This file describes expected behavior for coding agents working in this reposito
   binds token hashes to a Teams-origin checkpoint, decision, user, conversation,
   expiry, and action batch; one atomic claim supersedes the sibling action so
   concurrent decisions cannot both resume.
-- Current parity status is source/local only until a reviewed Azure preview,
-  deployment, Responses and Teams acceptance, evaluation, telemetry,
-  evidence aggregation, and rollback verification are recorded in the
-  canonical ledger.
+- The current parity release is deployed and validated as recorded in the
+  canonical ledger, including hosted Responses/browser acceptance, evaluation,
+  telemetry, evidence aggregation, rollback readiness, Teams
+  deployment/publication, and Activity contract coverage. Source alone never
+  proves a future release.
 - PostgreSQL schema DDL is administrator-owned. Production runtimes set
   `DB_SCHEMA_MANAGED_EXTERNALLY=true` and the runtime credential remains
   limited to required DML and sequence usage.

@@ -23,10 +23,11 @@ are not evidence of a currently live endpoint, deployment, trace, or
 evaluation result. Recorded release evidence belongs in
 [issues-changes-fixes.md](issues-changes-fixes.md).
 
-The current parity implementation is present in source with focused local
-contract coverage. Reviewed Azure infrastructure/application deployment,
-Responses and Teams acceptance, evaluation, telemetry, rollback, and aggregate
-evidence remain pending.
+The current parity implementation is deployed and release-validated for the
+hosted Responses/browser path. Bot/Teams infrastructure is deployed, the
+application is published to Shared scope, and Activity/publication/rollback
+contracts pass. The canonical release ledger records the exact live acceptance,
+evaluation, telemetry, rollback-readiness, and aggregate evidence scope.
 
 ## Business Problem
 
