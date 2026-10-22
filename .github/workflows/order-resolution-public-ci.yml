@@ -140,9 +140,7 @@ jobs:
           node-version: "20"
       - name: Install frontend dependencies
         working-directory: agents/order-resolution/foundry-public/frontend
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
+        run: npm ci
       - name: Run design-review gate
         run: agents/order-resolution/foundry-public/scripts/skills/design-review-skill.sh
 
@@ -158,7 +156,9 @@ jobs:
           node-version: "20"
       - name: Install frontend dependencies
         working-directory: agents/order-resolution/foundry-public/frontend
-        run: npm ci
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Install Playwright dependencies
         working-directory: agents/order-resolution/foundry-public/scripts/playwright
         run: |
