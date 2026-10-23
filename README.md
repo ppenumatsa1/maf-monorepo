@@ -9,7 +9,7 @@ configuration, and validation instructions remain self-contained.
 | Agent            | Deployment variants                                                 | Start here                                                             |
 | ---------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Order resolution | Public Foundry-hosted, private Foundry-hosted, and Azure app-hosted | [Deployment catalog and comparison](agents/order-resolution/README.md) |
-| Underwriting     | Public Foundry-hosted                                               | [Deployment catalog and comparison](agents/underwriting/README.md)     |
+| Underwriting     | Public Foundry-hosted with durable web operations and Shared Teams review | [Deployment catalog and comparison](agents/underwriting/README.md) |
 
 See the [license](LICENSE) and [disclaimer](DISCLAIMER.md) before using this
 repository.
