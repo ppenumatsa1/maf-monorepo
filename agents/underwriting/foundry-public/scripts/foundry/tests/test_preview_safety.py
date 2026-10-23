@@ -49,9 +49,7 @@ class PreviewSafetyTests(unittest.TestCase):
             "Microsoft.DBforPostgreSQL/flexibleServers",
         ):
             with self.subTest(resource=resource):
-                with self.assertRaisesRegex(
-                    ValueError, "unexpected stateful/network/RBAC change"
-                ):
+                with self.assertRaisesRegex(ValueError, "unexpected stateful/network/RBAC change"):
                     validate_preview(
                         f"~ Modify {resource} fixture\n",
                         mode="full_infra",
@@ -64,6 +62,14 @@ class PreviewSafetyTests(unittest.TestCase):
     def test_bracketed_azd_mutation_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "mutating operation"):
             validate_preview("resource-name [Modify]\n")
+
+    def test_azd_update_notice_is_not_an_infrastructure_mutation(self) -> None:
+        preview = """
+            Skip : Application Insights : underwriting-ai
+            Update available: 1.36.0 -> 1.37.1 (https://github.com/Azure/azure-dev/releases/tag/azure-dev-cli_1.37.1)
+        """
+        result = validate_preview(preview)
+        self.assertFalse(result["mutation_performed"])
 
     def test_empty_or_progress_only_output_fails_closed(self) -> None:
         for output in ("", "Previewing changes...\n", "Deployment Plan\n"):

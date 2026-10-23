@@ -23,7 +23,7 @@ BRACKET_OPERATION = re.compile(
     re.IGNORECASE,
 )
 SAFE_RESULT = re.compile(
-    r"\bno changes(?: to apply)?\b|\[(?:skip|nochange|ignore|unchanged)\]",
+    r"\bno changes(?: to apply)?\b|\[(?:skip|nochange|ignore|unchanged)\]|^Skip\s+:",
     re.IGNORECASE,
 )
 OPERATION_LINE = re.compile(
@@ -31,14 +31,16 @@ OPERATION_LINE = re.compile(
     re.IGNORECASE,
 )
 MUTATING_OPERATION = re.compile(r"\b(?:create|delete|replace|modify|update)\b", re.IGNORECASE)
-DESTRUCTIVE_OR_DRIFT_OPERATION = re.compile(
-    r"\b(?:delete|replace|modify|update)\b", re.IGNORECASE
-)
+DESTRUCTIVE_OR_DRIFT_OPERATION = re.compile(r"\b(?:delete|replace|modify|update)\b", re.IGNORECASE)
 PROTECTED_CHANGE = re.compile(
     r"Microsoft\.(?:Authorization|Network|DBforPostgreSQL|Storage)/|"
     r"\b(?:roleAssignments|privateEndpoints|virtualNetworks|subnets|"
     r"firewallRules|flexibleServers|storageAccounts)\b",
     re.IGNORECASE,
+)
+AZD_UPDATE_NOTICE = re.compile(
+    r"^Update available:\s+\S+\s+->\s+\S+\s+"
+    r"\(https://github\.com/Azure/azure-dev/releases/tag/azure-dev-cli_[^)]+\)$"
 )
 
 
@@ -52,15 +54,13 @@ def validate_preview(text: str, *, mode: str = "reuse") -> dict[str, object]:
         line = raw_line.strip()
         if not line:
             continue
+        if AZD_UPDATE_NOTICE.fullmatch(line):
+            continue
         for match in SUMMARY.finditer(line):
             result_observed = True
             operation = match.group("operation").lower()
-            if int(match.group("count")) > 0 and (
-                mode == "reuse" or operation != "create"
-            ):
-                violations.append(
-                    f"line {line_number}: non-zero {operation} count"
-                )
+            if int(match.group("count")) > 0 and (mode == "reuse" or operation != "create"):
+                violations.append(f"line {line_number}: non-zero {operation} count")
         terraform_summary = TERRAFORM_SUMMARY.search(line)
         if terraform_summary:
             result_observed = True
