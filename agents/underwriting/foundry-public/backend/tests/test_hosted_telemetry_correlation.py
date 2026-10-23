@@ -177,18 +177,15 @@ def test_hosted_workflow_telemetry_is_correlated_to_responses_operation(
     assert input_messages == [
         {
             "role": "user",
-            "parts": [{"type": "text", "content": "Execute underwriting workflow action: resume."}],
+            "content": "Execute underwriting workflow action: resume.",
         }
     ]
     assert output_messages == [
         {
             "role": "assistant",
-            "parts": [
-                {
-                    "type": "text",
-                    "content": "Underwriting workflow finished with status: COMPLETED. Decision: APPROVED.",
-                }
-            ],
+            "content": (
+                "Underwriting workflow finished with status: COMPLETED. Decision: APPROVED."
+            ),
         }
     ]
     correlated = [

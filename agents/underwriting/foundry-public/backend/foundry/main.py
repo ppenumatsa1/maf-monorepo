@@ -75,26 +75,16 @@ def _trace_messages(action: str, result: dict[str, Any]) -> tuple[str, str]:
     input_messages = [
         {
             "role": "user",
-            "parts": [
-                {
-                    "type": "text",
-                    "content": f"Execute underwriting workflow action: {action}.",
-                }
-            ],
+            "content": f"Execute underwriting workflow action: {action}.",
         }
     ]
     output_messages = [
         {
             "role": "assistant",
-            "parts": [
-                {
-                    "type": "text",
-                    "content": (
-                        f"Underwriting workflow finished with status: {status}."
-                        + (f" Decision: {decision}." if decision else "")
-                    ),
-                }
-            ],
+            "content": (
+                f"Underwriting workflow finished with status: {status}."
+                + (f" Decision: {decision}." if decision else "")
+            ),
         }
     ]
     return json.dumps(input_messages), json.dumps(output_messages)
