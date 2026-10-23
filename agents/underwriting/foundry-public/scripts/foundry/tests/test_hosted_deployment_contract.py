@@ -23,7 +23,6 @@ def _hosted_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
         "UNDERWRITING_MODEL_DEPLOYMENT_NAME": "underwriting-gpt-4-1-mini",
         "AZURE_OPENAI_ENDPOINT": "https://example.openai.azure.com",
-        "APPLICATIONINSIGHTS_CONNECTION_STRING": "configured",
     }
     for name, value in values.items():
         monkeypatch.setenv(name, value)
@@ -41,7 +40,8 @@ def test_hosted_definition_uses_current_sdk_shape_and_immutable_digest(
     assert payload["container_configuration"]["image"] == DIGEST_IMAGE
     assert payload["environment_variables"]["DATABASE_URL"] == placeholder
     assert payload["environment_variables"]["RUNTIME_DATABASE_URL"] == placeholder
-    assert payload["environment_variables"]["APPLICATIONINSIGHTS_CONNECTION_STRING"] == "configured"
+    assert "APPLICATIONINSIGHTS_CONNECTION_STRING" not in payload["environment_variables"]
+    assert "UNDERWRITING_APPINSIGHTS_CONNECTION_STRING" not in payload["environment_variables"]
     assert payload["protocol_versions"] == [
         {"protocol": "responses", "version": "2.0.0"},
         {"protocol": "activity", "version": "2.0.0"},
@@ -75,7 +75,6 @@ def test_inspection_requires_active_exact_metadata() -> None:
                     "DATABASE_URL": placeholder,
                     "RUNTIME_DATABASE_URL": placeholder,
                     "DB_SCHEMA_MANAGED_EXTERNALLY": "true",
-                    "APPLICATIONINSIGHTS_CONNECTION_STRING": "configured",
                 },
             },
         },

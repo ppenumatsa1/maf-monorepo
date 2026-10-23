@@ -260,7 +260,7 @@ jq -e '
   and .database_url_placeholder
   and .runtime_database_url_placeholder
   and .database_url_parity
-  and .application_insights_configured
+  and .application_insights_managed_by_platform
 ' >/dev/null <<<"$hosted_json" || {
   echo "Hosted agent version/image/runtime configuration verification failed." >&2
   exit 1

@@ -68,9 +68,6 @@ def build_hosted_agent_definition() -> HostedAgentDefinition:
             "ENABLE_INSTRUMENTATION": "true",
             "ENABLE_TELEMETRY": "true",
             "OTEL_SERVICE_NAME": "underwriting-hosted",
-            "APPLICATIONINSIGHTS_CONNECTION_STRING": required(
-                "APPLICATIONINSIGHTS_CONNECTION_STRING"
-            ),
         },
         protocol_versions=[
             ProtocolVersionRecord(

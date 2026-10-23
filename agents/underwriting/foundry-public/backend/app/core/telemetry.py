@@ -21,7 +21,6 @@ def _connection_string() -> str:
     return (
         (
             os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
-            or os.getenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING")
             or os.getenv("APPINSIGHTS_CONNECTION_STRING")
             or ""
         )

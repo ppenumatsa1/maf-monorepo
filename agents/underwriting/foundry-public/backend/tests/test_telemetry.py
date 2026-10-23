@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from app.core import telemetry
 
 
-def test_hosted_connection_string_prefers_agent_server_setting(monkeypatch) -> None:
+def test_hosted_connection_string_uses_agent_server_setting(monkeypatch) -> None:
     monkeypatch.setenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING", "InstrumentationKey=custom")
     monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=reserved")
 
