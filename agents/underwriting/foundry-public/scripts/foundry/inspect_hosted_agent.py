@@ -83,7 +83,7 @@ def inspect_version(
         "runtime_database_url_placeholder": (runtime_database_url == expected_database_placeholder),
         "database_url_parity": database_url == runtime_database_url,
         "application_insights_configured": bool(
-            environment.get("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING")
+            environment.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
         ),
     }
 

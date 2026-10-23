@@ -5,11 +5,11 @@ from contextlib import contextmanager
 from app.core import telemetry
 
 
-def test_hosted_connection_string_prefers_application_specific_setting(monkeypatch) -> None:
+def test_hosted_connection_string_prefers_agent_server_setting(monkeypatch) -> None:
     monkeypatch.setenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING", "InstrumentationKey=custom")
     monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=reserved")
 
-    assert telemetry._connection_string() == "InstrumentationKey=custom"
+    assert telemetry._connection_string() == "InstrumentationKey=reserved"
 
 
 def test_hosted_observability_instruments_openai_once(monkeypatch) -> None:
@@ -20,13 +20,8 @@ def test_hosted_observability_instruments_openai_once(monkeypatch) -> None:
             calls.append("openai")
 
     monkeypatch.setattr(telemetry, "_configured", False)
-    monkeypatch.setenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING", "InstrumentationKey=test")
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=test")
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
-    monkeypatch.setattr(
-        telemetry,
-        "configure_azure_monitor",
-        lambda **kwargs: calls.append(kwargs),
-    )
     monkeypatch.setattr(telemetry, "OpenAIInstrumentor", FakeOpenAIInstrumentor)
     monkeypatch.setattr(
         telemetry,
@@ -37,8 +32,7 @@ def test_hosted_observability_instruments_openai_once(monkeypatch) -> None:
     telemetry.setup_hosted_observability()
     telemetry.setup_hosted_observability()
 
-    assert calls[0]["sampling_ratio"] == 1.0
-    assert calls[1:] == ["openai", "agent_framework"]
+    assert calls == ["openai", "agent_framework"]
     assert telemetry.os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
 
 

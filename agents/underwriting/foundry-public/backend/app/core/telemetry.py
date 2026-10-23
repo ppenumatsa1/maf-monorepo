@@ -7,7 +7,6 @@ from contextvars import ContextVar
 from typing import Any
 
 from agent_framework.observability import create_resource, enable_instrumentation
-from azure.monitor.opentelemetry import configure_azure_monitor
 from opentelemetry import trace
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
@@ -21,8 +20,8 @@ _workflow_context: ContextVar[dict[str, str] | None] = ContextVar("workflow_cont
 def _connection_string() -> str:
     return (
         (
-            os.getenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING")
-            or os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+            os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+            or os.getenv("UNDERWRITING_APPINSIGHTS_CONNECTION_STRING")
             or os.getenv("APPINSIGHTS_CONNECTION_STRING")
             or ""
         )
@@ -43,21 +42,15 @@ def setup_hosted_observability() -> None:
         **{"deployment.environment": os.getenv("APP_ENV", "production")},
     )
     connection_string = _connection_string()
-    if connection_string:
-        configure_azure_monitor(
-            connection_string=connection_string,
-            resource=resource,
-            # The default rate-limited sampler drops short executor spans under
-            # workflow fan-out. Retain every redacted pilot workflow span.
-            sampling_ratio=1.0,
-        )
-    else:
+    if not connection_string:
         trace.set_tracer_provider(TracerProvider(resource=resource))
         logger.warning(
             "Hosted telemetry has no Application Insights connection string; "
             "spans will not be exported."
         )
 
+    # Agent Server Core 2.2 owns Azure Monitor provider/exporter setup when
+    # APPLICATIONINSIGHTS_CONNECTION_STRING is present.
     OpenAIInstrumentor().instrument()
     enable_instrumentation(enable_sensitive_data=False)
     _configured = True
