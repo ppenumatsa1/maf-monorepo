@@ -15,7 +15,7 @@ configuration, or release commands with another lane.
 | Order resolution | Foundry public | Foundry Responses agent with Container Apps web delivery | Public Foundry lane | [Project README](agents/order-resolution/foundry-public/README.md) |
 | Order resolution | Foundry private | Foundry Responses and Activity agent with Container Apps web delivery | VNet-integrated Foundry and private data dependencies | [Project README](agents/order-resolution/foundry-private/README.md) |
 | Order resolution | Azure app-hosted | FastAPI/MAF backend and React frontend on Container Apps | Foundry is limited to models and evaluation | [Project README](agents/order-resolution/azure-hosted/README.md) |
-| Underwriting | Foundry public | Foundry-hosted underwriting workflow | Public Foundry lane | [Project README](agents/underwriting/foundry-public/README.md) |
+| Underwriting | Foundry public | Foundry-hosted underwriting workflow with durable web operations and referral-only Shared Teams review | Public Foundry lane | [Project README](agents/underwriting/foundry-public/README.md) |
 
 See the [license](LICENSE) and [disclaimer](DISCLAIMER.md) before using this
 repository.
