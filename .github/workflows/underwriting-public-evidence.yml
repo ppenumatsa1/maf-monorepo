@@ -1,0 +1,106 @@
+name: Underwriting Public Evidence Retry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: underwriting-foundry-public-release
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: Re-run live release evidence
+    runs-on: ubuntu-latest
+    environment: underwriting-foundry-public
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      FOUNDRY_DEPLOYMENT_PROFILE_B64: ${{ vars.FOUNDRY_DEPLOYMENT_PROFILE_B64 }}
+      POSTGRES_HOSTED_PASSWORD: ${{ secrets.POSTGRES_HOSTED_PASSWORD }}
+      RUNTIME_DATABASE_URL: ${{ secrets.RUNTIME_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.RUNTIME_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: agents/underwriting/foundry-public/backend/requirements-dev.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: agents/underwriting/foundry-public/frontend/package-lock.json
+      - name: Install evidence dependencies
+        working-directory: agents/underwriting/foundry-public
+        run: |
+          make install
+          make frontend-install
+          (cd frontend && npx playwright install --with-deps chromium)
+      - name: Materialize the protected non-secret deployment profile
+        working-directory: agents/underwriting/foundry-public
+        run: |
+          set -euo pipefail
+          : "${FOUNDRY_DEPLOYMENT_PROFILE_B64:?Set the protected FOUNDRY_DEPLOYMENT_PROFILE_B64 variable}"
+          mkdir -p .artifacts/workflows
+          profile="$PWD/.artifacts/workflows/foundry-public.env"
+          printf '%s' "$FOUNDRY_DEPLOYMENT_PROFILE_B64" | base64 --decode >"$profile"
+          bash deployment/profile.sh validate "$profile"
+          profile_subscription="$(sed -n 's/^AZURE_SUBSCRIPTION_ID=//p' "$profile")"
+          [[ "$profile_subscription" == "$AZURE_SUBSCRIPTION_ID" ]] || {
+            echo "OIDC subscription and deployment profile subscription differ." >&2
+            exit 1
+          }
+          echo "FOUNDRY_DEPLOYMENT_PROFILE=$profile" >> "$GITHUB_ENV"
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/setup-azd@v2
+      - name: Configure Azure Developer CLI authentication
+        run: |
+          set -euo pipefail
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd config set auth.useAzCliAuth true
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.agents --no-prompt
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.connections --no-prompt
+      - name: Apply the protected target profile
+        working-directory: agents/underwriting/foundry-public
+        run: make foundry-profile-apply
+      - name: Restore protected runtime secrets
+        working-directory: agents/underwriting/foundry-public/infra/foundry-hosted
+        run: |
+          set -euo pipefail
+          azd env set POSTGRES_HOSTED_PASSWORD "$POSTGRES_HOSTED_PASSWORD" --no-prompt >/dev/null
+          azd env set RUNTIME_DATABASE_URL "$RUNTIME_DATABASE_URL" --no-prompt >/dev/null
+          azd env set DATABASE_URL "$DATABASE_URL" --no-prompt >/dev/null
+      - name: Hydrate and validate selected Azure resources
+        working-directory: agents/underwriting/foundry-public
+        run: make foundry-bootstrap
+      - name: Re-run smoke, E2E, evaluation, telemetry, and verification
+        working-directory: agents/underwriting/foundry-public
+        run: |
+          make foundry-smoke
+          make foundry-hosted-e2e
+          make foundry-eval
+          make foundry-telemetry
+          make foundry-verify
+          make foundry-evidence
+      - name: Upload sanitized evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: underwriting-public-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: agents/underwriting/foundry-public/backend/.foundry/results/
+          if-no-files-found: error

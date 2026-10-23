@@ -1,0 +1,114 @@
+name: Underwriting Public Preview or Provision
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview infrastructure or apply it after protected-environment approval.
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - provision
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: underwriting-foundry-public-release
+  cancel-in-progress: false
+
+jobs:
+  preview-or-provision:
+    name: ${{ inputs.operation == 'preview' && 'Preview infrastructure' || 'Provision infrastructure' }}
+    runs-on: ubuntu-latest
+    environment: underwriting-foundry-public
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      FOUNDRY_DEPLOYMENT_PROFILE_B64: ${{ vars.FOUNDRY_DEPLOYMENT_PROFILE_B64 }}
+      POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      POSTGRES_HOSTED_PASSWORD: ${{ secrets.POSTGRES_HOSTED_PASSWORD }}
+      RUNTIME_DATABASE_URL: ${{ secrets.RUNTIME_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.RUNTIME_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: ${{ inputs.operation == 'provision' }}
+        with:
+          python-version: '3.13'
+      - name: Materialize the protected non-secret deployment profile
+        working-directory: agents/underwriting/foundry-public
+        run: |
+          set -euo pipefail
+          : "${FOUNDRY_DEPLOYMENT_PROFILE_B64:?Set the protected FOUNDRY_DEPLOYMENT_PROFILE_B64 variable}"
+          mkdir -p .artifacts/workflows
+          profile="$PWD/.artifacts/workflows/foundry-public.env"
+          printf '%s' "$FOUNDRY_DEPLOYMENT_PROFILE_B64" | base64 --decode >"$profile"
+          bash deployment/profile.sh validate "$profile"
+          profile_subscription="$(sed -n 's/^AZURE_SUBSCRIPTION_ID=//p' "$profile")"
+          [[ "$profile_subscription" == "$AZURE_SUBSCRIPTION_ID" ]] || {
+            echo "OIDC subscription and deployment profile subscription differ." >&2
+            exit 1
+          }
+          echo "FOUNDRY_DEPLOYMENT_PROFILE=$profile" >> "$GITHUB_ENV"
+      - name: Authenticate to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/setup-azd@v2
+      - name: Configure Azure Developer CLI authentication
+        run: |
+          set -euo pipefail
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd config set auth.useAzCliAuth true
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.agents --no-prompt
+          AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd ext install azure.ai.connections --no-prompt
+      - name: Apply the protected target profile
+        working-directory: agents/underwriting/foundry-public
+        run: make foundry-profile-apply
+      - name: Restore protected AZD secrets
+        working-directory: agents/underwriting/foundry-public/infra/foundry-hosted
+        run: |
+          set -euo pipefail
+          set_secret() {
+            local key="$1"
+            local value="$2"
+            if [[ -n "$value" ]]; then
+              azd env set "$key" "$value" --no-prompt >/dev/null
+            fi
+          }
+          set_secret POSTGRES_ADMIN_PASSWORD "$POSTGRES_ADMIN_PASSWORD"
+          set_secret POSTGRES_HOSTED_PASSWORD "$POSTGRES_HOSTED_PASSWORD"
+          set_secret RUNTIME_DATABASE_URL "$RUNTIME_DATABASE_URL"
+          set_secret DATABASE_URL "$DATABASE_URL"
+      - name: Preview and validate full infrastructure changes
+        working-directory: agents/underwriting/foundry-public
+        run: make foundry-provision-preview
+      - name: Prepare schema migration tooling
+        if: ${{ inputs.operation == 'provision' }}
+        working-directory: agents/underwriting/foundry-public
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+          make install
+      - name: Provision approved infrastructure
+        if: ${{ inputs.operation == 'provision' }}
+        working-directory: agents/underwriting/foundry-public
+        run: FOUNDRY_FULL_INFRA_AUTHORIZED=true make foundry-provision-infrastructure
+      - name: Migrate schema and converge runtime access
+        if: ${{ inputs.operation == 'provision' }}
+        working-directory: agents/underwriting/foundry-public
+        run: make foundry-provision-converge
