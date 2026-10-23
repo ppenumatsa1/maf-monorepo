@@ -90,6 +90,7 @@ backend_revisions="$(
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
     --name "$backend_name" \
+    --all \
     --output json
 )"
 frontend_revisions="$(
@@ -97,6 +98,7 @@ frontend_revisions="$(
     --subscription "$subscription_id" \
     --resource-group "$resource_group" \
     --name "$frontend_name" \
+    --all \
     --output json
 )"
 

@@ -69,6 +69,7 @@ grep -Fq "jq -r '.properties.latestReadyRevisionName // empty'" \
   "$root_dir/scripts/foundry/deploy_public_backend.sh"
 grep -Fq 'run_timed_stage rollback_verification make foundry-rollback-verify' \
   "$root_dir/scripts/foundry/deploy_public_dev.sh"
+[[ "$(grep -c -- '--all' "$root_dir/scripts/foundry/verify_release_rollback.sh")" -eq 2 ]]
 grep -Fq 'name: "web_referral_pending"' "$root_dir/scripts/foundry/hosted_e2e.sh"
 grep -Fq 'name: "web_review_spoofed_identity_rejected"' \
   "$root_dir/scripts/foundry/hosted_e2e.sh"
