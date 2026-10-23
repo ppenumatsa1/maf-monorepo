@@ -25,3 +25,15 @@ Track release evidence, incidents, research, and remediations in the
 The project README and design documents do not claim that an Azure deployment
 or Teams publication is currently live. Exact target and release evidence
 belongs in the project deployment plan and dated project ledger.
+
+## Current Release Status
+
+**Pending as of 2026-10-23.** Release `uw-public-20261023210604` was intentionally
+stopped during pre-deployment validation and did not build or deploy a new
+hosted-agent version. The evaluation-compatible trace-message fix is committed
+on `main` at `e06bc71`.
+
+When work resumes, start a fresh immutable release and rerun smoke, deployed web
+E2E, strict trace evaluation, deployment verification, and rollback
+verification. Native Teams approval and decline remain manual acceptance steps;
+strict telemetry correlation and final evidence follow those actions.
