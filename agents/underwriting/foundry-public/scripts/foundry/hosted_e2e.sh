@@ -19,6 +19,7 @@ assert_json_field() {
 }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PYTHON="$ROOT_DIR/.venv/bin/python"
 if [[ -n "${RELEASE_ID:-}" ]]; then
   . "$ROOT_DIR/scripts/foundry/release_paths.sh"
   release_paths_configure "$ROOT_DIR"
@@ -85,10 +86,38 @@ build_start_payload() {
     }'
 }
 
+build_referral_payload() {
+  local workflow_run_id="$1"
+  local application_id="$2"
+  jq -nc \
+    --arg workflow_run_id "$workflow_run_id" \
+    --arg application_id "$application_id" \
+    '{
+      workflow_run_id: $workflow_run_id,
+      application: {
+        application_id: $application_id,
+        applicant_name: "Hosted Review Applicant",
+        age: 20,
+        income: 50000,
+        requested_coverage: 100000,
+        health_disclosures: "none",
+        driving_history: "accident",
+        credit_score: 650
+      },
+      fail_risk_once: false,
+      fail_credit_randomly: false,
+      crash_after_executor: null
+    }'
+}
+
 write_evidence() {
   local playwright_status="$1"
+  local scenarios_json="$2"
+  local workflow_run_ids_json="$3"
   mkdir -p "$(dirname "$EVIDENCE_FILE")"
   jq -n \
+    --arg release_id "${RELEASE_ID:-manual-hosted-e2e}" \
+    --arg release_started_at "${FOUNDRY_RELEASE_STARTED_AT:-$started_at}" \
     --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg started_at "$started_at" \
     --arg frontend_url "$frontend_url" \
@@ -96,14 +125,15 @@ write_evidence() {
     --arg resource_group "$resource_group" \
     --arg backend_name "$backend_name" \
     --arg frontend_name "$frontend_name" \
-    --arg happy_run_id "$happy_run_id" \
-    --arg retry_run_id "$retry_run_id" \
-    --arg recovered_run_id "$recovered_run_id" \
-    --arg happy_decision "$happy_decision" \
-    --arg retry_decision "$retry_decision" \
-    --arg recovered_decision "$recovered_decision" \
     --arg playwright_status "$playwright_status" \
+    --argjson scenarios "$scenarios_json" \
+    --argjson workflow_run_ids "$workflow_run_ids_json" \
     '{
+      schema_version: 1,
+      evidence_type: "hosted_e2e",
+      status: (if $playwright_status == "passed" then "passed" else "pending" end),
+      release_id: $release_id,
+      release_started_at: $release_started_at,
       generated_at: $generated_at,
       started_at: $started_at,
       frontend_url: $frontend_url,
@@ -112,13 +142,8 @@ write_evidence() {
       resource_group: $resource_group,
       backend_container_app: $backend_name,
       frontend_container_app: $frontend_name,
-      workflow_run_ids: [$happy_run_id, $retry_run_id, $recovered_run_id],
-      happy_run_id: $happy_run_id,
-      retry_run_id: $retry_run_id,
-      recovered_run_id: $recovered_run_id,
-      happy_decision: $happy_decision,
-      retry_decision: $retry_decision,
-      recovered_decision: $recovered_decision,
+      workflow_run_ids: $workflow_run_ids,
+      scenarios: $scenarios,
       playwright_status: $playwright_status
     }' >"$EVIDENCE_FILE"
 }
@@ -128,6 +153,10 @@ require_bin azd
 require_bin curl
 require_bin jq
 require_bin make
+[[ -x "$PYTHON" ]] || {
+  echo "Project virtual environment is required; run make install first." >&2
+  exit 1
+}
 
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 
@@ -145,6 +174,7 @@ run_nonce="$(date -u +%Y%m%d%H%M%S)-$$"
 happy_run_id="run-hosted-happy-${run_nonce}"
 retry_run_id="run-hosted-retry-${run_nonce}"
 recovered_run_id="run-hosted-recover-${run_nonce}"
+web_referral_run_id="run-hosted-web-referral-${run_nonce}"
 happy_decision=""
 retry_decision=""
 recovered_decision=""
@@ -219,9 +249,115 @@ assert_json_field "$recovered_events" 'map(.event_type) | index("idempotency_ski
 recovered_run="$(api_get_json "$api_base_url/api/v1/underwriting/runs/$recovered_run_id")"
 assert_json_field "$recovered_run" '.status == "COMPLETED"'
 
-write_evidence pending
-PLAYWRIGHT_BASE_URL="$frontend_url" make -C "$ROOT_DIR" test-e2e
-write_evidence passed
+web_referral_start="$(
+  api_post_json \
+    "$api_base_url/api/v1/underwriting/runs" \
+    "$(build_referral_payload "$web_referral_run_id" "app-hosted-web-referral-${run_nonce}")"
+)"
+assert_json_field "$web_referral_start" '.status == "PENDING_REVIEW"'
+assert_json_field "$web_referral_start" '.machine_recommendation == "REFER_TO_HUMAN_UNDERWRITER"'
+web_referral_checkpoint="$(printf '%s\n' "$web_referral_start" | jq -er '.review_checkpoint_id')"
+missing_identity_status="$(
+  curl --silent --show-error --max-time 60 \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    -X POST \
+    -H 'content-type: application/json' \
+    -d '{"outcome":"APPROVED"}' \
+    "$api_base_url/api/v1/underwriting/runs/$web_referral_run_id/reviews/$web_referral_checkpoint"
+)"
+[[ "$missing_identity_status" == "403" ]] || {
+  echo "Hosted web review mutation did not fail closed without a caller header." >&2
+  exit 1
+}
+spoofed_identity_status="$(
+  curl --silent --show-error --max-time 60 \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    -X POST \
+    -H 'content-type: application/json' \
+    -H 'X-MS-CLIENT-PRINCIPAL-ID: spoofed-release-reviewer' \
+    -d '{"outcome":"DECLINED"}' \
+    "$api_base_url/api/v1/underwriting/runs/$web_referral_run_id/reviews/$web_referral_checkpoint"
+)"
+[[ "$spoofed_identity_status" == "403" ]] || {
+  echo "Hosted web review mutation trusted a spoofable caller header." >&2
+  exit 1
+}
+web_referral_projection="$(
+  api_get_json "$api_base_url/api/v1/underwriting/runs/$web_referral_run_id"
+)"
+assert_json_field "$web_referral_projection" '.status == "PENDING_REVIEW"'
+assert_json_field "$web_referral_projection" '.machine_recommendation == "REFER_TO_HUMAN_UNDERWRITER"'
+assert_json_field "$web_referral_projection" '.reviewer_outcome == null'
+assert_json_field "$web_referral_projection" '.review_status == "pending"'
 
-echo "Hosted underwriting E2E passed for ${happy_run_id}, ${retry_run_id}, and ${recovered_run_id}."
+base_scenarios="$(
+  jq -n \
+    --arg happy_run_id "$happy_run_id" \
+    --arg retry_run_id "$retry_run_id" \
+    --arg recovered_run_id "$recovered_run_id" \
+    --arg web_referral_run_id "$web_referral_run_id" \
+    --argjson missing_identity_status "$missing_identity_status" \
+    --argjson spoofed_identity_status "$spoofed_identity_status" \
+    --arg happy_decision "$happy_decision" \
+    --arg retry_decision "$retry_decision" \
+    --arg recovered_decision "$recovered_decision" \
+    '[
+      {
+        name: "automatic_completion",
+        status: "passed",
+        workflow_run_id: $happy_run_id,
+        machine_recommendation: $happy_decision
+      },
+      {
+        name: "retry_completion",
+        status: "passed",
+        workflow_run_id: $retry_run_id,
+        machine_recommendation: $retry_decision
+      },
+      {
+        name: "crash_resume_completion",
+        status: "passed",
+        workflow_run_id: $recovered_run_id,
+        machine_recommendation: $recovered_decision
+      },
+      {
+        name: "web_referral_pending",
+        status: "passed",
+        workflow_run_id: $web_referral_run_id,
+        machine_recommendation: "REFER_TO_HUMAN_UNDERWRITER",
+        review_status: "pending"
+      },
+      {
+        name: "web_review_missing_identity_rejected",
+        status: "passed",
+        workflow_run_id: $web_referral_run_id,
+        http_status: $missing_identity_status
+      },
+      {
+        name: "web_review_spoofed_identity_rejected",
+        status: "passed",
+        workflow_run_id: $web_referral_run_id,
+        http_status: $spoofed_identity_status
+      }
+    ]'
+)"
+scenarios_json="$(
+  jq -cn --argjson base "$base_scenarios" '$base'
+)"
+workflow_run_ids_json="$(
+  jq -cn \
+    --arg happy "$happy_run_id" \
+    --arg retry "$retry_run_id" \
+    --arg recovered "$recovered_run_id" \
+    --arg referral "$web_referral_run_id" \
+    '[$happy, $retry, $recovered, $referral] | unique'
+)"
+
+write_evidence pending "$scenarios_json" "$workflow_run_ids_json"
+PLAYWRIGHT_BASE_URL="$frontend_url" make -C "$ROOT_DIR" test-e2e
+write_evidence passed "$scenarios_json" "$workflow_run_ids_json"
+
+echo "Hosted underwriting web E2E passed."
 echo "Evidence written to ${EVIDENCE_FILE}."

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "evidence_type": "component_deployment",
+  "component": "hosted_agent",
+  "status": "deployed",
+  "release_id": "manual-hosted-deploy",
+  "release_started_at": "2026-10-22T01:13:39Z",
+  "generated_at": "2026-10-22T01:13:39Z",
+  "name": "underwriting-hosted",
+  "version": "1",
+  "image": "example.azurecr.io/underwriting-public-hosted@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "image_repository": "underwriting-public-hosted",
+  "principal_id": "00000000-0000-0000-0000-000000000000",
+  "runtime_connection_name": "underwritingruntimesecrets",
+  "required_role": "Cognitive Services OpenAI User",
+  "schema_managed_externally": true
+}

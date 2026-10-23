@@ -1,6 +1,7 @@
 import type {
   WorkflowCheckpointRecord,
   WorkflowEventRecord,
+  ReviewProjection,
   WorkflowRunRecord,
   WorkflowStateRow,
 } from '../api'
@@ -12,6 +13,7 @@ type RunData = {
   stateRows: WorkflowStateRow[]
   events: WorkflowEventRecord[]
   checkpoints: WorkflowCheckpointRecord[]
+  review: ReviewProjection | null
 }
 
 type TimelineProps = Pick<RunData, 'runId' | 'events'> & {
@@ -280,11 +282,22 @@ export function RunSummaryRail({
   stateRows,
   events,
   checkpoints,
+  review,
 }: SummaryProps) {
   const status = currentStatus
   const context = valueAsObject(stateRows.find((row) => row.state_key === 'underwriting_context')?.state_json)
   const persistedDecision = valueAsObject(stateRows.find((row) => row.state_key === 'final_decision')?.state_json)
-  const decision = persistedDecision.decision ?? 'Pending'
+  const machineRecommendation =
+    review?.machine_recommendation ??
+    persistedDecision.machine_recommendation ??
+    persistedDecision.decision ??
+    runInfo?.machine_recommendation ??
+    'Pending'
+  const reviewerOutcome =
+    review?.reviewer_outcome ??
+    persistedDecision.reviewer_outcome ??
+    runInfo?.reviewer_outcome ??
+    null
   const rationale = persistedDecision.rationale
   const scoreBreakdown = valueAsObject(persistedDecision.score_breakdown)
 
@@ -298,7 +311,27 @@ export function RunSummaryRail({
           </div>
           <span className={`status-chip status-${status.toLowerCase()}`}>{status}</span>
         </div>
-        <div className="decision-value">{String(decision)}</div>
+        <div className="detail-row">
+          <span>Machine recommendation</span>
+          <strong data-testid="machine-recommendation">{String(machineRecommendation)}</strong>
+        </div>
+        <div className="detail-row">
+          <span>Authorized reviewer outcome</span>
+          <strong data-testid="reviewer-outcome">
+            {reviewerOutcome ? String(reviewerOutcome) : review ? 'Pending review' : 'Not required'}
+          </strong>
+        </div>
+        {review?.status === 'pending' ? (
+          <div className="review-actions" data-testid="review-actions">
+            <p className="decision-rationale">
+              This referral is bound to checkpoint {review.checkpoint_id.slice(0, 8)}.
+            </p>
+            <p data-testid="teams-review-guidance">
+              Review decisions are disabled on the public web application. Use the bound
+              Adaptive Card in Microsoft Teams.
+            </p>
+          </div>
+        ) : null}
         {rationale ? <p className="decision-rationale">{String(rationale)}</p> : <p className="decision-rationale">The final rationale appears when the decision completes.</p>}
         {Object.keys(scoreBreakdown).length ? (
           <div className="score-breakdown">

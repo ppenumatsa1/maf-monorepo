@@ -170,8 +170,6 @@ if ! az postgres flexible-server db show \
   exit 1
 fi
 
-bash "$SCRIPT_DIR/bootstrap_postgres_schema.sh"
-
 scratch_dir="$ROOT_DIR/backend/.tmp/foundry"
 run_stamp="$(date -u +%Y%m%d%H%M%S)-$$"
 provision_file="$scratch_dir/provision-postgres-runtime-${run_stamp}.sql"

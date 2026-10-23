@@ -153,16 +153,57 @@ the underwriting decision. Nested graph recovery would otherwise leave
 ambiguous checkpoint ownership and a migration burden.
 
 **Result:** Only checkpoints written by the deployed master direct-executor
-graph are supported for resume. Version-40 nested-graph checkpoints are
+graph are supported for resume. Superseded nested-graph checkpoints are
 unsupported after deployment. There is no compatibility workflow, checkpoint
 migration path, or fallback; an affected pre-cutover run must start again.
 This decision documents the cutover only and does not claim release success.
 
+## Human Review and Teams Decisions
+
+### ADR-012: Pause only machine referrals
+
+**Decision:** Only `REFER_TO_HUMAN_UNDERWRITER` creates a review checkpoint.
+The machine recommendation is immutable, and a reviewer records a separate
+`APPROVED` or `DECLINED` outcome.
+
+**Why:** A human decision is an audit fact about a referred case, not a rewrite
+of the deterministic policy result. Terminal machine approvals, conditional
+approvals, and declines do not require a second decision.
+
+**Result:** Persistence, APIs, UI, telemetry, and evaluation must expose
+machine recommendation and reviewer outcome as distinct fields.
+
+### ADR-013: Use one dual-protocol hosted workflow
+
+**Decision:** Responses and Teams Activity run in the same hosted process and
+invoke the same Underwriting MAF workflow.
+
+**Why:** A second Teams workflow would duplicate decision logic, checkpoint
+ownership, and audit state.
+
+**Result:** Teams is an additive channel through Azure Bot Service and
+`MsTeamsChannel`. Endpoint reconciliation retains Responses/Entra and adds
+Activity/`BotServiceRbac`; Shared publication is the target.
+
+### ADR-014: Authorize review with bound structured actions
+
+**Decision:** Persist a trusted server-selected origin and require structured,
+checkpoint-bound reviewer decisions. Teams uses opaque, expiring, one-time
+tokens bound to reviewer and conversation and claimed atomically.
+
+**Why:** Free-form text, caller-selected origin, reusable card values, or
+cross-channel resume would permit replay or confused-deputy decisions.
+
+**Result:** Typed approval words remain ordinary chat; wrong-user,
+wrong-conversation, expiry, replay, sibling concurrency, and cross-channel
+attempts fail closed. Cards and telemetry contain no applicant or secret data.
+
 ## Related Documents
 
-- [Architecture](architecture.md) describes the implemented logical, process,
+- [Architecture](architecture.md) describes the logical, process,
   development, and physical views.
 - [Engineering operating model](engineering-operating-model.md) defines the
   delivery and release contract.
+- [Business rules](business-rules.md) defines the current behavior authority.
 - [Issues, changes, and fixes](issues-changes-fixes.md) records dated
   operational evidence.

@@ -12,7 +12,8 @@ alignment decisions, see [architecture-decisions.md](architecture-decisions.md).
 Insurance teams need to process applications quickly while keeping decisions explainable, durable, and safe under infrastructure or runtime failures. The system must:
 
 - automate low-risk applications,
-- surface high-risk applications with transparent score factors and rationale,
+- surface deterministic recommendations with transparent score factors and rationale,
+- pause only referred cases for a separate human-underwriter decision,
 - preserve complete run history and state transitions,
 - recover from crashes without duplicating side effects.
 
@@ -22,6 +23,7 @@ Deliver a verifiable multi-step underwriting workflow that is:
 
 - operationally transparent (run history, event timeline, checkpoints, AG-UI stream),
 - decision-safe (deterministic score policy before any model rationale),
+- review-safe (immutable machine recommendation plus a separately persisted reviewer outcome),
 - durable (PostgreSQL-backed checkpoints and business projections),
 - extensible (shared domain contracts across local validation, the internal
   backend adapter, and the hosted agent),
@@ -31,37 +33,14 @@ Deliver a verifiable multi-step underwriting workflow that is:
 
 The logical view follows an insurance application from intake through parallel assessments, aggregation, and the final underwriting outcome.
 
-```mermaid
-flowchart TD
-    A[Insurance application submitted] --> B[Intake and initialize underwriting case]
+![Logical underwriting decision flow](diagrams/underwriting-logical.svg)
 
-    B --> R[Risk assessment<br/>Age and requested coverage]
-    B --> C[Credit assessment<br/>Normalized credit score]
-    B --> M[Medical assessment<br/>Health disclosures]
-    B --> D[Driving assessment<br/>Driving history]
+Source: [underwriting-logical.mmd](diagrams/underwriting-logical.mmd).
 
-    R --> AGG[Aggregate completed assessment scores]
-    C --> AGG
-    M --> AGG
-    D --> AGG
-
-    AGG --> COMPLETE{All four assessments complete?}
-    COMPLETE -- No --> WAIT[Wait for remaining assessments]
-    WAIT --> AGG
-    COMPLETE -- Yes --> SCORE[Calculate score breakdown and average]
-    SCORE --> POLICY{Apply deterministic underwriting policy}
-
-    POLICY --> APPROVED[Approved]
-    POLICY --> CONDITIONAL[Approved with conditions]
-    POLICY --> REFER[Refer to human underwriter]
-    POLICY --> DECLINED[Declined]
-
-    APPROVED --> EXPLAIN[Attach explanatory rationale]
-    CONDITIONAL --> EXPLAIN
-    REFER --> EXPLAIN
-    DECLINED --> EXPLAIN
-    EXPLAIN --> RESULT[Publish and retain underwriting decision]
-```
+The rendered logical diagram shows the machine-recommendation path. The
+review overlay below is the current behavior contract. Diagram source was not
+changed in this documentation pass because Mermaid extension validation was
+not available.
 
 ### Business Decision Model
 
@@ -70,51 +49,19 @@ flowchart TD
 - Aggregation proceeds incrementally, but no decision is made until all four assessment results are present.
 - The deterministic policy approves when the average score is at least `0.8`, risk is at least `0.6`, and credit is at least `0.65`. Lower average-score bands produce approval with conditions, human referral, or decline.
 - Model-generated rationale explains the result but cannot change the policy decision.
+- Only `REFER_TO_HUMAN_UNDERWRITER` creates a review checkpoint.
+- `APPROVED`, `APPROVED_WITH_CONDITIONS`, and `DECLINED` are terminal machine
+  recommendations.
+- The machine recommendation remains immutable. A human underwriter records a
+  separate `APPROVED` or `DECLINED` reviewer outcome.
 
 ## Process View
 
 The process view describes runtime interactions, concurrency, persistence, and recovery behavior.
 
-```mermaid
-sequenceDiagram
-  actor Operator
-  participant UI as React Console
-  participant API as FastAPI Adapter
-  participant Host as Foundry Hosted Agent
-  participant Master as MAF Master Workflow
-  participant Checks as Direct Executors
-  participant DB as PostgreSQL
+![Hosted underwriting process and recovery](diagrams/underwriting-process.svg)
 
-  Operator->>UI: Start underwriting run
-  UI->>API: POST run
-  API->>Host: Responses start
-  Host->>Master: Execute workflow
-  Master->>DB: Persist run and checkpoint
-  par Risk check
-    Master->>Checks: Run risk executor
-  and Credit check
-    Master->>Checks: Run credit executor
-  and Medical check
-    Master->>Checks: Run medical executor
-  and Driving check
-    Master->>Checks: Run driving executor
-  end
-  Checks-->>Master: CheckResult payloads
-  Master->>Master: Fan-in and deterministic decision
-  Master->>DB: Persist events, state, and result
-  Master-->>Host: Decision and rationale
-  Host-->>API: Response
-  API-->>UI: Run projection
-
-  opt Interrupted execution
-    Parent->>DB: Persist latest checkpoint
-    Operator->>UI: Resume run
-    UI->>API: POST resume
-    API->>Host: Responses resume
-    Host->>DB: Load checkpoint
-    Host->>Master: Continue remaining work
-  end
-```
+Source: [underwriting-process.mmd](diagrams/underwriting-process.mmd).
 
 ### Underwriting Message Flow
 
@@ -123,8 +70,12 @@ sequenceDiagram
 3. Each direct executor emits one `CheckResult` payload.
 4. `fan_in_aggregator` incrementally merges child results into shared state.
 5. When all checks complete, `final_decision` computes policy outcome and score breakdown.
-6. Rationale generation enriches the final payload while deterministic decision remains authoritative.
-7. Projection and checkpoint stores persist results for history and resume behavior.
+6. For a referral, the workflow persists the immutable machine recommendation,
+   MAF checkpoint, and pending approval before pausing.
+7. A structured, channel-authorized reviewer decision resumes the exact
+   checkpoint and is stored separately.
+8. Rationale generation enriches the final payload while deterministic decision remains authoritative.
+9. Projection and checkpoint stores persist results for history and resume behavior.
 
 ### Failure and Recovery
 
@@ -132,6 +83,9 @@ sequenceDiagram
 - Crash injection can force controlled interruptions after a named executor.
 - Resume loads the latest checkpoint by `workflow_run_id` and continues remaining execution only when that checkpoint was written by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
 - Idempotency guards prevent duplicate persistence when replay or resume re-enters completed handlers.
+- Teams card actions are opaque, expiring, one-time, and atomically claimed;
+  wrong reviewer, wrong conversation, replay, expiry, sibling action, and
+  cross-channel attempts fail closed.
 
 ## Development View
 
@@ -144,22 +98,12 @@ There is one business workflow implementation and one service boundary (`backend
 - `backend/app/server.py` also adds `POST /api/v1/underwriting/ag-ui` for AG-UI event streaming.
 - `backend/app/modules/underwriting/service.py:UnderwritingHostedAdapter` relays start/resume operations and projects the shared durable history; it does not construct a second production orchestration path in hosted mode.
 - `backend/foundry/main.py` hosts the real Foundry Responses workflow entrypoint and constructs the MAF runner there.
+- The same hosted process owns additive Activity handling for Teams; it must
+  not construct a second business workflow.
 
-```mermaid
-flowchart TD
-  A[Local CLI] --> SVC[UnderwritingService]
-  B[Public FastAPI adapter] --> HOSTED[Foundry Responses host\nbackend/foundry/main.py]
-  HOSTED --> SVC
-  SVC --> RUN[UnderwritingMafRunner]
-  RUN --> WF[Master Underwriting Workflow]
-  WF --> EX[init_context + fan-out/fan-in + final_decision]
-  EX --> CHECKS[Risk/Credit/Medical/Driving direct executors]
-  WF --> EVT[workflow events + checkpoints]
-  EVT --> DB[(workflow_runs/business_state/workflow_events/maf_checkpoints)]
-  B --> AGUI[POST /api/v1/underwriting/ag-ui]
-  AGUI --> HOSTED
-  B --> EVT
-```
+![Underwriting development ownership](diagrams/underwriting-development.svg)
+
+Source: [underwriting-development.mmd](diagrams/underwriting-development.mmd).
 
 ### Core Modules
 
@@ -170,6 +114,7 @@ flowchart TD
 - **Persistence adapters** (`backend/app/infrastructure`)
   - PostgreSQL repositories for runs, state, events, results, and idempotency.
   - Real MAF checkpoint storage through `PostgresCheckpointStorage`.
+  - Human-review persistence and Teams card-action replay protection.
 - **Frontend** (`frontend/src`)
   - Operations console for scenario execution, live progress stream, and run-history inspection.
   - Embedded CopilotKit assistant receives only an allowlisted selected-run
@@ -183,6 +128,8 @@ The same underwriting business flow runs across:
 1. Local CLI (`make run`, `make run-crash`, `make resume`).
 2. Local FastAPI routes (`/api/v1/underwriting/*`) and AG-UI stream endpoint.
 3. Foundry hosted Responses workflow execution correlated to the public request and durable run.
+4. Foundry Activity execution for authorized Shared Teams users through the
+   same hosted workflow.
 
 ### Clean cutover and no-shims rule
 
@@ -193,44 +140,34 @@ The public hosted lane uses an independent clean-cutover operating model:
 - the hosted Responses entrypoint owns production orchestration and writes;
 - local execution mode exists only for isolated validation;
 - no compatibility shim should reintroduce a second orchestration runtime, shadow checkpoint path, or direct browser-to-Foundry flow.
-- version-40 nested-graph checkpoints are not a supported resume input after deployment; there is no compatibility workflow or fallback.
+- superseded nested-graph checkpoints are not a supported resume input after
+  deployment; there is no compatibility workflow or fallback.
+- Responses/API and Teams checkpoints remain isolated by trusted origin.
+- Free-form text is never interpreted as a reviewer decision.
 
 ### Verification
 
 1. Functional tests (`backend/tests`) validate fan-out/fan-in, idempotency, and resume behavior.
 2. E2E rubric (`frontend/tests/e2e/rubric.ts`) validates operator-facing lifecycle and recovery expectations.
 3. Hosted smoke/eval (`make foundry-smoke`, `make foundry-eval`) validates real hosted workflow/model telemetry and public-request correlation.
-4. Release governance and execution evidence are recorded in [`engineering-operating-model.md`](engineering-operating-model.md) and [`issues-changes-fixes.md`](issues-changes-fixes.md).
+4. HITL and Teams acceptance validates referral-only pause, immutable
+   recommendation, separate reviewer outcome, privacy-safe cards, token
+   binding, replay/expiry/concurrency, and cross-channel isolation.
+5. Release governance and execution evidence are recorded in [`engineering-operating-model.md`](engineering-operating-model.md) and [`issues-changes-fixes.md`](issues-changes-fixes.md).
 
 ## Physical View
 
 The physical view describes the deployed topology, network boundaries, and credential ownership.
 
-```mermaid
-flowchart LR
-  subgraph Client[Public client boundary]
-    Browser[Operator Browser]
-  end
+![Underwriting physical topology](diagrams/underwriting-physical.svg)
 
-  subgraph App[Application boundary]
-    UI[React and Nginx Container App]
-    API[FastAPI Adapter]
-  end
+Source: [underwriting-physical.mmd](diagrams/underwriting-physical.mmd).
 
-  subgraph Hosted[Hosted execution boundary]
-    Agent[Foundry Responses Hosted Agent]
-  end
-
-  subgraph Data[Persistence boundary]
-    DB[(PostgreSQL)]
-  end
-
-  Browser -->|HTTPS| UI
-  UI -->|HTTPS API| API
-  API -->|Responses start and resume| Agent
-  API -->|TLS read projections| DB
-  Agent -->|TLS read and write| DB
-```
+The rendered physical diagram covers the web/Responses path. The additive
+Teams boundary is Azure Bot Service plus `MsTeamsChannel` to the Foundry
+Activity route. It uses the same hosted process and does not add a private
+network. Diagram source was left unchanged pending Mermaid extension
+validation.
 
 The internal backend adapter passes start/resume input to the hosted agent only
 in the Responses body; it never places application data in Responses metadata.
@@ -245,6 +182,14 @@ requests to the backend's internal Container Apps FQDN. The browser bundle
 contains no Azure backend URL. Backend and hosted-agent startup validate the
 administrator-managed PostgreSQL schema with no production runtime DDL.
 
+Teams traffic enters through the service-managed Activity route and Azure Bot
+Service authorization. Endpoint reconciliation must retain Responses and
+Entra while adding Activity and `BotServiceRbac`. Shared publication limits
+catalog distribution, while Foundry RBAC remains the invocation boundary. The
+public lane does not enable the private-network-only
+`enable_m365_public_endpoint` exception. The Bot endpoint pins the Activity
+Protocol API version required by the Foundry data-plane route.
+
 ### Durable Stores
 
 PostgreSQL is the durable source of truth for both business and workflow recovery surfaces:
@@ -255,6 +200,10 @@ PostgreSQL is the durable source of truth for both business and workflow recover
 - `workflow_events`: append-only timeline for observability.
 - `underwriting_results`: terminal decision outputs.
 - `idempotency_records`: replay protection for side-effect safety.
+- `underwriting_approvals`: pending/completed referral review with separate
+  reviewer outcome.
+- `teams_card_actions`: hashed, expiring, bound, atomically claimed Adaptive
+  Card actions.
 
 ### Hosted Execution Boundary
 
@@ -267,3 +216,8 @@ agent owns durable execution.
 
 `UNDERWRITING_EXECUTION_MODE=local` exists only for isolated local E2E
 validation. It is never the intended deployed internal-adapter mode.
+
+This architecture document describes the supported contract. It does not
+assert that Activity, Teams publication, a particular hosted version, or any
+specific Azure environment is currently deployed; the delivery ledger is the
+only dated evidence authority.

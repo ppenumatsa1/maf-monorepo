@@ -7,6 +7,7 @@ from typing import Any, Literal
 from app.modules.underwriting.models import UnderwritingApplication
 
 HOSTED_WORKFLOW_PROTOCOL = "underwriting-hosted-workflow/v1"
+HOSTED_REVIEW_DECISION_PROTOCOL = "underwriting-review-decision/v1"
 HostedWorkflowAction = Literal["start", "resume"]
 
 

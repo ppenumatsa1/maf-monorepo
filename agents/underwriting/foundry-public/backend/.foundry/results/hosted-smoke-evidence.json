@@ -1,9 +1,16 @@
 {
+  "schema_version": 1,
+  "evidence_type": "hosted_smoke",
+  "status": "passed",
+  "release_id": "manual-example",
+  "release_started_at": "2026-08-13T15:46:45Z",
   "generated_at": "2026-08-13T15:46:59Z",
   "mode": "happy",
   "conversation_ids": [
-    "conv_2ec5c090e2c84b3900FQ8NJQOadtKMxQDIsn7bfwAq2dc3YBAH"
+    "conv-example-underwriting-smoke"
   ],
-  "workflow_run_id": "run-smoke-20260813154647-80855",
-  "decision": "APPROVED"
+  "workflow_run_id": "run-smoke-example",
+  "decision": "APPROVED",
+  "durable_projection_assertions": true,
+  "client_output_contract": "customer_facing"
 }

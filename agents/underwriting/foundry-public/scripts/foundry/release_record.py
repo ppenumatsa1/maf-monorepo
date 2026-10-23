@@ -24,9 +24,11 @@ TIMING_STAGES = (
     "aca_deployment",
     "smoke",
     "deployed_e2e",
+    "native_teams_acceptance",
     "evaluation",
     "telemetry",
     "deployment_verification",
+    "rollback_verification",
     "final_evidence",
 )
 TIMING_PREREQUISITES = {
@@ -35,10 +37,12 @@ TIMING_PREREQUISITES = {
     "aca_deployment": ("hosted_activation",),
     "smoke": ("aca_deployment",),
     "deployed_e2e": ("smoke",),
+    "native_teams_acceptance": ("deployed_e2e",),
     "evaluation": ("smoke",),
-    "telemetry": ("deployed_e2e",),
+    "telemetry": ("native_teams_acceptance",),
     "deployment_verification": ("evaluation", "telemetry"),
-    "final_evidence": ("deployment_verification",),
+    "rollback_verification": ("deployment_verification",),
+    "final_evidence": ("rollback_verification",),
 }
 RELEASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$")
 SECRET_KEY_PATTERN = re.compile(
@@ -118,6 +122,7 @@ def timing_extension(record: dict[str, Any]) -> dict[str, Any]:
             "app_only_started_at": None,
             "telemetry_succeeded_at": None,
             "app_only_duration_ms": None,
+            "operator_wait_duration_ms": 0,
             "app_only": {
                 "status": "pending",
                 "started_at": None,
@@ -218,7 +223,13 @@ def finish_release_timing(
             )
         if stage == "telemetry" and status == "succeeded":
             timing["telemetry_succeeded_at"] = now
-            timing["app_only_duration_ms"] = duration_ms(timing["app_only_started_at"], now)
+            operator_wait_duration_ms = int(
+                timing["stages"].get("native_teams_acceptance", {}).get("duration_ms", 0)
+            )
+            timing["operator_wait_duration_ms"] = operator_wait_duration_ms
+            timing["app_only_duration_ms"] = (
+                duration_ms(timing["app_only_started_at"], now) - operator_wait_duration_ms
+            )
             timing["app_only"].update(
                 {
                     "status": "succeeded",
@@ -250,6 +261,8 @@ def resume_record(
             timing["stages"].pop(stage, None)
         timing["telemetry_succeeded_at"] = None
         timing["app_only_duration_ms"] = None
+        retained_operator_wait = timing["stages"].get("native_teams_acceptance", {})
+        timing["operator_wait_duration_ms"] = int(retained_operator_wait.get("duration_ms", 0))
         timing["app_only"].update(status="running", ended_at=None, duration_ms=None)
         record.update(
             status="running",
@@ -295,7 +308,12 @@ def validate_succeeded_timing(record: dict[str, Any]) -> None:
                 raise ValueError(f"Release timing order is invalid: {prerequisite} -> {stage}")
     if stages["telemetry"]["ended_at"] != telemetry_ended:
         raise ValueError("telemetry_succeeded_at must equal telemetry stage end.")
-    expected_total = duration_ms(app_started, telemetry_ended)
+    operator_wait = stages.get("native_teams_acceptance", {}).get("duration_ms")
+    if not isinstance(operator_wait, int) or operator_wait < 0:
+        raise ValueError("Native Teams operator-wait timing is invalid.")
+    if timing.get("operator_wait_duration_ms") != operator_wait:
+        raise ValueError("Native Teams operator-wait duration is invalid.")
+    expected_total = duration_ms(app_started, telemetry_ended) - operator_wait
     if expected_total > MAX_APP_TO_TELEMETRY_MS:
         raise ValueError("App-only to telemetry exceeded the 15-minute release budget.")
     if timing.get("app_only_duration_ms") != expected_total:
@@ -486,6 +504,7 @@ def initialize_record(
                 "app_only_started_at": None,
                 "telemetry_succeeded_at": None,
                 "app_only_duration_ms": None,
+                "operator_wait_duration_ms": 0,
                 "app_only": {
                     "status": "pending",
                     "started_at": None,

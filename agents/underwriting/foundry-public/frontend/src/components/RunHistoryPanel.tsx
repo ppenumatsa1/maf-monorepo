@@ -68,6 +68,7 @@ export function RunHistoryPanel({
         <select data-testid="history-status-filter" value={status} onChange={(event) => onStatusChange(event.target.value)}>
           <option value="">All statuses</option>
           <option value="COMPLETED">Completed</option>
+          <option value="PENDING_REVIEW">Pending review</option>
           <option value="CRASHED">Needs recovery</option>
           <option value="RUNNING">Running</option>
         </select>
@@ -91,7 +92,10 @@ export function RunHistoryPanel({
               </span>
               <span>{item.application_id}</span>
               <span className="history-run-meta">
-                {item.final_decision ?? (item.resumable ? 'Recovery available' : 'In progress')} • {formatDate(item.created_at)}
+                {item.machine_recommendation ?? item.final_decision ?? (item.resumable ? 'Recovery available' : 'In progress')}
+                {item.reviewer_outcome ? ` → ${item.reviewer_outcome}` : item.reviewable ? ' → Review pending' : ''}
+                {' • '}
+                {formatDate(item.created_at)}
               </span>
             </button>
           ))

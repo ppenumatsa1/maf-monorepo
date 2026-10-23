@@ -250,7 +250,9 @@ async def invoke_check_operation(
         check_type=normalized_check_type,
         operation_name=operation_name,
         executor_name=executor_name,
-        idempotency_key=f"underwriting:{application_id}:{normalized_check_type.value}",
+        idempotency_key=(
+            f"underwriting:{workflow_run_id}:{application_id}:{normalized_check_type.value}"
+        ),
     )
     middlewares: list[FunctionMiddleware] = [
         IdempotencyMiddleware(repository),

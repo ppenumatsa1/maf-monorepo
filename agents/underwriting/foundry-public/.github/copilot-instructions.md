@@ -1,156 +1,123 @@
 # Copilot Instructions
 
-This repository implements a public Microsoft Foundry-hosted underwriting workflow using Microsoft Agent Framework (MAF), durable PostgreSQL checkpoints and projections, AG-UI streaming, and a safe CopilotKit assistant surface.
+This project implements one public Microsoft Foundry-hosted underwriting
+workflow with durable PostgreSQL state, an external web frontend/internal API
+adapter, safe AG-UI/CopilotKit projections, and additive Shared Teams review.
 
-## Primary Goals
+## Primary goals
 
-- Keep one master underwriting workflow path with direct MAF executors; do not add a shadow orchestrator, alternate workflow engine, or compatibility shim.
-- Keep Foundry hosting Responses-native through `backend/foundry/main.py` and `backend/Dockerfile.hosted`.
-- Preserve deterministic fan-out/fan-in across risk, credit, medical, and driving checks before any model rationale is attached.
-- Keep checkpoint and resume behavior durable through PostgreSQL-backed `maf_checkpoints` plus run, event, and state projections.
-- Keep AG-UI and CopilotKit additive and safe; the browser must never talk directly to Foundry or PostgreSQL.
-- Keep API, read-model, stream, and telemetry contracts stable for React, Playwright, and hosted release gates.
+- Preserve one master MAF workflow with direct risk, credit, medical, and
+  driving executors.
+- Keep deterministic scoring authoritative and model rationale explanatory.
+- Pause only `REFER_TO_HUMAN_UNDERWRITER`.
+- Preserve immutable machine recommendation and separate reviewer
+  `APPROVED`/`DECLINED`.
+- Keep Responses and Activity in the same hosted process and workflow.
+- Preserve PostgreSQL-backed checkpoints, projections, approvals, card-action
+  bindings, and idempotency.
+- Keep the browser on the external frontend origin; it never calls Foundry or
+  PostgreSQL directly.
+- Keep release and publication claims evidence-driven.
 
-## Delivery formalization
+Canonical contracts:
 
-- **You provide** underwriting rules, operator expectations, and release intent.
-- **Skills provide** repository and Microsoft platform guidance.
-- **Copilot provides** focused implementation plus matching tests and documentation updates.
-- **Gates provide** local, hosted, and telemetry evidence before release handoff.
-
-Canonical contracts live in:
-
+- `docs/design/functional-spec.md`
+- `docs/design/business-rules.md`
+- `docs/design/technical-spec.md`
+- `docs/design/hitl-review.md`
 - `docs/design/architecture.md`
 - `docs/design/engineering-operating-model.md`
 - `docs/design/deployment-flow.md`
 - `docs/design/schema-io-telemetry.md`
 - `docs/design/e2e-rubric.md`
 
-The public deployment lane is `infra/foundry-hosted/` with authenticated local
-`make foundry-*` commands. The deployed topology is external React/Nginx
-frontend -> same-origin `/api` proxy -> internal FastAPI adapter -> Foundry
-Responses agent `underwriting-hosted` -> PostgreSQL checkpoints and
-projections. Production runtimes set `DB_SCHEMA_MANAGED_EXTERNALLY=true` and
-must not execute DDL.
-The hosted PostgreSQL URL must be stored in the Underwriting project
-`CustomKeys` connection and referenced only through the Foundry connection
-placeholder in hosted-agent metadata.
+## Workflow and security guardrails
 
-## Workflow Guardrails
+- Do not add a second orchestration engine, compatibility workflow, shadow
+  checkpoint store, or browser-to-Foundry path.
+- Resume only checkpoints from the supported master direct-executor graph.
+- Keep AG-UI and CopilotKit additive to durable read models.
+- Persist trusted origin server-side. Free-form words such as approve,
+  decline, yes, or no are ordinary text.
+- API/Responses and Teams checkpoints cannot authorize each other.
+- Teams actions are random opaque tokens; store only hashes and bind them to
+  run, checkpoint, decision, reviewer, conversation, expiry, and batch.
+- Claim one action atomically before resume and supersede its sibling.
+- Keep machine recommendation and reviewer outcome as different schema, API,
+  UI, telemetry, and evaluation fields.
+- Adaptive Cards and assistant projections may contain only safe categorical
+  and lifecycle metadata. Never expose applicant fields, raw check/score data,
+  prompts, rationale, model output, checkpoint payloads, token material,
+  database values, endpoints, credentials, or secrets.
+- Production sets `DB_SCHEMA_MANAGED_EXTERNALLY=true`; runtime code validates
+  schema and does not execute DDL.
+- Hosted metadata contains only the project `CustomKeys` database placeholder,
+  never the resolved URL.
 
-- Keep canonical ownership strict:
-  - `backend/app/api/v1/routes/*` owns HTTP, AG-UI, and CopilotKit route entrypoints only.
-  - `backend/app/api/v1/schemas/*` owns API request and response contracts.
-  - `backend/app/modules/underwriting/*` owns service and domain seams, hosted relay envelopes, safe run-assistant context, and deterministic decision policy.
-  - `backend/app/core/*` owns config, telemetry, and app composition.
-  - `backend/app/infrastructure/*` owns PostgreSQL, Foundry clients, checkpoint storage, and repository adapters.
-  - `backend/app/maf/*` owns workflows, executors, runner, middleware, tools, prompts, and AG-UI event projection.
-- `backend/app/server.py` composes routers; it must not absorb workflow logic.
-- `backend/foundry/main.py` is the hosted workflow entrypoint and constructs the
-  real MAF runner. The internal backend adapter relays start and resume
-  requests and reads durable projections behind the external frontend proxy;
-  it must not construct a second hosted-only orchestration path.
-- Preserve fan-out/fan-in semantics: risk, credit, medical, and driving executors fan out/fan in in one superstep, `fan_in_aggregator` merges incrementally, and `final_decision` remains deterministic before rationale generation.
-- Preserve checkpoint and resume behavior keyed by `workflow_run_id`; replay and resume must remain idempotent and observable. Only checkpoints written by the deployed master direct-executor graph are resumable: version-40 nested-graph checkpoints are unsupported after deployment, with no compatibility workflow or fallback.
-- Keep AG-UI stream frames additive to durable run, state, events, and checkpoints endpoints. Do not replace durable read-model contracts with transient stream-only state.
-- Keep CopilotKit safe and allowlisted. The bridge may expose only selected run id, normalized status, safe event and executor metadata, checkpoint count and timestamp, and categorical final decision. Never expose applicant details, health disclosures, income, credit scores, raw prompts, raw model output, checkpoint payloads, credentials, or secrets.
-- Preserve telemetry for `foundry.responses.invoke`, hosted workflow, fan-out/fan-in, retry and backoff, injected failures, checkpoint save/load, idempotency skip, and final decision spans. Start and resume may land in separate hosted traces; correlate by `workflow.run_id`.
-- Keep routine deployment hard-enforced as `app_only`; reject
-  `FOUNDRY_DEPLOY_MODE`. Keep the one-time backend internalization command
-  fail-closed and never add a routine public-ingress toggle.
-- Preserve the two-phase release: build all three immutable images
-  concurrently, activate and persist the exact hosted digest/version, then
-  deploy backend and frontend concurrently without repeating ingress updates.
-  Finalization must reject app-only-to-telemetry durations above 15 minutes;
-  the latest verified interval is 14m 10.0s.
-- Never place the resolved `RUNTIME_DATABASE_URL` in
-  `HostedAgentDefinition.environment_variables` or retrieve it from hosted
-  agent metadata. Verify the placeholder and use readiness/smoke for
-  connectivity.
-- If API, read-model, AG-UI, CopilotKit, or event contracts change intentionally, update frontend, Playwright, and design docs in the same change.
+## Package ownership
 
-## Local and Release Validation Commands
+- `backend/app/api/v1/routes/*`: transport entrypoints.
+- `backend/app/api/v1/schemas/*`: request/response contracts.
+- `backend/app/modules/underwriting/*`: domain/service, deterministic policy,
+  hosted relay, and safe projections.
+- `backend/app/core/*`: settings, telemetry, composition.
+- `backend/app/infrastructure/*`: persistence and Foundry adapters.
+- `backend/app/maf/*`: workflow runtime.
+- `backend/foundry/main.py`: hosted Responses/Activity composition.
 
-Use the smallest existing gate set that proves the change:
+## Public delivery rules
+
+- The topology is external frontend -> internal FastAPI -> public Foundry ->
+  PostgreSQL.
+- Routine deployment is app-only and rejects `FOUNDRY_DEPLOY_MODE`.
+- Activate/persist the exact hosted artifact before backend deployment.
+- Keep the configured release-time budget and evidence integrity checks.
+- Do not add a routine public backend toggle.
+- Teams Shared publication retains Responses/Entra and adds Activity plus
+  `BotServiceRbac`.
+- Do not port private-runner, VNet, private endpoint, private DNS, Bastion, or
+  NAT mechanics.
+- Automatic GitHub CI is credential-free. Protected manual workflows use OIDC
+  for preview/provision, app-only release, package validation, observability,
+  and evidence retry; local Make targets remain equivalents. Microsoft 365
+  publication uses an interactive publisher outside GitHub Actions.
+
+## Validation
+
+Use the smallest existing set:
 
 - `make test`
 - `make quality`
 - `make test-e2e`
-
-For hosted/public-lane or telemetry changes, also use applicable release gates:
-
-- `make foundry-bootstrap`
-- `make foundry-iac-build`
-- `make foundry-postgres-readiness`
-- `make foundry-model-preflight`
-- `make foundry-runtime-connection`
-- `make foundry-release-package`
-- `make foundry-release-build`
-- `make foundry-release-hosted-activate`
-- `make foundry-release-app-deploy`
+- `make test-scripts`
+- `make test-deployment-profile`
+- hosted/IaC gates from `make help`
+- Activity/Teams contract tests from `make help` when present
 - `make foundry-smoke`
-- `make foundry-eval` (the report-only Foundry trace-evaluation gate)
+- `make foundry-hosted-e2e`
+- `make foundry-eval`
+- `make foundry-telemetry`
 - `make foundry-verify`
 - `make foundry-evidence`
 
-When the deployed frontend is in scope, run hosted Playwright against it with `PLAYWRIGHT_BASE_URL=<frontend-url> npm run test:e2e` from `frontend/`.
+Required scenario coverage includes happy, retry, crash/resume, four-way
+fan-in, referral-only pause, separate reviewer approve/decline, privacy-safe
+card rendering, replay/expiry/concurrency, reviewer/conversation isolation,
+typed-text blocking, cross-channel isolation, and safe telemetry correlation.
 
-## Repository Skills
+## Documentation contract
 
-- `design-review`: final focused review plus existing validation gates.
-- `docs-sync`: keep instruction files and design docs synchronized.
-- `backend-boundary-review`: enforce API/modules/core/infrastructure/MAF ownership and no-shim rules.
-- `local-validation`: run the full local backend/frontend/e2e gates.
-- `quick-validation`: run the smallest existing validation set for low-risk app-only changes.
-- `iac-review`: review `infra/foundry-hosted`, Docker, AZD, and release scripts without mutating Azure.
-- `azure-validation`: validate Azure readiness and deployed behavior without deployment.
-- `azure-deployment`: execute the authenticated release sequence only after validation passes.
-- `azure-telemetry-validation`: verify Application Insights and Foundry traces after deployment.
-- `foundry-agent-evaluation`: run the report-only hosted trace evaluation and publish evidence.
-- `release-readiness`: orchestrate the focused skills for PR or release handoff.
-
-## Stack Implementation Skills
-
-Load only the skills relevant to the change:
-
-- `agent-framework-foundry-py`
-- `agent-framework-azure-ai-py`
-- `microsoft-foundry`
-- `azure-ai-projects-py`
-- `azure-identity-py`
-- `azure-monitor-opentelemetry-py`
-- `fastapi-router-py`
-- `pydantic-models-py`
-- `postgres-psycopg-py`
-- `ag-ui-streaming-fastapi-py`
-- `ag-ui-react-integration-ts`
-- `typescript-setup`
-- `typescript-update`
-- `e2e-rubric`
-
-## Baseline Scenarios
-
-Keep coverage for:
-
-- happy-path completion
-- retry then completion
-- crash after a configured executor
-- resume from a stored MAF checkpoint
-- fan-in state showing all four child checks
-- checkpoint visibility
-- idempotency-skip visibility on replay and resume
-- observability fields in event output
-- hosted release smoke that correlates the public request with hosted workflow and model traces
-
-## Documentation Contract
-
-When architecture, workflow contracts, release gates, or operator-facing behavior change, update the smallest relevant set of:
+Synchronize affected operator and design docs in the same change:
 
 - `.github/copilot-instructions.md`
 - `agents.md`
-- `docs/design/architecture.md`
-- `docs/design/deployment-flow.md`
-- `docs/design/schema-io-telemetry.md`
-- `docs/design/userflow.md`
-- `docs/design/e2e-rubric.md`
+- `README.md`
+- `docs/README.md`
+- functional, business, technical, HITL, architecture, user-flow,
+  schema/telemetry, deployment, and E2E docs
 - `deployment/README.md`
+- `frontend/README.md`
+
+Keep exact release IDs, hosted versions, counts, timings, endpoints, and Azure
+target identifiers out of current-state guidance. They belong only in the
+deployment plan and delivery ledger.

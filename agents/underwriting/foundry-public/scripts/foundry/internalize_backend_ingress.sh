@@ -36,14 +36,6 @@ backend_name="$(required_env BACKEND_CONTAINER_APP_NAME)"
 frontend_name="$(required_env FRONTEND_CONTAINER_APP_NAME)"
 confirmation="${1:-}"
 
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" ]] || {
-  echo "Refusing migration outside the canonical Underwriting subscription." >&2
-  exit 1
-}
-[[ "$resource_group" == "rg-maf-underwriting" && "$location" == "eastus2" ]] || {
-  echo "Refusing migration outside rg-maf-underwriting/eastus2." >&2
-  exit 1
-}
 [[ "$confirmation" == "INTERNALIZE-${backend_name}" ]] || {
   echo "Explicit confirmation required: make foundry-backend-internalize CONFIRM=INTERNALIZE-${backend_name}" >&2
   exit 2

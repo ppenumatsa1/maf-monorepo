@@ -6,32 +6,48 @@ build-backend = "setuptools.build_meta"
 name = "underwriting-maf-prototype"
 version = "0.2.0"
 description = "Insurance underwriting prototype using Microsoft Agent Framework"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
-  "agent-framework-core==1.13.0",
-  "agent-framework-azure-ai==1.0.0rc6",
-  "agent-framework-ag-ui==1.0.1",
-  "azure-identity>=1.25.0,<2.0.0",
-  "azure-monitor-opentelemetry>=1.8.0,<2.0.0",
-  "azure-ai-projects>=2.4.0,<3.0.0",
-  "azure-ai-agentserver-core[tracing]==2.0.0b7",
-  "azure-ai-agentserver-responses==1.0.0b8",
-  "fastapi>=0.121.0,<0.140.0",
-  "uvicorn[standard]>=0.30.0,<1.0.0",
-  "SQLAlchemy==2.0.41",
-  "psycopg[binary]==3.2.9",
-  "python-dotenv==1.1.1",
-  "opentelemetry-api>=1.42.0",
-  "opentelemetry-sdk>=1.42.0",
-  "opentelemetry-exporter-otlp>=1.42.0",
-  "opentelemetry-instrumentation-fastapi>=0.63b0",
-  "opentelemetry-instrumentation-openai-v2>=2.3.0b0,<3.0.0",
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.14.1",
+  "python-dotenv==1.2.4",
+  "httpx==0.28.1",
+  "aiohttp==3.14.5",
+  "azure-monitor-opentelemetry==1.8.11",
+  "azure-monitor-query==2.0.0",
+  "azure-ai-projects==2.7.0",
+  "azure-identity==1.26.0",
+  "psycopg[binary]==3.3.6",
+  "psycopg-pool==3.3.3",
+  "SQLAlchemy==2.0.55",
+  "greenlet==3.2.5",
+  "agent-framework-core==1.22.0",
+  "agent-framework-orchestrations==1.3.2",
+  "agent-framework-foundry==1.15.0",
+  "agent-framework-ag-ui==1.6.0",
+  "ag-ui-protocol==0.1.22",
+  "azure-ai-agentserver-core==2.2.0",
+  "azure-ai-agentserver-activity==1.0.0b4",
+  "azure-ai-agentserver-responses==2.3.0",
+  "opentelemetry-api==1.45.1",
+  "opentelemetry-sdk==1.45.1",
+  "opentelemetry-exporter-otlp==1.45.1",
+  "opentelemetry-instrumentation-fastapi==0.66b1",
+  "opentelemetry-instrumentation-openai-v2==2.3b0",
+  "openai==3.36.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest==8.4.1",
-  "ruff>=0.12.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-cov==7.1.0",
+  "jsonschema==4.26.0",
+  "ruff==0.17.1",
+  "black==26.10.1",
+  "setuptools==84.0.0",
+  "wheel==0.48.0",
 ]
 
 [tool.setuptools]

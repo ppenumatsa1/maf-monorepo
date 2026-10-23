@@ -31,6 +31,7 @@ required_env() {
 require_bin az
 require_bin azd
 require_bin git
+require_bin jq
 [[ -x "$PYTHON" ]] || {
   echo "Project virtual environment is required; run make install first." >&2
   exit 1
@@ -48,7 +49,7 @@ foundry_account_name="$(required_env FOUNDRY_ACCOUNT_NAME)"
 foundry_project_name="$(required_env FOUNDRY_PROJECT_NAME)"
 agent_name="$(required_env HOSTED_AGENT_NAME)"
 runtime_connection_name="$(required_env FOUNDRY_RUNTIME_CONNECTION_NAME)"
-image_repository="underwriting-hosted"
+image_repository="$(required_env HOSTED_AGENT_IMAGE_REPOSITORY)"
 image="${HOSTED_AGENT_PREBUILT_IMAGE:-}"
 postgres_server_name="$(required_env POSTGRES_SERVER_NAME)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
@@ -85,13 +86,33 @@ connection_category="$(
 
 if [[ -z "$image" ]]; then
   image_tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
-  image="${registry_endpoint}/${image_repository}:${image_tag}"
   az acr build \
     --subscription "$subscription_id" \
     --registry "$registry_name" \
     --image "${image_repository}:${image_tag}" \
     --file "$FOUNDRY_DIR/agent/Dockerfile" \
     "$FOUNDRY_DIR/agent"
+  image_digest="$(
+    az acr repository show \
+      --subscription "$subscription_id" \
+      --name "$registry_name" \
+      --image "${image_repository}:${image_tag}" \
+      --query digest \
+      --output tsv
+  )"
+  [[ "$image_digest" == sha256:* ]] || {
+    echo "Unable to resolve immutable digest for ${image_repository}:${image_tag}." >&2
+    exit 1
+  }
+  image="${registry_endpoint}/${image_repository}@${image_digest}"
+fi
+[[ "$image" == "${registry_endpoint}/${image_repository}@sha256:"* ]] || {
+  echo "Hosted-agent image must use the configured repository and immutable digest." >&2
+  exit 1
+}
+if [[ ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "Hosted-agent activation requires an immutable image digest." >&2
+  exit 1
 fi
 
 export AZURE_AI_PROJECT_ENDPOINT="$project_endpoint"
@@ -108,19 +129,67 @@ deployment_output="$("$PYTHON" "$ROOT_DIR/scripts/foundry/deploy_hosted_containe
 unset database_url runtime_database_url
 printf '%s\n' "$deployment_output"
 agent_version="$(printf '%s\n' "$deployment_output" | sed -n 's/^HOSTED_AGENT_VERSION=//p' | tail -n 1)"
+active_image="$(printf '%s\n' "$deployment_output" | sed -n 's/^HOSTED_AGENT_IMAGE=//p' | tail -n 1)"
+principal_id="$(printf '%s\n' "$deployment_output" | sed -n 's/^HOSTED_AGENT_PRINCIPAL_ID=//p' | tail -n 1)"
 [[ -n "$agent_version" ]] || {
   echo "Hosted agent deployment did not report an active version." >&2
   exit 1
 }
-"$ROOT_DIR/scripts/foundry/converge_hosted_agent_rbac.sh"
+[[ "$active_image" == "$image" ]] || {
+  echo "Hosted agent deployment did not report the expected immutable image." >&2
+  exit 1
+}
 
+responses_endpoint="${AZURE_AI_PROJECT_ENDPOINT}/agents/${HOSTED_AGENT_NAME}/endpoint/protocols/openai/responses?api-version=v1"
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
   azd env set AGENT_UNDERWRITING_HOSTED_NAME "$HOSTED_AGENT_NAME" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
   azd env set AGENT_UNDERWRITING_HOSTED_VERSION "$agent_version" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
 AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
   azd env set AGENT_UNDERWRITING_HOSTED_RESPONSES_ENDPOINT \
-    "${AZURE_AI_PROJECT_ENDPOINT}/agents/${HOSTED_AGENT_NAME}/endpoint/protocols/openai/responses?api-version=v1" \
+    "$responses_endpoint" \
     --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+  azd env set AGENT_UNDERWRITING_HOSTED_IMAGE "$image" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
+AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+  azd env set AGENT_UNDERWRITING_HOSTED_IMAGE_REPOSITORY \
+    "$image_repository" \
+    --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
+if [[ -n "$principal_id" ]]; then
+  AZURE_DEV_USER_AGENT=microsoft_foundry_skill \
+    azd env set AGENT_UNDERWRITING_HOSTED_PRINCIPAL_ID "$principal_id" --cwd "$FOUNDRY_DIR" --no-prompt >/dev/null
+fi
+
+"$ROOT_DIR/scripts/foundry/converge_hosted_agent_rbac.sh"
+
+metadata_file="${HOSTED_AGENT_DEPLOYMENT_METADATA_FILE:-${FOUNDRY_RELEASE_EVIDENCE_DIR:-$ROOT_DIR/backend/.foundry/results}/hosted-agent-deployment.json}"
+mkdir -p "$(dirname "$metadata_file")"
+jq -n \
+  --arg release_id "${RELEASE_ID:-manual-hosted-deploy}" \
+  --arg release_started_at "${FOUNDRY_RELEASE_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
+  --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg name "$HOSTED_AGENT_NAME" \
+  --arg version "$agent_version" \
+  --arg image "$image" \
+  --arg image_repository "$image_repository" \
+  --arg principal_id "$principal_id" \
+  --arg runtime_connection_name "$runtime_connection_name" \
+  '{
+    schema_version: 1,
+    evidence_type: "component_deployment",
+    component: "hosted_agent",
+    status: "deployed",
+    release_id: $release_id,
+    release_started_at: $release_started_at,
+    generated_at: $generated_at,
+    name: $name,
+    version: $version,
+    image: $image,
+    image_repository: $image_repository,
+    principal_id: $principal_id,
+    runtime_connection_name: $runtime_connection_name,
+    required_role: "Cognitive Services OpenAI User",
+    schema_managed_externally: true
+  }' >"$metadata_file"
 
 echo "Hosted agent image deployment completed: ${image}"

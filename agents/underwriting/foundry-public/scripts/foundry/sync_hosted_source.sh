@@ -8,12 +8,17 @@ if [[ ! -f "$ROOT_DIR/backend/Dockerfile.hosted" || ! -f "$ROOT_DIR/backend/foun
   echo "backend/Dockerfile.hosted and backend/foundry/main.py are required." >&2
   exit 1
 fi
+if [[ ! -d "$ROOT_DIR/.wheels" ]]; then
+  echo "Runtime wheelhouse is missing; run make foundry-python-wheelhouse." >&2
+  exit 1
+fi
 
 rm -rf "$TARGET_DIR"
 mkdir -p "$TARGET_DIR"
 
 cp "$ROOT_DIR/pyproject.toml" "$TARGET_DIR/"
 cp "$ROOT_DIR/backend/Dockerfile.hosted" "$TARGET_DIR/Dockerfile"
+cp -R "$ROOT_DIR/.wheels" "$TARGET_DIR/.wheels"
 
 tar \
   --exclude='backend/.env' \

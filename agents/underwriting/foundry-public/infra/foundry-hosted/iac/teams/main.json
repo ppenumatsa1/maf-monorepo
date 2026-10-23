@@ -1,0 +1,193 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "16512151728615791287"
+    }
+  },
+  "parameters": {
+    "foundryResourceName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the Microsoft Foundry resource that hosts the deployed agent."
+      }
+    },
+    "foundryProjectName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the Microsoft Foundry project that contains the deployed agent."
+      }
+    },
+    "hostedAgentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the deployed hosted agent."
+      }
+    },
+    "agentIdentityClientId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "metadata": {
+        "description": "Client ID of the active hosted-agent identity."
+      }
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "metadata": {
+        "description": "Microsoft Entra tenant ID for the hosted-agent identity."
+      }
+    },
+    "logAnalyticsWorkspaceResourceId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Resource ID of the Log Analytics workspace that receives Azure Bot diagnostics."
+      }
+    },
+    "botName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Globally unique Azure Bot Service resource name."
+      }
+    },
+    "botDisplayName": {
+      "type": "string",
+      "defaultValue": "[parameters('hostedAgentName')]",
+      "minLength": 1,
+      "maxLength": 128,
+      "metadata": {
+        "description": "Display name for the Azure Bot Service resource."
+      }
+    },
+    "botSkuName": {
+      "type": "string",
+      "allowedValues": [
+        "F0",
+        "S1"
+      ],
+      "metadata": {
+        "description": "Azure Bot Service SKU supplied by the external deployment profile."
+      }
+    }
+  },
+  "variables": {
+    "validatedFoundryResourceName": "[if(and(and(and(not(contains(parameters('foundryResourceName'), '/')), not(contains(parameters('foundryResourceName'), ' '))), not(contains(parameters('foundryResourceName'), '?'))), not(contains(parameters('foundryResourceName'), '#'))), parameters('foundryResourceName'), fail('foundryResourceName must be safe for use as an Azure AI Services hostname.'))]",
+    "validatedFoundryProjectName": "[if(and(and(and(not(contains(parameters('foundryProjectName'), '/')), not(contains(parameters('foundryProjectName'), ' '))), not(contains(parameters('foundryProjectName'), '?'))), not(contains(parameters('foundryProjectName'), '#'))), parameters('foundryProjectName'), fail('foundryProjectName must be safe for use as an Activity endpoint path segment.'))]",
+    "validatedHostedAgentName": "[if(and(and(and(not(contains(parameters('hostedAgentName'), '/')), not(contains(parameters('hostedAgentName'), ' '))), not(contains(parameters('hostedAgentName'), '?'))), not(contains(parameters('hostedAgentName'), '#'))), parameters('hostedAgentName'), fail('hostedAgentName must be safe for use as an Activity endpoint path segment.'))]",
+    "validatedAgentIdentityClientId": "[if(and(and(and(equals(substring(parameters('agentIdentityClientId'), 8, 1), '-'), equals(substring(parameters('agentIdentityClientId'), 13, 1), '-')), equals(substring(parameters('agentIdentityClientId'), 18, 1), '-')), equals(substring(parameters('agentIdentityClientId'), 23, 1), '-')), parameters('agentIdentityClientId'), fail('agentIdentityClientId must have GUID shape.'))]",
+    "validatedTenantId": "[if(and(and(and(equals(substring(parameters('tenantId'), 8, 1), '-'), equals(substring(parameters('tenantId'), 13, 1), '-')), equals(substring(parameters('tenantId'), 18, 1), '-')), equals(substring(parameters('tenantId'), 23, 1), '-')), parameters('tenantId'), fail('tenantId must have GUID shape.'))]",
+    "validatedLogAnalyticsWorkspaceResourceId": "[if(and(startsWith(toLower(parameters('logAnalyticsWorkspaceResourceId')), '/subscriptions/'), contains(toLower(parameters('logAnalyticsWorkspaceResourceId')), '/providers/microsoft.operationalinsights/workspaces/')), parameters('logAnalyticsWorkspaceResourceId'), fail('logAnalyticsWorkspaceResourceId must identify a Microsoft.OperationalInsights workspace.'))]",
+    "activityProtocolApiVersion": "2025-05-15-preview",
+    "activityEndpoint": "[format('https://{0}.services.ai.azure.com/api/projects/{1}/agents/{2}/endpoint/protocols/activityProtocol?api-version={3}', variables('validatedFoundryResourceName'), variables('validatedFoundryProjectName'), variables('validatedHostedAgentName'), variables('activityProtocolApiVersion'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.BotService/botServices",
+      "apiVersion": "2022-09-15",
+      "name": "[parameters('botName')]",
+      "kind": "azurebot",
+      "location": "global",
+      "sku": {
+        "name": "[parameters('botSkuName')]"
+      },
+      "properties": {
+        "displayName": "[parameters('botDisplayName')]",
+        "endpoint": "[variables('activityEndpoint')]",
+        "msaAppId": "[variables('validatedAgentIdentityClientId')]",
+        "msaAppTenantId": "[variables('validatedTenantId')]",
+        "msaAppType": "SingleTenant",
+        "publicNetworkAccess": "Disabled"
+      }
+    },
+    {
+      "type": "Microsoft.BotService/botServices/channels",
+      "apiVersion": "2022-09-15",
+      "name": "[format('{0}/{1}', parameters('botName'), 'MsTeamsChannel')]",
+      "location": "global",
+      "properties": {
+        "channelName": "MsTeamsChannel",
+        "properties": {
+          "acceptedTerms": true,
+          "deploymentEnvironment": "CommercialDeployment",
+          "enableCalling": false,
+          "isEnabled": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]",
+      "name": "bot-request-diagnostics",
+      "properties": {
+        "workspaceId": "[variables('validatedLogAnalyticsWorkspaceResourceId')]",
+        "logs": [
+          {
+            "category": "BotRequest",
+            "enabled": true,
+            "retentionPolicy": {
+              "days": 0,
+              "enabled": false
+            }
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true,
+            "retentionPolicy": {
+              "days": 0,
+              "enabled": false
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "botResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]"
+    },
+    "botName": {
+      "type": "string",
+      "value": "[parameters('botName')]"
+    },
+    "teamsChannelResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.BotService/botServices/channels', parameters('botName'), 'MsTeamsChannel')]"
+    },
+    "teamsChannelName": {
+      "type": "string",
+      "value": "MsTeamsChannel"
+    },
+    "botDiagnosticSettingResourceId": {
+      "type": "string",
+      "value": "[extensionResourceId(resourceId('Microsoft.BotService/botServices', parameters('botName')), 'Microsoft.Insights/diagnosticSettings', 'bot-request-diagnostics')]"
+    },
+    "activityEndpoint": {
+      "type": "string",
+      "value": "[variables('activityEndpoint')]"
+    }
+  }
+}

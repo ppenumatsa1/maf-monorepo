@@ -18,6 +18,10 @@ export type WorkflowRunRecord = {
   status: string
   created_at: string
   updated_at: string
+  machine_recommendation?: string | null
+  reviewer_outcome?: 'APPROVED' | 'DECLINED' | null
+  review_checkpoint_id?: string | null
+  review_status?: 'pending' | 'processing' | 'completed' | null
   [key: string]: unknown
 }
 
@@ -29,9 +33,24 @@ export type RunHistoryItem = {
   created_at: string
   updated_at: string
   final_decision: string | null
+  machine_recommendation: string | null
+  reviewer_outcome: 'APPROVED' | 'DECLINED' | null
+  review_status: string | null
+  review_checkpoint_id: string | null
   checkpoint_count: number
   latest_checkpoint_at: string | null
   resumable: boolean
+  reviewable: boolean
+}
+
+export type ReviewProjection = {
+  workflow_run_id: string
+  checkpoint_id: string
+  status: 'pending' | 'processing' | 'completed'
+  machine_recommendation: string
+  reviewer_outcome: 'APPROVED' | 'DECLINED' | null
+  requested_at: string
+  resolved_at: string | null
 }
 
 export type WorkflowStateRow = {
@@ -123,6 +142,17 @@ export async function getEvents(runId: string): Promise<WorkflowEventRecord[]> {
 
 export async function getCheckpoints(runId: string): Promise<WorkflowCheckpointRecord[]> {
   return api<WorkflowCheckpointRecord[]>(`/api/v1/underwriting/runs/${runId}/checkpoints`)
+}
+
+export async function getReview(runId: string): Promise<ReviewProjection | null> {
+  try {
+    return await api<ReviewProjection>(`/api/v1/underwriting/runs/${runId}/review`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null
+    }
+    throw error
+  }
 }
 
 export async function getRunHistory(params: {

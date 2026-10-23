@@ -24,6 +24,12 @@ set_if_missing() {
   fi
 }
 
+if [[ "$(get_env_value INFRASTRUCTURE_MODE)" == "bootstrap" &&
+      "${FOUNDRY_BOOTSTRAP_HYDRATE:-0}" != "1" ]]; then
+  echo "Bootstrap parameters are selected; existing-resource defaults remain deferred."
+  exit 0
+fi
+
 project_endpoint="$(get_env_value AZURE_AI_PROJECT_ENDPOINT)"
 hosted_agent_name="$(get_env_value HOSTED_AGENT_NAME)"
 project_name="$(get_env_value FOUNDRY_PROJECT_NAME)"

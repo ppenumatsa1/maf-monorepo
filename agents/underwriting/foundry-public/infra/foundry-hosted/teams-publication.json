@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "1.0.0",
+  "publishScope": "Shared",
+  "publishAsAutopilot": false,
+  "metadata": {
+    "agentDisplayName": "underwriting-foundry-public",
+    "shortDescription": "Helps review synthetic insurance underwriting scenarios.",
+    "fullDescription": "A sample Microsoft Foundry agent for reviewing synthetic insurance underwriting scenarios.",
+    "developerName": "Example Organization",
+    "developerWebsiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  }
+}

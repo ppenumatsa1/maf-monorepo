@@ -1,68 +1,188 @@
-# Manual testing guide
+# Manual Testing Guide
+
+## Safety
+
+Use synthetic inputs only. Do not paste applicant, customer, tenant, resource,
+endpoint, credential, card-token, or secret values into screenshots, test
+notes, or the delivery ledger.
 
 ## Prerequisites
 
-- Docker + Docker Compose
-- Python 3.11+
-- Node 20+
+- Tools listed in the [operator guide](../README.md#prerequisites)
+- Local dependencies installed with `make bootstrap`
+- Docker available for PostgreSQL-backed tests
 
-## Setup
+## Local full-stack setup
 
-1. `make install`
-2. `make up`
-3. `make db-reset`
-4. `make frontend-install`
+```bash
+cp .env.example .env
+make up
+```
 
-## Backend scenarios (CLI)
+Open:
 
-1. Happy path: `make run`
-2. Retry: `make run-fail-once`
-3. Crash: `make run-crash`
-4. Resume: `make resume RUN_ID=<run_id>`
-5. Inspect:
-   - `make state RUN_ID=<run_id>`
-   - `make events RUN_ID=<run_id>`
-   - `make checkpoints RUN_ID=<run_id>`
+- frontend: `http://localhost:4173`
+- backend health: `http://localhost:8000/health`
 
-Confirm that retry emits bounded retry evidence, crash leaves a resumable `workflow_run_id`, and resume completes without duplicate terminal writes.
+Reset local schema only when local data may be discarded:
 
-## Frontend scenario
+```bash
+make db-reset
+```
 
-1. Start backend/API: `make up`
-2. For Vite development, start UI with the backend origin:
-   `VITE_API_BASE_URL=http://localhost:8000 make frontend-dev`
-3. Open the Vite URL and execute:
-   - happy path
-   - retry
-   - crash + resume
-4. Confirm run status, state, event, and checkpoint panels update correctly.
-5. Confirm the embedded CopilotKit assistant explains only allowlisted selected-run data.
+## CLI workflow scenarios
 
-`make test-e2e` sets `UNDERWRITING_EXECUTION_MODE=local` only for its isolated workflow validation; the deployed public adapter remains hosted-only.
+### Happy path
 
-## Automated validation
+```bash
+make run
+```
 
-- Backend tests: `make test-backend`
-- Frontend build check: `make test-frontend`
-- E2E rubric: `make test-e2e`
+Confirm all four direct checks are present before the machine recommendation.
 
-## Public release smoke
+### Retry
 
-1. Run the checked-in authenticated release sequence from the README.
-2. Start a happy-path transaction from the public operations console.
-3. Confirm the selected run reaches `COMPLETED`, its timeline is chronological, and history shows it newest first in browser-local time.
-4. Run retry and crash/resume scenarios and confirm they correlate on one durable `workflow_run_id` each.
-5. Ask the embedded assistant for the selected run's status and confirm it returns only a safe execution summary.
-6. In Application Insights, start from the run ID and confirm the AG-UI request plus hosted workflow/model spans are visible.
-7. In Foundry, confirm the corresponding `underwriting-hosted` workflow/model trace includes the master workflow, direct risk/credit/medical/driving executor, retry/fan-in/checkpoint spans, and the correlated `workflow_run_id`.
-8. Record commands, run IDs, trace references, and any deferrals in `docs/design/issues-changes-fixes.md`.
+```bash
+make run-fail-once
+```
 
-## Clean cutover / no-shims checks
+Confirm bounded retry/backoff evidence and one effective result per check.
 
-During public validation, confirm all of the following remain true:
+### Crash and resume
 
-- browser traffic goes to the public adapter only;
-- the public adapter starts or resumes hosted Responses work;
-- PostgreSQL remains the source of truth for checkpoints, events, and state;
-- no test relies on a hidden adapter-side fallback workflow path;
-- no browser-visible credential or direct Foundry endpoint is introduced.
+```bash
+make run-crash
+make resume RUN_ID=<workflow-run-id>
+```
+
+Confirm the same run resumes from a supported MAF checkpoint and completed
+work is not duplicated.
+
+Inspect:
+
+```bash
+make state RUN_ID=<workflow-run-id>
+make events RUN_ID=<workflow-run-id>
+make checkpoints RUN_ID=<workflow-run-id>
+```
+
+## Browser scenarios
+
+1. Start a normal run.
+2. Confirm status, events, state, checkpoints, and result update.
+3. Run retry and crash/resume scenarios.
+4. Refresh the browser and confirm durable state remains available.
+5. Ask the selected-run assistant about status/recovery.
+6. Confirm the assistant exposes only safe selected-run metadata.
+
+The browser must remain on the frontend origin. It must not call Foundry or a
+public backend FQDN directly.
+
+## HITL contract scenarios
+
+Use the checked-in test fixtures or harness that produces each deterministic
+recommendation category.
+
+1. `APPROVED` completes without review.
+2. `APPROVED_WITH_CONDITIONS` completes without review.
+3. `DECLINED` completes without review.
+4. `REFER_TO_HUMAN_UNDERWRITER`:
+   - persists the immutable machine recommendation;
+   - creates a checkpoint and pending approval;
+   - accepts separate reviewer `APPROVED`;
+   - accepts separate reviewer `DECLINED`;
+   - never overwrites the machine recommendation;
+   - produces one effective outcome under duplicate/concurrent submission.
+
+If the current UI has no reviewer control, validate through the supported
+structured API/Responses harness. Do not use free-form text as a decision.
+
+## Teams acceptance
+
+Run only after checked-in Activity/Bot/Shared publication automation has been
+reviewed and deployed.
+
+1. Authorized Shared-catalog user can invoke the agent.
+2. Unauthorized user cannot invoke it.
+3. A referred case renders a privacy-safe card.
+4. Approve records reviewer outcome `APPROVED`.
+5. Decline records reviewer outcome `DECLINED`.
+6. Typed approval/decline text does not resolve the checkpoint.
+7. Wrong reviewer is rejected.
+8. Wrong conversation is rejected.
+9. Expired token is rejected.
+10. Replayed token is rejected.
+11. Concurrent sibling clicks produce one effective outcome.
+12. Responses cannot resolve the Teams checkpoint.
+13. Card JSON and telemetry contain no prohibited fields.
+14. Activity rollback leaves Responses and Entra intact.
+
+Controlled publication commands:
+
+```bash
+make foundry-activity-plan
+make foundry-teams-plan
+make foundry-teams-preview
+FOUNDRY_FULL_INFRA_AUTHORIZED=true make foundry-teams-deploy-bot
+make foundry-activity-apply
+make foundry-teams-package
+make foundry-teams-publish
+make foundry-teams-status
+make foundry-teams-rollback-plan
+```
+
+## Automated gates
+
+```bash
+make test
+make quality
+make test-e2e
+make test-deployment-profile
+make test-scripts
+```
+
+Run Activity and Teams contract tests:
+
+```bash
+make test-foundry-activity-endpoint
+make test-foundry-teams-publishing
+```
+
+## Hosted release acceptance
+
+After an authenticated app-only release:
+
+```bash
+make foundry-smoke
+make foundry-hosted-e2e
+make foundry-eval
+make foundry-telemetry
+make foundry-verify
+make foundry-evidence
+```
+
+Confirm:
+
+- external frontend/internal backend topology;
+- no direct public backend;
+- exact immutable images and hosted version;
+- four-way fan-in;
+- retry and crash/resume;
+- referral pause and separate reviewer outcome;
+- PostgreSQL external-schema and least-privilege boundary;
+- runtime connection placeholder rather than resolved secret;
+- safe correlated telemetry;
+- configured evaluator success;
+- release-local, secret-free evidence.
+
+Record exact run IDs, evaluator IDs, counts, timings, target identifiers, and
+rollback results only in the ledger/deployment plan.
+
+## Cleanup
+
+```bash
+make down
+```
+
+Remove any locally generated package, screenshot, log, or evidence file that
+contains sensitive operational state. Do not commit release artifacts.

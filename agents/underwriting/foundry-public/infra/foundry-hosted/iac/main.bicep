@@ -55,6 +55,14 @@ param foundryRaiPolicyName string = 'Microsoft.Default'
 @description('Azure Container Registry name.')
 param containerRegistryName string = take('${toLower(namePrefix)}${uniqueString(subscription().id, resourceGroup().id, namePrefix)}acr', 50)
 
+@description('Azure Container Registry SKU.')
+@allowed([
+  'Basic'
+  'Standard'
+  'Premium'
+])
+param containerRegistrySkuName string = 'Basic'
+
 @description('Log Analytics workspace name.')
 param logAnalyticsWorkspaceName string = take('${namePrefix}-${uniqueString(subscription().id, resourceGroup().id, namePrefix)}-log', 63)
 
@@ -153,7 +161,7 @@ resource foundryAccountBootstrap 'Microsoft.CognitiveServices/accounts@2025-06-0
     allowProjectManagement: true
     customSubDomainName: foundryCustomSubDomainName
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    disableLocalAuth: true
   }
   tags: tags
 }
@@ -168,6 +176,9 @@ resource foundryProjectBootstrap 'Microsoft.CognitiveServices/accounts/projects@
   properties: {
     description: 'Public Foundry-hosted underwriting workflow'
   }
+  dependsOn: [
+    foundryModelDeployment
+  ]
 }
 
 resource foundryModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (isBootstrap) {
@@ -192,7 +203,7 @@ resource containerRegistryBootstrap 'Microsoft.ContainerRegistry/registries@2023
   name: containerRegistryName
   location: location
   sku: {
-    name: 'Basic'
+    name: containerRegistrySkuName
   }
   properties: {
     adminUserEnabled: false
@@ -468,6 +479,9 @@ resource publicBackendFoundryUser 'Microsoft.Authorization/roleAssignments@2022-
     principalId: publicBackendManagedIdentityBootstrap!.properties.principalId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [
+    foundryProjectBootstrap
+  ]
 }
 
 resource foundryAccountEvaluationStorageAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isBootstrap) {

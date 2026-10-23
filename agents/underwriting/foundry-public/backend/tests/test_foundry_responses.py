@@ -8,7 +8,10 @@ from typing import Any
 import foundry.main as hosted_main
 from app.core.config import Settings
 from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
-from app.modules.underwriting.hosted import HOSTED_WORKFLOW_PROTOCOL
+from app.modules.underwriting.hosted import (
+    HOSTED_REVIEW_DECISION_PROTOCOL,
+    HOSTED_WORKFLOW_PROTOCOL,
+)
 from app.modules.underwriting.models import Decision, FinalDecisionResult
 
 
@@ -94,6 +97,94 @@ def test_workflow_request_parses_agent_server_context_input() -> None:
     result = hosted_main._workflow_request({}, Context())
 
     assert result == request
+
+
+def test_structured_review_decision_requires_exact_function_output_binding() -> None:
+    decision = {
+        "protocol": HOSTED_REVIEW_DECISION_PROTOCOL,
+        "workflow_run_id": "run-review-test",
+        "checkpoint_id": "checkpoint-review-test",
+        "outcome": "APPROVED",
+    }
+
+    parsed, saw_function_output = asyncio.run(
+        hosted_main._structured_review_decision(
+            {
+                "input": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": "checkpoint-review-test",
+                        "output": json.dumps(decision),
+                    }
+                ]
+            },
+            None,
+        )
+    )
+
+    assert saw_function_output is True
+    assert parsed == decision
+
+
+def test_structured_review_decision_rejects_free_text_and_wrong_checkpoint() -> None:
+    parsed_text, saw_text = asyncio.run(
+        hosted_main._structured_review_decision({"input": "approve"}, None)
+    )
+    parsed_wrong, saw_wrong = asyncio.run(
+        hosted_main._structured_review_decision(
+            {
+                "input": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": "wrong-checkpoint",
+                        "output": json.dumps(
+                            {
+                                "protocol": HOSTED_REVIEW_DECISION_PROTOCOL,
+                                "workflow_run_id": "run-review-test",
+                                "checkpoint_id": "checkpoint-review-test",
+                                "outcome": "DECLINED",
+                            }
+                        ),
+                    }
+                ]
+            },
+            None,
+        )
+    )
+
+    assert (parsed_text, saw_text) == (None, False)
+    assert (parsed_wrong, saw_wrong) == (None, True)
+
+
+def test_hosted_responses_rejects_structured_review_mutation() -> None:
+    decision = {
+        "protocol": HOSTED_REVIEW_DECISION_PROTOCOL,
+        "workflow_run_id": "run-review-test",
+        "checkpoint_id": "checkpoint-review-test",
+        "outcome": "APPROVED",
+    }
+
+    result = asyncio.run(
+        hosted_main._handle(
+            {
+                "input": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": "checkpoint-review-test",
+                        "output": json.dumps(decision),
+                    }
+                ]
+            },
+            context=None,
+            text_response=_text_response,
+        )
+    )
+
+    assert result == {
+        "workflow_run_id": "run-review-test",
+        "status": "REJECTED",
+        "outputs": [],
+    }
 
 
 def test_hosted_handler_executes_start_envelope(monkeypatch) -> None:
@@ -187,6 +278,10 @@ def test_hosted_handler_executes_resume_envelope(monkeypatch) -> None:
         "workflow_run_id": "run-resume-test",
         "status": "CRASHED",
         "outputs": [{"decision": "APPROVED"}],
+        "machine_recommendation": "APPROVED",
+        "reviewer_outcome": None,
+        "review_checkpoint_id": None,
+        "review_status": None,
     }
 
 

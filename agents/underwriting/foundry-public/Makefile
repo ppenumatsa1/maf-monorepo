@@ -10,24 +10,29 @@ ENV_FILE := $(ROOT).env
 E2E_LOG_DIR := $(ROOT)backend/.tmp/e2e
 FOUNDRY_RUNTIME_SMOKE := ./infra/foundry-hosted/runtime/smoke-test.sh
 FOUNDRY_DEPLOYMENT_PROFILE ?= $(ROOT)deployment/profiles/foundry-public.env
+TEAMS_PUBLISH_SCOPE ?= Shared
+TEAMS_PUBLICATION_MANIFEST ?= infra/foundry-hosted/teams-publication.json
+TEAMS_PUBLICATION_ARGS ?=
 
 ifneq ("$(wildcard $(ENV_FILE))","")
 include $(ENV_FILE)
 export
 endif
 
-.PHONY: help bootstrap up down logs db-reset install run run-fail-once run-crash resume state events checkpoints \
-	backend-dev frontend-install frontend-dev \
-	test test-backend test-frontend test-scripts test-deployment-profile test-e2e \
+.PHONY: help bootstrap up down logs db-reset install frontend-install foundry-python-wheelhouse run run-fail-once run-crash resume state events checkpoints \
+	backend-dev frontend-dev \
+	test test-backend test-frontend test-scripts test-deployment-profile test-capacity-preflight test-preview-safety test-foundry-activity-endpoint test-foundry-teams-publishing test-public-portability test-e2e \
 	lint lint-backend lint-frontend format format-check quality validate-quick validate-full \
-	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-provision foundry-postgres-rebuild foundry-postgres-schema \
+	foundry-profile-apply foundry-bootstrap foundry-bootstrap-env foundry-iac-build foundry-provision foundry-provision-infrastructure foundry-provision-converge foundry-postgres-rebuild foundry-postgres-schema \
 	foundry-postgres-credentials foundry-postgres-readiness foundry-backend-deploy foundry-frontend-deploy \
-	foundry-release-readiness foundry-model-preflight foundry-runtime-connection foundry-rbac foundry-package \
+	foundry-release-readiness foundry-model-preflight foundry-capacity-preflight-full foundry-provision-preview foundry-reuse-preview foundry-runtime-connection foundry-rbac foundry-package \
 	foundry-release-package foundry-release-build foundry-release-hosted-activate foundry-release-app-deploy \
 	foundry-backend-deploy-ready foundry-frontend-deploy-ready foundry-deploy-ready foundry-app-deploy foundry-release-deploy foundry-deploy \
-	foundry-backend-internalize foundry-verify foundry-evidence \
+	foundry-backend-internalize foundry-release-rollback-baseline foundry-rollback-verify foundry-verify foundry-evidence \
 	foundry-up foundry-smoke foundry-hosted-e2e foundry-eval \
-	foundry-appinsights-connection foundry-telemetry foundry-release
+	foundry-appinsights-connection foundry-telemetry foundry-release \
+	foundry-activity-plan foundry-activity-apply foundry-activity-rollback \
+	foundry-teams-plan foundry-teams-preview foundry-teams-deploy-bot foundry-teams-package foundry-teams-publish foundry-teams-status foundry-teams-rollback-plan foundry-teams-rollback
 
 CRASH_TARGET ?= medical_check
 SMOKE_MODE ?= happy
@@ -39,7 +44,8 @@ help:
 >@printf "  make down                         - Stop local containers\n"
 >@printf "  make logs                         - Tail frontend/backend/postgres logs\n"
 >@printf "  make install                      - Create .venv and install Python dependencies\n"
->@printf "  make frontend-install             - Install frontend dependencies\n"
+>@printf "  make frontend-install             - Install locked frontend dependencies\n"
+>@printf "  make foundry-python-wheelhouse    - Prepare hash-verified CPython 3.13 Linux AMD64 wheels\n"
 >@printf "  make db-reset                     - Reset local database schema\n"
 >@printf "  make run                          - Run happy-path underwriting workflow\n"
 >@printf "  make run-fail-once                - Run with one retryable failure injected\n"
@@ -64,7 +70,9 @@ help:
 >@printf "  make foundry-bootstrap-env        - Populate a new environment's non-secret bootstrap parameters\n"
 >@printf "  make foundry-iac-build            - Compile bootstrap/reuse Foundry Bicep\n"
 >@printf "  make foundry-package              - Package backend, frontend, and hosted services with AZD\n"
->@printf "  make foundry-provision            - Apply bootstrap PostgreSQL, Foundry, and connection IaC\n"
+>@printf "  make foundry-provision            - Apply infrastructure, migrate schema, converge runtime access, and verify readiness\n"
+>@printf "  make foundry-provision-infrastructure - Apply approved Bicep and hydrate existing-resource outputs\n"
+>@printf "  make foundry-provision-converge   - Migrate schema, converge runtime credential/connection, and verify readiness\n"
 >@printf "  make foundry-postgres-rebuild CONFIRM=REBUILD-<selected-postgres-server>\n"
 >@printf "                                     Delete and recreate the selected AZD PostgreSQL server\n"
 >@printf "  make foundry-postgres-schema      - Create or migrate the PostgreSQL schema with the administrator credential\n"
@@ -72,6 +80,9 @@ help:
 >@printf "  make foundry-runtime-connection   - Converge the project CustomKeys connection for the runtime URL\n"
 >@printf "  make foundry-postgres-readiness   - Verify PostgreSQL TLS, auth, firewall, and runtime credential readiness\n"
 >@printf "  make foundry-model-preflight      - Verify configured model deployment, SKU, capacity, and regional quota\n"
+>@printf "  make foundry-capacity-preflight-full - Check only incremental North America infrastructure capacity\n"
+>@printf "  make foundry-reuse-preview        - Require a zero-change public reuse preview\n"
+>@printf "  make foundry-provision-preview    - Preview create-only full infrastructure changes\n"
 >@printf "  make foundry-release-readiness    - Run the single shared database/model readiness gate\n"
 >@printf "  make foundry-backend-deploy       - Build and deploy the internal backend adapter\n"
 >@printf "  make foundry-frontend-deploy      - Build and deploy the public operations console\n"
@@ -87,12 +98,15 @@ help:
 >@printf "  make foundry-appinsights-connection - Verify the Foundry project App Insights connection\n"
 >@printf "  make foundry-telemetry            - Verify App Insights evidence for hosted E2E run IDs\n"
 >@printf "  make foundry-verify               - Verify deployed topology, images, hosted agent, telemetry connection, and DB mode\n"
+>@printf "  make foundry-rollback-verify      - Verify the prior hosted version and ACA revisions remain rollback-ready\n"
 >@printf "  make foundry-evidence             - Aggregate secret-free release-window evidence\n"
+>@printf "  make foundry-activity-{plan,apply,rollback} - Merge-preserving Activity endpoint lifecycle\n"
+>@printf "  make foundry-teams-{plan,preview,deploy-bot,package,publish,status,rollback} - Shared Microsoft 365 publication lifecycle\n"
 >@printf "  make foundry-release RELEASE_ID=<id> - Route validation/deployment and run the public release sequence\n"
 
 bootstrap: install frontend-install
 
-up:
+up: foundry-python-wheelhouse
 >cd $(ROOT) && docker compose up -d --build postgres backend frontend
 
 down:
@@ -105,13 +119,19 @@ backend-dev:
 >cd $(ROOT) && PYTHONPATH=$(ROOT)/backend $(VENV)/bin/uvicorn app.server:app --host 0.0.0.0 --port 8000
 
 install:
->cd $(ROOT) && python3 -m venv .venv
->cd $(ROOT) && $(PIP) install --upgrade pip setuptools wheel
->cd $(ROOT) && $(PIP) install -e ".[dev]"
+>@if [[ ! -x "$(PY)" ]] || [[ "$$($(PY) -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" != "3.13" ]]; then \
+		rm -rf "$(VENV)"; \
+		python3.13 -m venv "$(VENV)"; \
+	fi
+>cd $(ROOT) && $(PIP) install --require-hashes -r backend/requirements-dev.lock
+>cd $(ROOT) && $(PIP) install --no-build-isolation --no-deps -e .
 >cd $(ROOT) && $(PY) -c "import agent_framework; print('agent_framework import OK')"
 
 frontend-install:
->cd $(ROOT)/frontend && npm install
+>cd $(ROOT)/frontend && npm ci
+
+foundry-python-wheelhouse:
+>cd $(ROOT) && ./scripts/foundry/build_python_wheelhouse.sh
 
 db-reset:
 >cd $(ROOT) && $(PY) -m app.main db-reset
@@ -159,12 +179,31 @@ test-frontend:
 
 test-scripts:
 >cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_postgres_runtime_credentials.py
->cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_hosted_runtime_secret_contract.py scripts/foundry/tests/test_aggregate_release_evidence.py scripts/foundry/tests/test_release_authority.py
+>cd $(ROOT) && PYTHONPATH="$(ROOT)/backend" "$(PYTEST)" scripts/foundry/tests/test_hosted_runtime_secret_contract.py scripts/foundry/tests/test_hosted_deployment_contract.py scripts/foundry/tests/test_hosted_review_e2e.py scripts/foundry/tests/test_aggregate_release_evidence.py scripts/foundry/tests/test_release_authority.py
 >cd $(ROOT) && bash scripts/foundry/tests/test_runtime_secret_connection_contract.sh
 >cd $(ROOT) && bash scripts/foundry/tests/test_bootstrap_infrastructure_contract.sh
+>cd $(ROOT) && bash scripts/foundry/tests/test_bootstrap_hydration_contract.sh
+>cd $(ROOT) && bash scripts/foundry/tests/test_release_scripts_contract.sh
+>cd $(ROOT) && $(MAKE) test-capacity-preflight test-preview-safety test-foundry-activity-endpoint test-foundry-teams-publishing test-public-portability
 
 test-deployment-profile:
 >cd $(ROOT) && bash deployment/tests/test-profile.sh
+
+test-capacity-preflight:
+>cd $(ROOT) && python3 -m unittest discover -s scripts/foundry/tests -p 'test_capacity_preflight.py'
+
+test-preview-safety:
+>cd $(ROOT) && python3 -m unittest discover -s scripts/foundry/tests -p 'test_preview_safety.py'
+
+test-foundry-activity-endpoint:
+>cd $(ROOT) && python3 -m unittest discover -s scripts/foundry/tests -p 'test_activity_endpoint_reconciler.py'
+
+test-foundry-teams-publishing:
+>cd $(ROOT) && python3 -m unittest discover -s scripts/foundry/tests -p 'test_teams_publishing.py'
+>cd $(ROOT) && python3 -m unittest discover -s infra/foundry-hosted/iac/teams/tests -p 'test_teams_iac_contract.py'
+
+test-public-portability:
+>cd $(ROOT) && bash scripts/foundry/tests/test_public_portability_contract.sh
 
 test-e2e:
 >@if [[ -n "$${PLAYWRIGHT_BASE_URL:-}" ]]; then \
@@ -244,19 +283,20 @@ foundry-profile-apply:
 
 foundry-iac-build:
 >az bicep build --file infra/foundry-hosted/iac/main.bicep
+>az bicep build --file infra/foundry-hosted/iac/teams/main.bicep --stdout >/dev/null
 
-foundry-package:
+foundry-package: foundry-python-wheelhouse
 >./scripts/foundry/sync_hosted_source.sh
 >cd infra/foundry-hosted && azd package --no-prompt
 
-foundry-release-package:
+foundry-release-package: foundry-python-wheelhouse
 >./scripts/foundry/sync_hosted_source.sh
 >test -f backend/Dockerfile
 >test -f frontend/Dockerfile
 >test -f infra/foundry-hosted/agent/Dockerfile
 >test -f infra/foundry-hosted/agent/backend/foundry/main.py
 
-foundry-release-build:
+foundry-release-build: foundry-python-wheelhouse
 >./scripts/foundry/build_release_images.sh
 
 foundry-release-hosted-activate:
@@ -277,12 +317,34 @@ foundry-release-app-deploy:
 >(( status == 0 )) || exit 1; \
 >./scripts/foundry/verify_project_appinsights_connection.sh
 
-foundry-provision:
->./scripts/foundry/bootstrap_azd_env.sh
->./scripts/foundry/ensure_foundry_azd_defaults.sh
+foundry-release-rollback-baseline:
+>./scripts/foundry/capture_release_rollback_baseline.sh
+
+foundry-provision: foundry-provision-infrastructure foundry-provision-converge
+
+foundry-provision-infrastructure:
+>@test "$${FOUNDRY_FULL_INFRA_AUTHORIZED:-}" = "true" || { echo "Set FOUNDRY_FULL_INFRA_AUTHORIZED=true after reviewing the full infrastructure preview." >&2; exit 2; }
+>@set -euo pipefail; \
+	mode="$$(azd env get-value INFRASTRUCTURE_MODE --cwd infra/foundry-hosted --no-prompt)"; \
+	case "$$mode" in \
+		bootstrap) ./scripts/foundry/prepare_bootstrap_env.sh ;; \
+		reuse) ./scripts/foundry/bootstrap_azd_env.sh; ./scripts/foundry/ensure_foundry_azd_defaults.sh ;; \
+		*) echo "INFRASTRUCTURE_MODE must be bootstrap or reuse." >&2; exit 1 ;; \
+	esac
 >$(MAKE) foundry-iac-build
+>@set -euo pipefail; \
+	mode="$$(azd env get-value INFRASTRUCTURE_MODE --cwd infra/foundry-hosted --no-prompt)"; \
+	case "$$mode" in \
+		reuse) FOUNDRY_CAPACITY_MODE=full_infra ./scripts/foundry/preflight_foundry_model.sh ;; \
+		bootstrap) echo "Bootstrap mode retained; existing-resource capacity inventory is deferred until resources exist." ;; \
+		*) echo "INFRASTRUCTURE_MODE must be bootstrap or reuse." >&2; exit 1 ;; \
+	esac
 >cd infra/foundry-hosted && AZURE_DEV_USER_AGENT=microsoft_foundry_skill azd provision --no-prompt
 >FOUNDRY_BOOTSTRAP_HYDRATE=1 ./scripts/foundry/bootstrap_azd_env.sh
+
+foundry-provision-converge:
+>$(MAKE) foundry-postgres-credentials
+>$(MAKE) foundry-postgres-readiness
 
 foundry-postgres-rebuild:
 >./scripts/foundry/rebuild_postgres_server.sh "$(CONFIRM)"
@@ -290,7 +352,7 @@ foundry-postgres-rebuild:
 foundry-postgres-schema:
 >bash ./scripts/foundry/bootstrap_postgres_schema.sh
 
-foundry-postgres-credentials:
+foundry-postgres-credentials: foundry-postgres-schema
 >./scripts/foundry/provision_postgres_runtime_credentials.sh
 >$(MAKE) foundry-runtime-connection
 
@@ -299,6 +361,15 @@ foundry-postgres-readiness:
 
 foundry-model-preflight:
 >./scripts/foundry/preflight_foundry_model.sh
+
+foundry-capacity-preflight-full:
+>FOUNDRY_CAPACITY_MODE=full_infra ./scripts/foundry/preflight_foundry_model.sh
+
+foundry-provision-preview:
+>FOUNDRY_PREVIEW_MODE=full_infra FOUNDRY_DEPLOYMENT_PROFILE="$(FOUNDRY_DEPLOYMENT_PROFILE)" ./scripts/foundry/preview_public_infrastructure.sh
+
+foundry-reuse-preview:
+>FOUNDRY_PREVIEW_MODE=reuse FOUNDRY_DEPLOYMENT_PROFILE="$(FOUNDRY_DEPLOYMENT_PROFILE)" ./scripts/foundry/preview_public_infrastructure.sh
 
 foundry-runtime-connection:
 >./scripts/foundry/converge_runtime_secret_connection.sh
@@ -314,7 +385,7 @@ foundry-release-readiness:
 foundry-backend-deploy: foundry-release-readiness
 >$(MAKE) foundry-backend-deploy-ready
 
-foundry-backend-deploy-ready:
+foundry-backend-deploy-ready: foundry-python-wheelhouse
 >./scripts/foundry/deploy_public_backend.sh
 
 foundry-frontend-deploy: foundry-release-readiness
@@ -330,7 +401,7 @@ foundry-app-deploy:
 foundry-deploy: foundry-release-readiness
 >$(MAKE) foundry-deploy-ready
 
-foundry-deploy-ready:
+foundry-deploy-ready: foundry-python-wheelhouse
 >./scripts/foundry/deploy_hosted_container.sh
 
 foundry-release-deploy:
@@ -354,6 +425,9 @@ foundry-smoke:
 foundry-hosted-e2e:
 >./scripts/foundry/hosted_e2e.sh
 
+foundry-teams-native-acceptance:
+>$(PY) scripts/foundry/hosted_review_e2e.py --observation-started-at "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 foundry-eval:
 >AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/run_foundry_trace_eval.sh
 
@@ -366,11 +440,48 @@ foundry-telemetry:
 foundry-verify:
 >./scripts/foundry/verify_foundry_release.sh
 
+foundry-rollback-verify:
+>./scripts/foundry/verify_release_rollback.sh
+
 foundry-evidence:
 >@runtime_database_url="$$(cd infra/foundry-hosted && azd env get-value RUNTIME_DATABASE_URL --no-prompt)"; \
 >  test -n "$$runtime_database_url" || { echo "RUNTIME_DATABASE_URL is required for evidence secret validation." >&2; exit 1; }; \
 >  DATABASE_URL="$$runtime_database_url" RUNTIME_DATABASE_URL="$$runtime_database_url" \
 >  $(PY) ./scripts/foundry/aggregate_release_evidence.py
 
-foundry-release:
+foundry-activity-plan:
+>python3 ./scripts/foundry/reconcile_activity_endpoint.py plan --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-activity-apply:
+>python3 ./scripts/foundry/reconcile_activity_endpoint.py apply --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-activity-rollback:
+>python3 ./scripts/foundry/reconcile_activity_endpoint.py rollback --publish-scope "$(TEAMS_PUBLISH_SCOPE)"
+
+foundry-teams-plan:
+>python3 ./scripts/foundry/publish_teams_agent.py plan --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-preview:
+>python3 ./scripts/foundry/publish_teams_agent.py preview-bot --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-deploy-bot:
+>@test "$${FOUNDRY_FULL_INFRA_AUTHORIZED:-}" = "true" || { echo "Set FOUNDRY_FULL_INFRA_AUTHORIZED=true after reviewing the Teams what-if." >&2; exit 2; }
+>python3 ./scripts/foundry/publish_teams_agent.py deploy-bot --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-package:
+>python3 ./scripts/foundry/publish_teams_agent.py package --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-publish:
+>python3 ./scripts/foundry/publish_teams_agent.py publish --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-status:
+>python3 ./scripts/foundry/publish_teams_agent.py status --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-rollback-plan:
+>python3 ./scripts/foundry/publish_teams_agent.py rollback-plan --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-teams-rollback:
+>python3 ./scripts/foundry/publish_teams_agent.py rollback --manifest "$(TEAMS_PUBLICATION_MANIFEST)" $(TEAMS_PUBLICATION_ARGS)
+
+foundry-release: install frontend-install foundry-python-wheelhouse
 >AZURE_DEV_USER_AGENT=microsoft_foundry_skill ./scripts/foundry/deploy_public_dev.sh

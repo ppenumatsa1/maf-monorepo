@@ -6,10 +6,12 @@ import {
   getEvents,
   getRun,
   getRunHistory,
+  getReview,
   getState,
   streamRun,
   type AGUIEvent,
   type RunHistoryItem,
+  type ReviewProjection,
   type UnderwritingApplication,
   type WorkflowCheckpointRecord,
   type WorkflowEventRecord,
@@ -52,6 +54,7 @@ function App() {
   const [stateRows, setStateRows] = useState<WorkflowStateRow[]>([])
   const [events, setEvents] = useState<WorkflowEventRecord[]>([])
   const [checkpoints, setCheckpoints] = useState<WorkflowCheckpointRecord[]>([])
+  const [review, setReview] = useState<ReviewProjection | null>(null)
   const [history, setHistory] = useState<RunHistoryItem[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyOffset, setHistoryOffset] = useState(0)
@@ -107,6 +110,10 @@ function App() {
       status: item.status,
       created_at: item.created_at,
       updated_at: item.updated_at,
+      machine_recommendation: item.machine_recommendation,
+      reviewer_outcome: item.reviewer_outcome,
+      review_checkpoint_id: item.review_checkpoint_id,
+      review_status: item.review_status as WorkflowRunRecord['review_status'],
     }
   }
 
@@ -126,11 +133,12 @@ function App() {
   }, [historyOffset, historySearch, historyStatus])
 
   async function refreshRunData(targetRunId: string) {
-    const [run, state, ev, cp] = await Promise.all([
+    const [run, state, ev, cp, reviewProjection] = await Promise.all([
       getRun(targetRunId),
       getState(targetRunId),
       getEvents(targetRunId),
       getCheckpoints(targetRunId),
+      getReview(targetRunId),
     ])
     if (runIdRef.current && runIdRef.current !== targetRunId) {
       return
@@ -151,6 +159,7 @@ function App() {
           new Date(String(right.created_at ?? '')).getTime(),
       ),
     )
+    setReview(reviewProjection)
     const now = Date.now()
     setLastRunActivityAt(now)
     lastRunActivityAtRef.current = now
@@ -168,6 +177,7 @@ function App() {
     setStateRows([])
     setEvents([])
     setCheckpoints([])
+    setReview(null)
     try {
       await refreshRunData(item.workflow_run_id)
     } catch (err) {
@@ -263,6 +273,7 @@ function App() {
     setStateRows([])
     setEvents([])
     setCheckpoints([])
+    setReview(null)
     try {
       await runWithStream(targetRunId, 'start', runApplication)
       await refreshRunData(targetRunId)
@@ -466,6 +477,7 @@ function App() {
           stateRows={stateRows}
           events={events}
           checkpoints={checkpoints}
+          review={review}
         />
       </main>
     </div>

@@ -13,7 +13,15 @@ from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRe
 from app.maf.clients.foundry_maf_client import create_foundry_maf_client
 from app.maf.workflows.underwriting import build_underwriting_workflow
 from app.modules.underwriting import events as event_types
-from app.modules.underwriting.models import UnderwritingApplication, UnderwritingRunRequest
+from app.modules.underwriting.models import (
+    HumanReviewDecision,
+    HumanReviewRequest,
+    OriginChannel,
+    ReviewerOutcome,
+    ReviewerType,
+    UnderwritingApplication,
+    UnderwritingRunRequest,
+)
 
 
 class UnderwritingMafRunner:
@@ -44,6 +52,7 @@ class UnderwritingMafRunner:
         fail_risk_once: bool | None = None,
         fail_credit_randomly: bool | None = None,
         crash_after_executor: str | None = None,
+        origin_channel: OriginChannel = OriginChannel.API,
     ) -> tuple[str, list[Any]]:
         effective_settings = dataclasses.replace(
             self.base_settings,
@@ -75,6 +84,7 @@ class UnderwritingMafRunner:
             "underwriting-parent",
             application.application_id,
             application.applicant_name,
+            origin_channel=origin_channel,
         )
         self.repository.log_event(
             run_id,
@@ -104,6 +114,33 @@ class UnderwritingMafRunner:
                     )
                 )
                 outputs = result.get_outputs()
+            review_requests = result.get_request_info_events()
+            if review_requests:
+                if len(review_requests) != 1 or not isinstance(
+                    review_requests[0].data, HumanReviewRequest
+                ):
+                    raise RuntimeError("Workflow produced an unsupported external input request")
+                checkpoint_id = self.repository.latest_checkpoint_id(run_id)
+                if not checkpoint_id:
+                    raise RuntimeError("Review request did not produce a durable checkpoint")
+                request = review_requests[0]
+                self.repository.create_pending_approval(
+                    workflow_run_id=run_id,
+                    checkpoint_id=checkpoint_id,
+                    request_id=request.request_id,
+                )
+                self.repository.update_workflow_run_status(run_id, "PENDING_REVIEW")
+                self.repository.log_event(
+                    run_id,
+                    event_types.REVIEW_REQUESTED,
+                    "final_decision",
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "machine_recommendation": (request.data.machine_recommendation.value),
+                    },
+                )
+                return run_id, outputs
+
             self.repository.update_workflow_run_status(run_id, "COMPLETED")
             self.repository.log_event(
                 run_id,
@@ -128,6 +165,8 @@ class UnderwritingMafRunner:
             raise ValueError(f"run not found: {workflow_run_id}")
         if run.get("status") == "COMPLETED":
             raise ValueError(f"run is already COMPLETED: {workflow_run_id}")
+        if run.get("status") != "CRASHED":
+            raise ValueError(f"run is not eligible for checkpoint recovery: {workflow_run_id}")
 
         checkpoint_id = self.repository.latest_checkpoint_id(workflow_run_id)
         if not checkpoint_id:
@@ -160,4 +199,77 @@ class UnderwritingMafRunner:
             "main",
             {"output_count": len(outputs)},
         )
+        self.repository.log_event(
+            workflow_run_id,
+            event_types.WORKFLOW_COMPLETED,
+            "main",
+            {"output_count": len(outputs), "recovered_from_checkpoint": checkpoint_id},
+        )
         return outputs
+
+    async def decide_review(
+        self,
+        *,
+        workflow_run_id: str,
+        checkpoint_id: str,
+        outcome: ReviewerOutcome,
+        reviewer_id: str,
+        origin_channel: OriginChannel,
+        reviewer_type: ReviewerType = ReviewerType.HUMAN,
+    ) -> list[Any]:
+        claim = self.repository.claim_approval(
+            workflow_run_id=workflow_run_id,
+            checkpoint_id=checkpoint_id,
+            outcome=outcome,
+            reviewer_id=reviewer_id,
+            origin_channel=origin_channel,
+            reviewer_type=reviewer_type,
+        )
+        if claim.completed:
+            return []
+
+        try:
+            with workflow_stage_span(
+                "underwriting.review_resume",
+                {
+                    "workflow.run_id": workflow_run_id,
+                    "workflow.checkpoint_id": checkpoint_id,
+                    "workflow.review.outcome": outcome.value,
+                    "workflow.review.origin": origin_channel.value,
+                },
+            ):
+                workflow, checkpoint_storage, _ = self._build_workflow_components(
+                    self.base_settings
+                )
+                result = await workflow.run(
+                    checkpoint_id=checkpoint_id,
+                    checkpoint_storage=checkpoint_storage,
+                    responses={
+                        claim.request_id: HumanReviewDecision(
+                            workflow_run_id=workflow_run_id,
+                            checkpoint_id=checkpoint_id,
+                            outcome=outcome,
+                            origin_channel=origin_channel,
+                        )
+                    },
+                )
+                if result.get_request_info_events():
+                    raise RuntimeError("Review decision did not resolve the pending request")
+                outputs = result.get_outputs()
+            if not self.repository.finish_approval(claim):
+                raise RuntimeError("Review completion could not be persisted")
+            self.repository.update_workflow_run_status(workflow_run_id, "COMPLETED")
+            self.repository.log_event(
+                workflow_run_id,
+                event_types.WORKFLOW_COMPLETED,
+                "main",
+                {
+                    "output_count": len(outputs),
+                    "review_checkpoint_id": checkpoint_id,
+                },
+            )
+            return outputs
+        except Exception:
+            self.repository.release_approval(claim)
+            self.repository.update_workflow_run_status(workflow_run_id, "PENDING_REVIEW")
+            raise

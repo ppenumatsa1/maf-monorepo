@@ -1,0 +1,33 @@
+flowchart LR
+    subgraph BG[" "]
+        direction LR
+        subgraph Client["Public client boundary"]
+            Browser["Operator Browser"]
+        end
+
+        subgraph App["Application boundary"]
+            UI["React and Nginx Container App"]
+            API["Internal FastAPI Adapter"]
+        end
+
+        subgraph Hosted["Hosted execution boundary"]
+            Agent["Foundry Responses Hosted Agent"]
+        end
+
+        subgraph Data["Persistence boundary"]
+            DB[("PostgreSQL")]
+        end
+
+        Browser -->|HTTPS| UI
+        UI -->|same-origin HTTPS API| API
+        API -->|Responses start and resume| Agent
+        API -->|TLS read projections| DB
+        Agent -->|TLS read and write| DB
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a
+    style Client fill:#ffffff,stroke:#2563eb,color:#0f172a
+    style App fill:#ffffff,stroke:#2563eb,color:#0f172a
+    style Hosted fill:#ffffff,stroke:#2563eb,color:#0f172a
+    style Data fill:#ffffff,stroke:#2563eb,color:#0f172a

@@ -36,17 +36,23 @@ foundry-public/
   scripts/
     foundry/
   docs/
+    README.md
     manual-testing.md
     design/
+      functional-spec.md
+      business-rules.md
+      technical-spec.md
+      hitl-review.md
       architecture.md
+      architecture-decisions.md
       customer-questions-answers.md
       e2e-rubric.md
       engineering-operating-model.md
       implementation-phases.md
       issues-changes-fixes.md
-      prd.md
       projectstructure.md
       schema-io-telemetry.md
+      secure-foundry-agent-to-teams.md
       techstack.md
       userflow.md
 ```
@@ -57,8 +63,16 @@ foundry-public/
 - `backend/app/modules/underwriting/*`: domain and application service boundary.
 - `backend/app/maf/*`: workflow runtime internals (executors, tools, prompts, middleware, AG-UI adapters).
 - `backend/app/infrastructure/*`: persistence adapters and LLM/checkpoint integrations.
-- `backend/foundry/main.py`: hosted Responses workflow executor; owns the production MAF runner and PostgreSQL persistence connection.
+- `backend/foundry/main.py`: hosted Responses and additive Activity workflow
+  executor; owns the production MAF runner and PostgreSQL persistence
+  connection.
 - `frontend/src/*`: operator console orchestration, API/AG-UI client integration, and the CopilotKit selected-run assistant.
+- `docs/design/functional-spec.md`: product behavior and acceptance scope.
+- `docs/design/business-rules.md`: authoritative decision, review, privacy,
+  isolation, and evidence rules.
+- `docs/design/technical-spec.md`: runtime and implementation contract.
+- `docs/design/hitl-review.md`: referral-only pause and secure reviewer action
+  contract.
 - `docs/design/engineering-operating-model.md`: canonical release-governance contract.
 - `docs/design/issues-changes-fixes.md`: evidence ledger for hosted issues, changes, fixes, and readiness claims.
 
@@ -71,4 +85,7 @@ Route -> adapter -> hosted workflow/infrastructure flow only. The public service
 - Do not reintroduce a second public-lane workflow engine in the adapter.
 - Do not add a shadow checkpoint or history store outside PostgreSQL.
 - Do not add direct browser-to-Foundry surfaces.
+- Do not merge machine recommendation and reviewer outcome.
+- Do not allow free-form or cross-channel approval decisions.
+- Do not expose underwriting data in Adaptive Cards or assistant projections.
 - Fix hosted/runtime issues at the boundary that owns them rather than masking them with compatibility layers.

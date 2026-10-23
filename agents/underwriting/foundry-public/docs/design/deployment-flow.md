@@ -1,233 +1,222 @@
 # Underwriting Foundry Public Deployment Flow
 
-## Current design
+## Purpose
 
-The browser lane is public from creation; the application backend is private
-to the Container Apps environment:
+Define the portable deployment, publication, verification, and rollback flow
+for the public Underwriting lane. Concrete subscription, tenant, resource,
+region, endpoint, release, version, count, and timing values belong only in the
+operator environment, deployment plan, and dated delivery ledger.
 
-- Azure operations run from a locally authenticated operator environment.
-- The canonical target is subscription
-  `7df95e88-701c-4693-af77-3159f83b558d`, resource group
-  `rg-maf-underwriting`, in `eastus2`.
-- Bicep `bootstrap` mode creates the complete lane; `reuse` mode resolves
-  existing resources and creates no resources or role assignments.
-- PostgreSQL public access remains enabled with the Azure-services and
-  operator-IP firewall rules required by the deployment contract.
-- Database schema creation and runtime credential provisioning are explicit
-  administrator operations. Production sets
-  `DB_SCHEMA_MANAGED_EXTERNALLY=true`; runtime startup validates schema parity
-  but emits no table, column, or index DDL.
-- The backend and hosted agent use the least-privilege
-  `underwriting_runtime` PostgreSQL role over TLS.
-- The hosted PostgreSQL URL is stored in the project-scoped
-  `underwritingruntimesecrets` `CustomKeys` connection. Hosted agent
-  `DATABASE_URL` and `RUNTIME_DATABASE_URL` metadata contain only the Foundry
-  connection placeholder.
-- Routine releases are hard-enforced as `app_only`, reject
-  `FOUNDRY_DEPLOY_MODE`, and do not invoke `azd provision`.
-- The external frontend owns an Underwriting-local Nginx `/api` proxy to the
-  internal backend FQDN. Browser and hosted Playwright requests remain
-  same-origin; `/backend-health` verifies the private hop.
-- The internal backend adapter relays hosted start and resume operations and
-  exposes durable read models.
-- There are no customer-managed networking, private-runner, or capability-host
-  resources.
+## Runtime topology
 
-## Deployment stages
+- External React/Nginx Container App with public ingress.
+- Internal FastAPI Container App reached through the frontend's same-origin
+  proxy.
+- Public Foundry hosted agent with Responses and, when Teams is enabled,
+  Activity in the same process.
+- PostgreSQL with the approved public TLS/firewall posture.
+- Application Insights for correlated runtime and evaluation evidence.
+- Azure Bot Service plus `MsTeamsChannel` for Shared Teams publication.
 
-The flow is grouped into four phases and 14 clear stages.
+This lane does not create private-runner, VNet, private endpoint, private DNS,
+Bastion, or NAT resources.
+
+## Profile and authority
+
+An operator-owned external profile selects:
+
+- contract version;
+- `foundry-public` lane;
+- local AZD environment;
+- subscription;
+- resource group;
+- region;
+- portable name prefix.
+
+The profile contains no secrets, endpoints, generated names, resource IDs,
+image references, operator addresses, publication state, or evidence.
+
+GitHub Actions owns automatic credential-free CI and protected OIDC workflows
+for preview/provision, app-only deploy, package validation, observability, and
+evidence retry. Microsoft 365 Shared publication remains an interactive
+publisher operation.
+
+## Deployment phases
 
 ### Phase 1: Validate and authorize
 
-| Step | Stage | Outcome |
-| ---: | --- | --- |
-| 1 | Profile selection | Loads the secret-free public profile and resolves the subscription, resource group, location, AZD environment, and name prefix. Generated names, endpoints, resource IDs, image tags, and credentials remain outside the profile. |
-| 2 | Source validation | Runs the change-aware quick or full validation lane, including applicable backend, frontend, browser, script, profile, AZD packaging, formatting, and Bicep checks. |
-| 3 | Local deployment authentication | Validates Azure CLI and AZD authentication, selects the intended subscription and local AZD environment, and hydrates the retained non-secret resource outputs. |
-| 4 | Infrastructure preview | Reviews bootstrap creation or non-mutating reuse. Bootstrap must contain only the expected public-lane resources; reuse must skip existing resources and must not replace PostgreSQL or mutate retained state. |
+| Stage | Outcome |
+| --- | --- |
+| Profile selection | Applies the external non-secret profile and fails closed on missing or mismatched values. |
+| Source validation | Runs applicable backend, frontend, browser, script, profile, packaging, formatting, and Bicep checks. |
+| Authentication | Verifies Azure CLI and AZD context against the selected profile. |
+| Preview | Reviews bootstrap/reconciliation changes before mutation. Reuse/app-only operation must not hide infrastructure drift. |
 
-### Phase 2: Provision the public platform
+### Phase 2: Bootstrap the public platform
 
-| Step | Stage | Outcome |
-| ---: | --- | --- |
-| 5 | Base public infrastructure | Creates the Foundry account/project and parameterized `gpt-4.1-mini` deployment; ACR; Log Analytics; Application Insights; Container Apps environment and placeholder apps; backend/frontend managed identities; PostgreSQL; evaluation storage; and resource-scoped RBAC. |
-| 6 | Database bootstrap and readiness | The administrator creates or reconciles the canonical schema, creates `underwriting_runtime`, and grants only required runtime access. Readiness verifies the TLS URL, canonical hostname, password credential, dual authentication, database existence, Azure-services firewall rule, complete table/column/index parity, external-schema mode, and denied runtime DDL/role creation. |
-| 7 | Foundry connections | Creates the Application Insights, evaluation-artifacts storage, and runtime-storage connections required by the public project. This lane does not configure Cosmos DB, AI Search, or a capability host. |
+| Stage | Outcome |
+| --- | --- |
+| Base infrastructure | Creates the public Foundry, registry, monitoring, Container Apps, identities, PostgreSQL, and evaluation resources defined by Bicep. |
+| Database administration | Applies the canonical schema and least-privilege runtime credential. Runtime applications receive no DDL authority. |
+| Project connections | Converges monitoring, evaluation storage, and the project `CustomKeys` runtime database connection. |
+| Readiness | Verifies PostgreSQL, model deployment/capacity, identities, connections, and expected public topology. |
 
-### Phase 3: Deploy the application
+Bootstrap is explicit. A routine application release must not run this phase.
 
-| Step | Stage | Outcome |
-| ---: | --- | --- |
-| 8 | Shared release readiness | Runs PostgreSQL/schema readiness once, performs a read-only model deployment/SKU/capacity/regional-quota preflight, and idempotently converges the project `CustomKeys` runtime-secret connection by streaming the secure Bicep parameters to Azure CLI over stdin. The preflight never edits a live `GlobalStandard` deployment. |
-| 9 | Immutable image build | Synchronizes the canonical hosted source, validates all three Docker contexts, builds backend and hosted-agent images concurrently in ACR, builds the frontend concurrently with local Docker, resolves all three digests, and writes release-local image inputs. |
-| 10 | Hosted-agent then ACA deployment | Activates the hosted agent from its prebuilt digest, converges RBAC, and persists the active agent name/version/Responses endpoint. It then deploys the digest-pinned internal backend and external frontend concurrently. Routine releases require the existing frontend-external/backend-internal topology and do not repeat ingress mutations. |
+### Phase 3: App-only release
 
-### Phase 4: Prove the release
+| Stage | Outcome |
+| --- | --- |
+| Rollback baseline | Captures the active hosted version and current backend/frontend revisions before app-only mutation. |
+| Package and immutable build | Recreates the Python 3.13 hash-verified wheelhouse from the lock and produces immutable backend, frontend, and hosted-agent artifacts independent of ignored developer state. |
+| Hosted activation | Activates and persists the exact hosted digest/version through the current Azure AI Projects API before backend deployment. |
+| Application deployment | Deploys the internal backend and external frontend without changing ingress topology. |
+| Smoke and recovery E2E | Proves hosted invocation, four-way fan-in, retry, crash/resume, referral pause/resume, and idempotency. |
+| Evaluation and telemetry | Enforces configured evaluator results and correlates safe web/Responses/Activity/workflow/review signals. |
+| Verification and evidence | Verifies topology, exact images, hosted metadata, schema mode, runtime connection placeholder, preserved rollback versions/revisions, and release-local evidence integrity. |
 
-| Step | Stage | Outcome |
-| ---: | --- | --- |
-| 11 | Hosted smoke | Invokes the active Responses endpoint after the ordered deployment and proves the runtime can resolve its project connection and complete the selected smoke scenario. |
-| 12 | Recovery E2E | Uses only the frontend origin to run distinct happy, retry, and `medical_check` crash scenarios, verifies checkpoint resume, four-way fan-in, and idempotency-skip visibility, then runs deployed Playwright through the same `/api` proxy. |
-| 13 | Telemetry and evaluation | Correlates all fresh `workflow_run_id` values across internal-adapter requests, hosted Foundry invocation dependencies, workflow spans, and exceptions. Conversation evaluation uses the supported Task Completion and Coherence evaluators. |
-| 14 | Deployment verification and final evidence | Confirms ACA ready revisions/images, frontend-external/backend-internal ingress, same-origin frontend/backend health and API, direct-backend public denial, hosted version/image, Application Insights connection, external-schema mode, and the exact runtime connection placeholder. It then aggregates verification, smoke, E2E, telemetry, and evaluation artifacts into one machine-readable release window. |
+Routine mode is always app-only. A deployment-mode override must fail rather
+than silently invoking provisioning.
+
+### Phase 4: Teams Shared publication
+
+Teams publication is separate from routine application deployment:
+
+| Stage | Outcome |
+| --- | --- |
+| Activity plan | Merge-preserving plan retains Responses and Entra and adds Activity plus `BotServiceRbac`. |
+| Bot/Teams preview | Reviews Azure Bot Service and `MsTeamsChannel` changes without private-network additions. |
+| Bot/Teams apply | Deploys the reviewed channel resources. |
+| Package | Generates and inspects a sanitized Microsoft 365 package. |
+| Shared publish | An interactive publisher publishes an explicit Shared app version. |
+| Acceptance | Verifies authorized invocation, referral card, approve/decline, typed-text blocking, replay/expiry/concurrency, reviewer/conversation isolation, privacy, telemetry, and rollback. |
+
+Tenant-wide publication is not the target.
 
 ## Command mapping
 
-| Command or operation | Stages | Purpose |
-| --- | --- | --- |
-| `make foundry-profile-apply` | 1 | Applies a secret-free bootstrap or reuse target profile. |
-| `make validate-quick` / `make validate-full` | 2 | Runs the validation lane selected by the deployment router. |
-| `make foundry-bootstrap` | 3 | Selects and hydrates an existing reuse environment without provisioning. |
-| `azd provision --preview --no-prompt` | 4 | Reviews a bootstrap or reuse plan without applying the deployment. |
-| `make foundry-provision` | 3-5, 7 | Creates bootstrap infrastructure or performs template-defined non-mutating reuse, then hydrates outputs. |
-| `make foundry-postgres-schema` | 6 | Applies the administrator-owned canonical schema. |
-| `make foundry-postgres-credentials` | 6 | Creates or rotates the least-privilege runtime credential. |
-| `make foundry-postgres-readiness` | 6 | Validates PostgreSQL and the runtime permission boundary before deployment. |
-| `make foundry-package` | 9 | Runs the full standalone AZD package path when explicitly requested. |
-| `make foundry-release-package` | 9 | Synchronizes and validates the three release contexts without rebuilding images. |
-| `make foundry-release-build` | 9 | Builds all three immutable images concurrently and records their digests in the current release directory. |
-| `make foundry-release-hosted-activate` | 10 | Activates the hosted agent from the prebuilt digest and persists its exact version. |
-| `make foundry-release-app-deploy` | 10 | Deploys the prebuilt backend and frontend digests concurrently without mutating ingress topology. |
-| `make foundry-model-preflight` | 8 | Verifies the existing model deployment and regional quota without changing SKU or capacity. |
-| `make foundry-runtime-connection` | 8 | Converges the deterministic project `CustomKeys` connection using an in-memory stdin parameter stream; the runtime URL is not written to disk or command arguments. |
-| `make foundry-release-readiness` | 6, 8 | Runs the one shared readiness gate before packaging and ordered deployment. |
-| `make foundry-postgres-rebuild CONFIRM=REBUILD-<server>` | 5-6 | Explicitly rebuilds only the selected PostgreSQL server after server-specific confirmation; it is not part of a routine release. |
-| `make foundry-release` | 2-3, 8-14 | Runs the authenticated app-only release DAG. |
-| `make foundry-backend-internalize CONFIRM=INTERNALIZE-<backend>` | One-time migration | Validates the canonical target, deploys and verifies the proxy frontend, changes backend ingress to internal, and proves direct public denial. It has no public-ingress toggle. |
-| `make foundry-verify` / `make foundry-evidence` | 14 | Verifies the deployed contract and emits/aggregates secret-free JSON evidence. |
+Commands currently defined by the project Makefile include:
 
-## Release paths
-
-### Fresh bootstrap
-
-Run all 14 stages:
-
-1. Apply the bootstrap profile and prepare the non-secret AZD inputs.
-2. Validate the source and review the bootstrap preview.
-3. Provision the public platform and hydrate the resulting outputs.
-4. Apply the PostgreSQL schema, create the runtime credential, and pass
-   readiness.
-5. Validate all service contexts, build the three immutable images
-   concurrently, and persist their digests in the release directory.
-6. Activate and persist hosted-agent metadata, then deploy backend and
-   frontend concurrently.
-7. Run smoke, hosted recovery E2E, telemetry correlation, and evaluation.
-8. Verify the exact deployment contract and aggregate final evidence.
-
-### Routine app-only release
-
-Do not reconcile infrastructure:
-
-1. Apply the reuse profile and hydrate the retained AZD environment.
-2. Run the selected validation lane and compile Bicep.
-3. Run the single database/model/runtime-connection readiness gate.
-4. Validate the service contexts and build all three immutable images
-   concurrently.
-5. Activate and persist the hosted-agent version from its prebuilt digest,
-   then deploy the digest-pinned backend and frontend concurrently.
-6. Verify the Application Insights connection and run the selected smoke mode.
-7. Run hosted recovery E2E, telemetry correlation, and evaluation.
-8. Verify the exact deployment contract and aggregate final evidence.
-
-`make foundry-release` accepts only the app-only route. Full provisioning and
-the guarded PostgreSQL rebuild remain explicit, separate operations.
-`FOUNDRY_DEPLOY_MODE` is rejected rather than treated as an override.
-
-## Measured app-only timing
-
-Release `uw-public-51a8311-20260816140654` from commit `51a8311` reached
-telemetry in **14m 10.0s**, 50.0 seconds inside the 15-minute budget. Compared
-with the prior complete 18m 07.4s run, the two-phase build/activation flow
-saved **3m 57.5s** without removing smoke, recovery E2E, evaluation, or
-telemetry coverage.
-
-| Stage | Duration |
-| --- | ---: |
-| Package/context validation | 0.1s |
-| Concurrent immutable image build | 4m 52.5s |
-| Hosted-agent activation and RBAC | 2m 08.3s |
-| Concurrent backend/frontend ACA deployment | 3m 00.9s |
-| Smoke | 53.4s |
-| Recovery E2E | 2m 28.3s |
-| Evaluation, overlapped with E2E | 1m 50.1s |
-| Telemetry | 46.2s |
-| **App-only to telemetry** | **14m 10.0s** |
-| Post-telemetry deployment verification | 2m 32.5s |
-| Final evidence aggregation | 0.3s |
-
-The deployment sequence is intentionally two-phase: build all immutable
-artifacts first, activate the exact hosted digest second, and only then deploy
-the backend that references the newly persisted hosted version. Backend and
-frontend deployment remain parallel. This avoids both ACR queue serialization
-and a race in which the backend could retain the previous hosted-agent version.
-
-## Four-lane app-only benchmark
-
-These are the latest verified lane-local release records. They were measured
-independently rather than as one simultaneous execution; if launched together,
-the critical wall-clock bound is the slowest lane, **14m 10.0s**.
-
-| Lane | App-only to telemetry | 15-minute result | Earlier baseline | Improvement |
-| --- | ---: | --- | ---: | ---: |
-| Order Resolution - Azure Hosted | 13m 24.6s | Passed | Not directly comparable | - |
-| Order Resolution - Foundry Public | 14m 01.1s | Passed | 16m 22.1s | 2m 21.0s |
-| Order Resolution - Foundry Private | 6m 36.8s | Passed | 8m 43.0s | 2m 06.2s |
-| Underwriting - Foundry Public | 14m 10.0s | Passed | 18m 07.4s | 3m 57.5s |
-| **Aggregate / average** | **48m 12.5s / 12m 03.1s** | **4/4 passed** | - | - |
-
-### One-time migration for an existing public backend
-
-Before the first standardized routine release against a legacy environment:
-
-```bash
-make foundry-backend-internalize \
-  CONFIRM=INTERNALIZE-$(cd infra/foundry-hosted && azd env get-value BACKEND_CONTAINER_APP_NAME)
-```
-
-The command is idempotent when ingress is already internal. It refuses a
-non-canonical target, verifies the proxy-capable frontend before changing
-ingress, and never provides a path to make the backend public again.
-
-## PostgreSQL security boundary
-
-| Identity | Allowed | Denied |
-| --- | --- | --- |
-| PostgreSQL administrator | Create or reconcile schema objects and create or rotate `underwriting_runtime` from the approved operator address. | Use as an application runtime credential. |
-| `underwriting_runtime` | Database connection, schema usage, required table DML, and required sequence usage for checkpoints, workflow projections, results, and idempotency records. | DDL, role creation, schema ownership, broad `CREATE`, and administrator privileges. |
-| Backend | Consumes the TLS runtime URL through an ACA secret and validates the externally managed schema at startup. | Receive the administrator URL, acquire schema-owner privileges, or execute runtime DDL. |
-| Hosted agent | Resolves the TLS runtime URL from the project `CustomKeys` connection placeholder at runtime. | Store the resolved URL in agent definition metadata or expose it through verification evidence. |
-
-## Private-only stages not used
-
-| Private-lane stage | Public-lane treatment |
+| Command | Purpose |
 | --- | --- |
-| VNet, NAT, private DNS, and private endpoints | Not created. The public lane uses controlled public service endpoints. |
-| Private runner VM, NSG, and Bastion | Not created. Authenticated operations run from the operator workstation. |
-| GitHub OIDC deployment identity | Not used for Azure mutation. Deployment is an authenticated local operation. |
-| Cosmos DB, AI Search, and capability host | Not configured. The public lane uses monitoring and storage connections plus the project-scoped `underwritingruntimesecrets` `CustomKeys` connection for hosted database resolution. |
-| Private connectivity proof and PostgreSQL lockdown | Not applicable. Public readiness validates the intended TLS and firewall posture without a later lockdown mutation. |
+| `make foundry-profile-apply FOUNDRY_DEPLOYMENT_PROFILE=<path>` | Apply the external target profile. |
+| `make validate-quick` / `make validate-full` | Run local validation lanes. |
+| `make foundry-bootstrap` | Hydrate an existing AZD environment from selected resources. |
+| `make foundry-bootstrap-env` | Prepare derived bootstrap inputs. |
+| `make foundry-iac-build` | Compile the public Bicep source. |
+| `azd provision --preview --no-prompt` | Preview infrastructure changes. |
+| `make foundry-provision` | Apply approved infrastructure, hydrate outputs after creation, migrate schema, converge runtime access, and verify PostgreSQL readiness. |
+| `make foundry-provision-infrastructure` | Protected workflow stage that applies approved Bicep and hydrates only after resources exist. |
+| `make foundry-provision-converge` | Protected workflow stage that migrates schema, converges runtime credentials/grants and the project connection, then verifies readiness. |
+| `make foundry-postgres-schema` | Apply administrator-owned schema. |
+| `make foundry-postgres-credentials` | Provision or rotate the runtime credential and converge its connection. |
+| `make foundry-postgres-readiness` | Verify public PostgreSQL and least privilege. |
+| `make foundry-model-preflight` | Verify model deployment, SKU, capacity, and regional quota without mutation. |
+| `make foundry-capacity-preflight-full` | Verify incremental full-infrastructure capacity before bootstrap. |
+| `make foundry-reuse-preview` | Require a zero-change reuse preview. |
+| `make foundry-provision-preview` | Preview and validate full infrastructure changes. |
+| `make foundry-release-readiness` | Run the shared database/model/connection readiness gate. |
+| `make foundry-release` | Run the authenticated app-only release orchestration. |
+| `make foundry-smoke` | Run hosted smoke. |
+| `make foundry-hosted-e2e` | Run hosted API and deployed browser E2E. |
+| `make foundry-eval` | Run report-only Foundry trace evaluation. |
+| `make foundry-telemetry` | Verify Application Insights correlation. |
+| `make foundry-verify` | Verify deployed topology and runtime contracts. |
+| `make foundry-rollback-verify` | Verify the prior hosted version and Container App revisions remain available with their original images. |
+| `make foundry-evidence` | Aggregate secret-free release-local evidence. |
+| `make foundry-activity-plan` / `apply` / `rollback` | Manage merge-preserving Activity endpoint state. |
+| `make foundry-teams-plan` / `preview` / `deploy-bot` | Validate and deploy Bot/Teams channel state. |
+| `make foundry-teams-package` / `publish` / `status` | Verify already-applied Activity state without mutation, then generate, publish, and inspect the Shared Teams app. |
+| `make foundry-teams-rollback-plan` / `rollback` | Review and execute Activity-only automation; Shared catalog and Bot completion remain recorded external steps. |
+
+Protected workflow mapping:
+
+| Workflow | Ownership |
+| --- | --- |
+| `underwriting-public-ci.yml` | Automatic credential-free CI |
+| `underwriting-public-provision.yml` | Protected OIDC preview/provision |
+| `underwriting-public-deploy.yml` | Protected OIDC app-only release |
+| `underwriting-public-package-validation.yml` | Protected authenticated package validation |
+| `underwriting-public-observability.yml` | Protected hosted E2E/evaluation/telemetry |
+| `underwriting-public-evidence.yml` | Protected evidence retry |
+
+All protected mutation/observability workflows serialize on the same release
+concurrency group. Shared Microsoft 365 publication is deliberately excluded
+because it requires delegated interactive user authentication.
+
+## Clean bootstrap
+
+1. Create and secure the external profile.
+2. Apply the profile and verify authenticated context.
+3. Run full source validation and Bicep compilation.
+4. Run `make foundry-provision-preview` or dispatch the protected preview
+   workflow.
+5. Stop on unexpected create/delete/replace/network/RBAC/scaling/stateful
+   mutation.
+6. Run the protected provision workflow or explicitly authorize
+   `FOUNDRY_FULL_INFRA_AUTHORIZED=true make foundry-provision`; both separate
+   the Bicep apply from post-resource schema, runtime credential/grant, runtime
+   connection, and PostgreSQL readiness convergence.
+7. Pass model readiness.
+8. Run the app-only release.
+9. If Teams is in scope, run the separate Shared publication phase.
+10. Record fresh proof in the ledger.
+
+## Routine app-only release
+
+1. Apply the external reuse profile and hydrate AZD state.
+2. Run the selected validation lane.
+3. Run one shared readiness gate.
+4. Capture the pre-release rollback baseline.
+5. Rebuild the wheelhouse and immutable artifacts.
+6. Activate and persist the hosted version.
+7. Deploy backend and frontend without infrastructure reconciliation.
+8. Run smoke, E2E, evaluation, telemetry, deployment verification, rollback
+   verification, and evidence aggregation.
+9. Record outcomes in the ledger.
+
+## Rollback
+
+### Application
+
+- Preserve failed-release evidence.
+- Restore the previous verified hosted version before restoring the backend
+  that references it.
+- Restore previous backend/frontend digests without changing ingress.
+- Require pre-release and post-release evidence that the prior hosted version
+  and exact Container App revisions still exist before declaring rollback
+  ready.
+- Re-run smoke, referral/HITL acceptance, telemetry, topology verification,
+  and evidence.
+- Do not drop review schema or data as an automatic rollback step.
+
+### Teams
+
+- Stop distribution/publication.
+- Remove or supersede the Microsoft 365 catalog version through the supported
+  publisher process.
+- Remove Activity and Bot authorization with merge-preserving rollback that
+  leaves Responses and Entra intact.
+- Verify the web/Responses lane and replay protection.
 
 ## Stop conditions
 
-Stop the release if:
+Stop if:
 
-- the selected subscription, resource group, location, or AZD environment does
-  not match the applied public profile;
-- bootstrap preview contains unexpected resources, deletion, replacement, or
-  stateful mutation;
-- reuse preview proposes resource or role-assignment creation;
-- PostgreSQL TLS, hostname, firewall, schema, runtime connectivity, or
-  least-privilege checks fail;
-- the backend and hosted agent do not use the same runtime database URL or
-  `DB_SCHEMA_MANAGED_EXTERNALLY=true`;
-- packaging, ACR build, ACA deployment, hosted-agent activation, hosted-agent
-  RBAC, project Application Insights connection, or smoke fails;
-- frontend-external/backend-internal ingress, same-origin health/API, or direct
-  backend public-denial verification fails;
-- the happy path, injected retry, `medical_check` crash, checkpoint, resume,
-  four-way fan-in, idempotency-skip, or deployed Playwright checks fail;
-- telemetry cannot correlate all three fresh workflow runs across the required
-  request, dependency, and workflow signals;
-- Task Completion or Coherence fails the configured
-  threshold or returns an errored row; or
-- evidence is stale or spans multiple release windows.
+- authenticated context differs from the external profile;
+- preview contains unreviewed infrastructure mutation;
+- reuse/app-only work proposes stateful resource creation or replacement;
+- PostgreSQL schema, TLS, firewall, credential, or least-privilege checks fail;
+- model/capacity preflight fails;
+- hosted metadata contains a resolved database URL;
+- the backend becomes publicly reachable;
+- immutable image, hosted activation, smoke, E2E, evaluation, telemetry, or
+  evidence integrity fails;
+- only a partial set of direct checks is present at decision time;
+- a non-referral recommendation pauses;
+- machine recommendation is overwritten by reviewer outcome;
+- Adaptive Card privacy, token binding, replay, expiry, concurrency,
+  cross-channel, or reviewer/conversation isolation fails;
+- Shared publication is replaced with Tenant publication; or
+- evidence is stale, mixed across release windows, or contains sensitive
+  values.

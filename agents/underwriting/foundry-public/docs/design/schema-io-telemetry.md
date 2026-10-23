@@ -1,8 +1,14 @@
-# Schema, IO, and Telemetry
+# Schema, I/O, and Telemetry
 
-## Stable API I/O contracts
+## Data handling rule
 
-### Start Run
+Examples use placeholders only. Do not place real applicant, customer,
+policyholder, reviewer, tenant, resource, endpoint, credential, or token data
+in documentation, tests, cards, telemetry, or release evidence.
+
+## Stable web API contracts
+
+### Start run
 
 - Method/path: `POST /api/v1/underwriting/runs`
 - Request shape:
@@ -10,46 +16,43 @@
 ```json
 {
   "application": {
-    "application_id": "UW-1001",
-    "applicant_name": "Asha Patel",
-    "age": 42,
-    "income": 125000,
-    "requested_coverage": 500000,
-    "health_disclosures": "none",
-    "driving_history": "minor-violation-2022",
-    "credit_score": 742
+    "application_id": "<synthetic-application-id>",
+    "applicant_name": "<synthetic-display-value>",
+    "age": 0,
+    "income": 0,
+    "requested_coverage": 0,
+    "health_disclosures": "<synthetic-category>",
+    "driving_history": "<synthetic-category>",
+    "credit_score": 0
   },
-  "workflow_run_id": "optional-run-id",
+  "workflow_run_id": "<optional-run-id>",
   "fail_risk_once": false,
   "fail_credit_randomly": false,
-  "crash_after_executor": "optional"
+  "crash_after_executor": "<optional-executor>"
 }
 ```
+
+Application fields are required workflow input but are sensitive. They must
+not appear in Adaptive Cards, selected-run assistant projections, Responses
+metadata, or content-safe telemetry.
 
 - Response shape:
 
 ```json
 {
-  "workflow_run_id": "run-1234abcd",
-  "status": "COMPLETED",
+  "workflow_run_id": "<run-id>",
+  "status": "<status>",
   "outputs": []
 }
 ```
 
-### Resume Run
+### Resume run
 
 - Method/path: `POST /api/v1/underwriting/runs/{run_id}/resume`
-- Response shape:
+- The resume request must be authorized for the checkpoint's trusted origin.
+- Free-form text is not a reviewer decision.
 
-```json
-{
-  "workflow_run_id": "run-1234abcd",
-  "status": "COMPLETED",
-  "outputs": []
-}
-```
-
-### Run History and Read Models
+### Durable read models
 
 - `GET /api/v1/underwriting/runs?search=&status=&limit=&offset=`
 - `GET /api/v1/underwriting/runs/{run_id}`
@@ -57,140 +60,150 @@
 - `GET /api/v1/underwriting/runs/{run_id}/events`
 - `GET /api/v1/underwriting/runs/{run_id}/checkpoints`
 
-## AG-UI stream contract
+Read models should expose machine recommendation and reviewer outcome as
+different fields.
 
-- Method/path: `POST /api/v1/underwriting/ag-ui`
-- Content type: `text/event-stream`
-- Usage: stream progress events for start/resume actions while durable run/state/events/checkpoints endpoints remain the source of truth for refresh and replay.
+## AG-UI and CopilotKit
 
-## CopilotKit contract
+- AG-UI: `POST /api/v1/underwriting/ag-ui`
+- CopilotKit discovery and selected-run execution routes live under
+  `/api/v1/underwriting/copilotkit`.
+- These surfaces are additive projections, not workflow authority.
+- Allowlisted data:
+  - selected run ID;
+  - normalized status;
+  - safe event and executor labels/timestamps;
+  - checkpoint count/timestamp;
+  - categorical machine recommendation;
+  - categorical reviewer outcome.
+- Prohibited data:
+  - application/applicant fields;
+  - raw checks or score breakdown;
+  - prompts, rationale, and model output;
+  - checkpoint payloads;
+  - Adaptive Card token material;
+  - database values, endpoints, credentials, and secrets.
 
-- Runtime discovery: `GET /api/v1/underwriting/copilotkit/info`
-- Run route:
-  `POST /api/v1/underwriting/copilotkit/agent/underwriting-run-assistant/run`
-- The browser uses relative `/api` paths on the frontend origin. The
-  Underwriting Nginx container proxies those paths to the internal backend
-  FQDN; no backend URL is baked into the browser bundle.
-- `/backend-health` is the same-origin verification path for backend health.
-  CORS remains defense in depth; no browser credential or direct Foundry
-  request is used.
-- The bridge sends only a selected run ID, normalized status, safe event names, safe executor names/timestamps, checkpoint counts/timestamps, and a categorical final decision. It excludes application, applicant, health, credit, income, prompts, raw model output, checkpoint payloads, and secrets.
+## Hosted protocol contract
 
-## No-shims contract rules
+### Responses
 
-- Browser traffic stays on the external frontend's same-origin proxy contract
-  above.
-- The internal backend adapter starts or resumes hosted Responses work; it
-  must not grow a second production orchestration contract.
-- Durable reads for refresh/replay/assistant explanation come from PostgreSQL-backed projections.
-- Local-only validation settings must not leak into deployed public-lane behavior.
-- Resume accepts only checkpoints produced by the deployed master direct-executor graph. Version-40 nested-graph checkpoints are unsupported after deployment; no compatibility workflow or fallback exists.
-
-## Database surfaces
-
-Production backend and hosted-agent environments set
-`DB_SCHEMA_MANAGED_EXTERNALLY=true`. `init_db` then performs read-only
-table/column/index parity validation and fails startup when required objects are
-missing. Only the explicit administrator schema command may emit
-`CREATE TABLE`, `ALTER TABLE`, or index DDL. Local and test defaults retain
-automatic schema creation/migration.
-
-### Hosted runtime secret contract
-
-- The deterministic Foundry project connection is
-  `underwritingruntimesecrets`, category/auth type `CustomKeys`.
-- Its `database_url` key contains the least-privilege TLS runtime URL.
-- Hosted agent `DATABASE_URL` and `RUNTIME_DATABASE_URL` values are both the
-  literal placeholder
-  `${{connections.underwritingruntimesecrets.credentials.database_url}}`.
-- Agent metadata verification compares that literal placeholder only. It never
-  requests or compares the resolved password-bearing value.
-- PostgreSQL readiness and hosted smoke are the connectivity proof after
-  Foundry resolves the connection.
-
-- `maf_checkpoints`: MAF checkpoint payloads used for workflow resume.
-- `workflow_runs`: run lifecycle summary and status.
-- `business_state`: projected incremental state.
-- `workflow_events`: append-only execution timeline.
-- `underwriting_results`: final decision outputs.
-- `idempotency_records`: replay and duplicate-side-effect protection.
-
-## Telemetry conventions
-
-- HTTP middleware adds request IDs and `SERVER` OpenTelemetry spans to mutation/dispatch endpoints. Health, CORS preflight, and read-model polling requests remain logged but do not create application-owned Application Insights Request telemetry.
-- Key span namespace is `HTTP <method> <path>` with attributes:
-  - `http.method`
-  - `http.target`
-  - `http.request_id`
-  - `http.status_code`
-  - `http.duration_ms`
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` enables Azure Monitor exporter.
-- Hosted workflow telemetry uses a 100% sampling ratio so short direct-executor fan-out/fan-in spans are retained consistently with their master workflow.
-- `OpenAIInstrumentor` records public-backend model metadata without capturing application or decision content.
-- Local fallback supports console tracing when `ENABLE_CONSOLE_TRACING=true`.
-
-### Public UI to Foundry correlation
-
-`FOUNDRY_PROJECT_ENDPOINT` is the canonical Foundry project endpoint
-configuration. For start and resume actions, the internal backend adapter derives and
-invokes the `underwriting-hosted` agent-specific Responses endpoint from that
-project endpoint. Start input carries the validated application only in the
-Responses body so the hosted workflow can execute it. Responses metadata
-contains only safe identifiers:
+Application input belongs only in the request body. Metadata is limited to
+safe correlation fields:
 
 ```json
 {
-  "workflow_run_id": "run-1234abcd",
+  "workflow_run_id": "<run-id>",
   "protocol": "underwriting-hosted-workflow/v1",
   "action": "start"
 }
 ```
 
-The hosted handler executes MAF and writes PostgreSQL checkpoints, events,
-state, and final results. The internal backend adapter reads those projections.
-The browser, frontend proxy, internal backend responses, Responses metadata,
-and telemetry must never expose a PostgreSQL credential or token. OpenTelemetry
-model-content capture remains disabled.
+Structured reviewer input must identify the exact pending checkpoint and may
+resolve only an authorized Responses-originated approval.
 
-The `foundry.responses.invoke` span deliberately provides
-`gen_ai.input.messages` and `gen_ai.output.messages` for report-only
-evaluation. They contain only redacted action, terminal-status, and decision
-summaries; they must not contain applicant input, workflow payloads, raw model
-output, or credentials.
+### Activity and Adaptive Card
 
-Each hosted stage receives the safe context below automatically:
+Teams uses the same hosted process through Activity. A card action payload
+contains an opaque token and requested action shape only. It does not contain
+the underlying run, checkpoint, reviewer, or conversation binding.
+
+The server validates bindings from PostgreSQL and never logs the plaintext
+token.
+
+## Database surfaces
+
+| Table | Required data |
+| --- | --- |
+| `workflow_runs` | Run ID, workflow ID/type, non-sensitive case key, trusted `origin_channel`, immutable `machine_recommendation`, lifecycle status, timestamps |
+| `business_state` | Incremental state projection keyed by run |
+| `workflow_events` | Append-only event type, safe executor label, redacted payload, timestamp |
+| `underwriting_results` | Idempotent check and terminal result payloads |
+| `idempotency_records` | Stable operation key, status, safe result |
+| `maf_checkpoints` | Serialized MAF checkpoint and metadata |
+| `underwriting_approvals` | Approval ID, run/checkpoint, pending/completed status, separate reviewer outcome/hash, timestamps |
+| `teams_card_actions` | Token hash, batch, run/checkpoint, decision, reviewer/conversation hashes, status, expiry/completion timestamps |
+
+Production sets `DB_SCHEMA_MANAGED_EXTERNALLY=true`. Startup performs read-only
+table/column/index parity validation. Administrator tooling owns schema DDL and
+least-privilege grants.
+
+## Recommendation and approval invariants
+
+- `machine_recommendation` is written from deterministic policy and is not
+  updated by a reviewer.
+- `underwriting_approvals.reviewer_outcome` is `APPROVED`, `DECLINED`, or null
+  while pending.
+- Only a referral recommendation has a pending approval.
+- `origin_channel` is server-selected from `api`, `responses`, or
+  `teams_activity`.
+- Teams actions store token hashes only.
+- One action-batch sibling may complete; the other becomes superseded.
+
+## Telemetry conventions
+
+Safe correlation attributes may include:
 
 - `workflow.run_id`
 - `workflow.action`
-- `gen_ai.agent.id` and `gen_ai.agent.name`
+- `workflow.origin_channel`
+- `workflow.checkpoint_id`
+- `workflow.executor`
+- `workflow.event_id`
+- `gen_ai.agent.id`
+- `gen_ai.agent.name`
 - `gen_ai.conversation.id`
-- stage-specific executor, retry, and checkpoint identifiers
+- categorical machine recommendation
+- categorical reviewer outcome
+- action lifecycle status
 
-Retry backoff/exhaustion, injected test failures, and idempotency skips are also separate safe workflow spans. They carry only a categorical failure mode, attempt number, bounded retry delay, executor, and check type; they do not carry exception text, idempotency keys, or application content.
+Do not record:
 
-Start and resume are separate Foundry Responses traces. Operators join them by `workflow.run_id`; they must not assume the public wrapper HTTP trace is the parent of the hosted trace.
+- applicant identity or application fields;
+- raw check inputs/results or score details;
+- prompts, rationale, or model content;
+- reviewer identity in plaintext;
+- card token or token hash;
+- database URL, access token, credential, endpoint secret, or connection
+  payload.
 
-## Observability signals
+OpenTelemetry model-content capture remains disabled for normal operation.
+Release-only evaluator input must use the checked-in redaction contract.
 
-- Workflow-level visibility is provided through persisted `workflow_events` and state projections.
-- Checkpoint save/load logs include workflow and checkpoint identifiers for recovery diagnostics.
-- Frontend/operator views read durable run artifacts rather than relying solely on transient stream frames.
-- Foundry shows the hosted master workflow, direct executor, model, retry, fan-in, and checkpoint spans. Application Insights correlates the public AG-UI Request, hosted conversation, and `workflow_run_id`.
+## Required spans and events
 
-### Operator trace lookup
+- public adapter dispatch;
+- `foundry.responses.invoke`;
+- Activity receive and authorization result;
+- master workflow start/complete;
+- direct executor invoke/complete;
+- fan-out/fan-in;
+- retry/backoff/exhaustion;
+- checkpoint save/load;
+- referral wait;
+- card action validate/claim/supersede/complete/reject;
+- reviewer resume;
+- idempotency skip;
+- final machine recommendation and separate reviewer outcome.
 
-Start from the durable run ID rather than the default Application Insights request list:
+Start and resume may use separate hosted traces. Correlate them by run,
+checkpoint, and conversation rather than assuming one parent HTTP trace.
+
+## Operator trace lookup
+
+Use the durable run ID:
 
 ```kusto
-let workflowRunId = "run-...";
+let workflowRunId = "<run-id>";
 union isfuzzy=true requests, dependencies, traces, exceptions, customEvents
 | where timestamp > ago(24h)
 | where tostring(customDimensions["workflow.run_id"]) == workflowRunId
 | project timestamp, itemType, name, operation_Id, operation_ParentId,
-    success, workflowAction = tostring(customDimensions["workflow.action"])
+    success,
+    workflowAction = tostring(customDimensions["workflow.action"]),
+    originChannel = tostring(customDimensions["workflow.origin_channel"])
 | order by timestamp asc
 ```
 
-## Release evidence linkage
-
-When hosted validation is run, record the relevant `workflow_run_id` values, evaluation IDs, and trace references in [issues-changes-fixes.md](issues-changes-fixes.md). The telemetry gate requires correlated Application Insights dependency spans named `foundry.responses.invoke` and `workflow.*` for every deployed E2E run; `traces` rows are supplemental evidence. Telemetry is part of the release contract, not optional background evidence.
+Store exact trace references, evaluator IDs, run IDs, counts, and timings only
+in the delivery ledger or deployment plan.

@@ -28,10 +28,24 @@ fi
 . "$ROOT_DIR/scripts/foundry/release_paths.sh"
 release_paths_configure "$ROOT_DIR"
 
+[[ -f "$FOUNDRY_DEPLOYMENT_PROFILE" && ! -L "$FOUNDRY_DEPLOYMENT_PROFILE" ]] || {
+  echo "An ignored external deployment profile is required: $FOUNDRY_DEPLOYMENT_PROFILE" >&2
+  echo "Copy deployment/profiles/foundry-public.env.example and replace every placeholder." >&2
+  exit 1
+}
+export DEPLOYMENT_PROFILE_ALLOW_ENV_OVERRIDES=true
+source "$ROOT_DIR/deployment/profile.sh"
+deployment_profile_load "$FOUNDRY_DEPLOYMENT_PROFILE"
+deployment_profile_validate
+deployment_profile_export
+[[ "$INFRASTRUCTURE_MODE" == "reuse" ]] || {
+  echo "Routine releases require INFRASTRUCTURE_MODE=reuse." >&2
+  exit 1
+}
 bash "$ROOT_DIR/deployment/apply-azd-profile.sh" "$FOUNDRY_DEPLOYMENT_PROFILE"
 
 profile_value() {
-  sed -n "s/^$1=//p" "$FOUNDRY_DEPLOYMENT_PROFILE" | tail -n 1
+  printf '%s' "${DEPLOYMENT_PROFILE_VALUES[$1]:-}"
 }
 
 repository="$(git config --get remote.origin.url || printf 'local-worktree')"
@@ -48,9 +62,17 @@ commit="$(git rev-parse HEAD)"
   --executor "${GITHUB_ACTOR:-local-operator}" \
   --required-gate verification \
   --required-gate hosted_e2e \
+  --required-gate teams_native_acceptance \
   --required-gate hosted_smoke \
   --required-gate trace_evaluation \
-  --required-gate application_insights >/dev/null
+  --required-gate application_insights \
+  --required-gate rollback_verification >/dev/null
+
+export FOUNDRY_RELEASE_STARTED_AT="$(
+  "$ROOT_DIR/.venv/bin/python" -c \
+    'import json, os, pathlib; print(json.loads((pathlib.Path(os.environ["FOUNDRY_RELEASE_DIR"]) / "release.json").read_text())["started_at"])'
+)"
+export RELEASE_WINDOW_START="$FOUNDRY_RELEASE_STARTED_AT"
 
 release_finalized=false
 release_stage=bootstrap
@@ -141,7 +163,9 @@ wait_for_parallel_jobs "$validation_pid" "$iac_pid"
 
 case "$deploy_mode" in
   app_only)
+    make foundry-reuse-preview
     make foundry-release-readiness
+    make foundry-release-rollback-baseline
     release_stage=package_build
     active_timing_stage=package_build
     timing --stage package_build --action start --start-app-only
@@ -177,6 +201,11 @@ if ! run_timed_stage deployed_e2e make foundry-hosted-e2e; then
   wait "$evaluation_pid" || true
   exit 1
 fi
+release_stage=native_teams_acceptance
+if ! run_timed_stage native_teams_acceptance make foundry-teams-native-acceptance; then
+  wait "$evaluation_pid" || true
+  exit 1
+fi
 release_stage=telemetry
 run_timed_stage telemetry make foundry-telemetry
 if ! wait "$evaluation_pid"; then
@@ -185,6 +214,8 @@ if ! wait "$evaluation_pid"; then
 fi
 release_stage=deployment_verification
 run_timed_stage deployment_verification make foundry-verify
+release_stage=rollback_verification
+run_timed_stage rollback_verification make foundry-rollback-verify
 release_stage=final_evidence
 active_timing_stage=final_evidence
 timing --stage final_evidence --action start

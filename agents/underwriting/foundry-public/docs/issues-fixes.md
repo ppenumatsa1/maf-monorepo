@@ -46,10 +46,10 @@ as current topology or release evidence for this cutover.
 | Hosted-only executor source | Complete | Public adapter relays Responses work; `backend/foundry/main.py` owns the production MAF runner. |
 | CopilotKit runtime route | Complete | Configured-origin REST discovery and named assistant route are E2E-covered; safe selected-run fields only. |
 | Architecture review | Complete | Independent review identified and corrected the frontend/backend origin mismatch, proxy-scheme assumption, and missing adapter schema initialization. |
-| Hosted architecture IaC provision | Complete | PostgreSQL recreation, schema bootstrap, runtime role, and TLS/firewall posture were applied declaratively in `rg-underwriting-readiness-0731`. |
+| Hosted architecture IaC provision | Complete | PostgreSQL recreation, schema bootstrap, runtime role, and TLS/firewall posture were applied declaratively to the externally selected target. |
 | Hosted credential provision | Complete | Hosted and public runtimes use the dedicated least-privilege TLS PostgreSQL credential through runtime secrets only. |
 | Direct-executor master-workflow cutover | Complete | Agent v41 runs one master graph with direct checks. Version-40 nested-graph checkpoints are unsupported for resume; no compatibility workflow or fallback exists. |
-| Hosted agent/public adapter/frontend deployment | Complete | Agent v41, backend revision `azcawhcedyxchnbtmpubbe--0000020`, and frontend revision `azcawhcedyxchnbtmpubfe--0000011` are running. |
+| Hosted agent/public adapter/frontend deployment | Complete | Agent v41 and the recorded backend/frontend revisions are running. |
 | Hosted smoke, E2E, telemetry, evaluation | Complete | Fresh smoke, deployed E2E, report-only Foundry evaluation, and Application Insights validation passed; identifiers are recorded below. |
 | Native evaluator generation | Blocked | The organization-enforced storage policy prevents the required public evaluation-storage route. A policy exemption or private networking is required for this optional generation path. |
 
@@ -94,9 +94,8 @@ instead of preserving a legacy graph.
 
 **Verification.**
 
-- Hosted agent v41 deployed with the direct-executor graph. Backend revision
-  `azcawhcedyxchnbtmpubbe--0000020` and frontend revision
-  `azcawhcedyxchnbtmpubfe--0000011` report `Running`.
+- Hosted agent v41 deployed with the direct-executor graph. The recorded
+  backend and frontend revisions report `Running`.
 - Hosted smoke approved `run-smoke-20260806214717-357052`.
 - Deployed E2E approved
   `run-hosted-happy-20260806214836-359053` and
@@ -122,7 +121,7 @@ steady-state release baseline.
 ### Existing-server update could not recover from an irreversible server reset
 
 **RCA.** The resource-reuse Bicep defined only the authentication and network
-posture for `azpgwhcedyxchnbtmpub`. It could update an existing server, but did
+posture for the externally selected PostgreSQL server. It could update an existing server, but did
 not declare the server creation configuration needed to recreate that exact
 server after deletion. Bootstrap also queried the server location before
 provisioning, which made the normal provision target unusable during the
@@ -367,8 +366,8 @@ PostgreSQL principal, but the hosted agent receives its own Foundry-managed
 identity. The first active agent therefore returned an internal error on
 workflow execution.
 
-**Research.** The active version exposed its managed identity:
-`azfdwhcedyxchnbtm-azprwhcedyxchnbtm-underwriting-hosted-AgentIdentity`.
+**Research.** The active version exposed its externally selected managed
+identity.
 The PostgreSQL Entra administrator and official
 `pgaadauth_create_principal_with_oid` guidance were verified before changing
 database access.
@@ -400,8 +399,8 @@ and returns the completed workflow result.
 **RCA.** The Foundry project had no project connections, so the initial smoke
 failure produced no queryable application telemetry.
 
-**Fix.** Bicep adds the existing `azaiwhcedyxchnbtm` Application Insights
-connection to project `azprwhcedyxchnbtm`, plus the necessary project
+**Fix.** Bicep adds the externally selected Application Insights connection to
+the externally selected project, plus the necessary project
 Log Analytics reader assignments.
 
 **Validation.** A successful smoke invocation recorded Foundry
@@ -412,10 +411,9 @@ trace ID in Application Insights.
 
 **RCA.** The direct batch evaluation API returned an opaque service error.
 The supported azd evaluation generator then surfaced the specific cause:
-Azure Storage `AuthorizationFailure`. The Foundry account identity
-(`3ca0fee0-5b09-45bf-8cb4-3f3cbdf3938f`) and project identity
-(`b92cf7f3-9138-43e4-b21c-a80055358859`) match the two Storage Blob Data Owner
-role assignments, so this is not an RBAC propagation or principal mismatch.
+Azure Storage `AuthorizationFailure`. The Foundry account and project
+identities match the two Storage Blob Data Owner role assignments, so this is
+not an RBAC propagation or principal mismatch.
 
 **Research.** The project originally had no evaluation artifact connection.
 Comparing the order-resolution IaC identified its additional `runtime-storage`
@@ -622,9 +620,8 @@ public backend URL. ACR built the frontend successfully. The hosted span now
 uses fixed, non-sensitive request/completion text instead of application,
 decision, score, or rationale content.
 
-**Validation.** Resource-reuse IaC reported no drift. Hosted version `25`,
-public backend revision `azcawhcedyxchnbtmpubbe--0000006`, and public frontend
-revision `azcawhcedyxchnbtmpubfe--0000004` are healthy. Hosted smoke completed
+**Validation.** Resource-reuse IaC reported no drift. Hosted version `25` and
+the recorded public backend/frontend revisions are healthy. Hosted smoke completed
 workflow `run-7b6e58ded6` for trace
 `0479996218d3390bcc72a9c13d2cbe53`; the deployed Playwright rubric passed
 happy path, retry, crash/resume, history, fan-in, checkpoint, idempotency, and
@@ -704,8 +701,8 @@ tool-based design.
 
 **Validation.** Focused backend tests cover the agent-specific client,
 metadata relay, flat and nested Responses envelopes, trace-only behavior,
-AG-UI safety, and Request span kind. Public backend revision
-`azcawhcedyxchnbtmpubbe--0000012` and hosted agent version `34` completed
+AG-UI safety, and Request span kind. The recorded public backend revision and
+hosted agent version `34` completed
 AG-UI smoke run `run-trace153148`:
 
 - The durable run is `COMPLETED` with all initial, fan-in, decision, and
@@ -760,9 +757,8 @@ focused test proves the durable runner begins while the relay is deliberately
 blocked.
 
 **Validation.** Eight focused relay, Responses-parser, and observability tests
-pass; frontend lint and production build pass. The backend was deployed as
-`azcawhcedyxchnbtmpubbe--0000014` and the frontend as
-`azcawhcedyxchnbtmpubfe--0000006`, both healthy at 100% traffic. The deployed
+pass; frontend lint and production build pass. The recorded backend and
+frontend revisions were both healthy at 100% traffic. The deployed
 Playwright rubric passed all happy path, retry, crash/resume, history, fan-in,
 checkpoint, idempotency, and observability checks in 16.4 seconds.
 
@@ -807,7 +803,7 @@ invocation, history, and event-projection adapter. This restores rich Foundry
 workflow and model traces without forwarding Foundry credentials to the
 browser.
 
-**Setup research.** The live server `azpgwhcedyxchnbtmpub` is ready with
+**Setup research.** The externally selected live PostgreSQL server is ready with
 public networking enabled, Entra authentication enabled, password
 authentication disabled, and an over-broad temporary firewall rule from
 `0.0.0.0` through `255.255.255.255`. Underwriting already supports password
@@ -844,10 +840,9 @@ in place without its current administrator password. The credential is not in
 the selected local azd environment or the resource group's Key Vault, so an
 in-place ARM update fails with `EngineCredentialsNotProvided`.
 
-**Decision and fix.** The authorized recovery scope is the fixed
-`azpgwhcedyxchnbtmpub` server, not a database-only delete. A separate,
-confirmation-gated `make foundry-postgres-rebuild
-CONFIRM=REBUILD-azpgwhcedyxchnbtmpub` workflow now verifies the fixed
+**Decision and fix.** The authorized recovery scope is the externally selected
+server, not a database-only delete. A separate, confirmation-gated
+`make foundry-postgres-rebuild` workflow now verifies the selected
 subscription and resource group, deletes only that named server, waits for
 deletion, and recreates it through Bicep. It retains the discovered North
 Central US location, PostgreSQL 17, General Purpose
@@ -906,9 +901,8 @@ deployed `run-deployed-smoke-001` has correlated
 `workflow.underwriting.initialize`, and `workflow.checkpoint.save`
 dependencies under operation `09959325da9d8d4a976c48597816b673`.
 
-**Release evidence.** Hosted agent version `36`, public backend revision
-`azcawhcedyxchnbtmpubbe--0000016`, and frontend revision
-`azcawhcedyxchnbtmpubfe--0000007` are running. The corrected smoke command
+**Release evidence.** Hosted agent version `36` and the recorded public
+backend/frontend revisions are running. The corrected smoke command
 completed `run-hosted-smoke` with `APPROVED` and trace
 `03fe1ee03fe876dd66b198820aa9e131`. Both local and deployed Playwright
 rubrics pass; the deployed run covers happy path, retry, crash/resume,
@@ -1056,11 +1050,10 @@ action.
 
 **Deployment and hosted evidence**
 
-- Hosted agent version `42` deployed. Backend revision
-  `azcawhcedyxchnbtmpubbe--0000021` and frontend revision
-  `azcawhcedyxchnbtmpubfe--0000012` are Running.
-- `https://azcawhcedyxchnbtmpubbe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io/health`
-  returned HTTP 200; the frontend returned HTTP 200.
+- Hosted agent version `42` deployed. The recorded backend/frontend revisions
+  are Running.
+- The externally selected backend health endpoint and frontend returned HTTP
+  200.
 - Hosted smoke passed with
   `run-smoke-20260810195340-158524`.
 - Deployed browser E2E passed with
@@ -1089,8 +1082,7 @@ action.
 **Evidence**
 
 - Bicep compilation and live PostgreSQL readiness passed. Hosted agent version
-  `43`, backend revision `azcawhcedyxchnbtmpubbe--0000022`, and frontend
-  revision `azcawhcedyxchnbtmpubfe--0000013` are Running.
+  `43` and the recorded backend/frontend revisions are Running.
 - Smoke passed with `run-smoke-20260810203807-206537`.
 - Deployed E2E passed with `run-hosted-happy-20260810203934-208937` and
   `run-hosted-recover-20260810203934-208937`.

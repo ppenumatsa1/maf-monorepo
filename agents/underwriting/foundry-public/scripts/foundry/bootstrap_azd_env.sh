@@ -79,6 +79,13 @@ app_insights="$(required_env_value APPLICATION_INSIGHTS_NAME)"
 log_analytics="$(required_env_value LOG_ANALYTICS_WORKSPACE_NAME)"
 hosted_agent="$(required_env_value HOSTED_AGENT_NAME)"
 
+az account set --subscription "$subscription_id"
+if [[ "$(get_env_value INFRASTRUCTURE_MODE)" == "bootstrap" &&
+      "$(az group exists --subscription "$subscription_id" --name "$resource_group")" != "true" ]]; then
+  echo "Bootstrap resources do not exist yet; preserving INFRASTRUCTURE_MODE=bootstrap." >&2
+  exit 1
+fi
+
 set_if_missing INFRASTRUCTURE_MODE reuse
 set_if_missing NAME_PREFIX underwriting
 set_if_missing FOUNDRY_CUSTOM_SUBDOMAIN_NAME "$foundry_account"
@@ -95,7 +102,6 @@ set_if_missing FRONTEND_IMAGE_REPOSITORY underwriting-public-frontend
 set_if_missing EVALUATION_STORAGE_ACCOUNT_NAME reuse-placeholder
 set_if_missing BOOTSTRAP_RUNTIME_DATABASE_URL reuse-placeholder
 
-az account set --subscription "$subscription_id"
 azd auth login --check-status >/dev/null
 location="$(az group show --name "$resource_group" --query location -o tsv)"
 if [[ "$location" != "$target_location" ]]; then

@@ -7,7 +7,17 @@ from pathlib import Path
 import pytest
 import yaml
 from app.modules.underwriting.hosted import HOSTED_WORKFLOW_PROTOCOL, HostedWorkflowEnvelope
-from evals.foundry_trace_eval import _criteria, _evidence_path, _load_evidence, _result_counts
+from evals.foundry_trace_eval import (
+    _criteria,
+    _criterion_result_counts,
+    _evidence_path,
+    _is_trace_readiness_error,
+    _is_transient_poll_error,
+    _load_evidence,
+    _load_release_evidence,
+    _result_counts,
+    _should_retry_empty_evaluation,
+)
 
 
 def _backend_root() -> Path:
@@ -46,7 +56,7 @@ def test_criteria_uses_conversation_message_mapping() -> None:
             "type": "azure_ai_evaluator",
             "name": "task_completion",
             "evaluator_name": "builtin.task_completion",
-            "initialization_parameters": {"model": "underwriting-gpt-4-1-mini"},
+            "initialization_parameters": {"deployment_name": "underwriting-gpt-4-1-mini"},
             "data_mapping": {"messages": "{{item.messages}}"},
         }
     ]
@@ -69,6 +79,40 @@ def test_result_counts_normalizes_foundry_sdk_model() -> None:
     }
 
 
+def test_criterion_result_counts_detects_nested_evaluator_errors() -> None:
+    assert _criterion_result_counts(
+        [
+            {
+                "results": [
+                    {
+                        "name": "task_completion",
+                        "passed": True,
+                        "status": "completed",
+                        "sample": {"error": None},
+                    },
+                    {
+                        "name": "coherence",
+                        "passed": None,
+                        "status": "error",
+                        "sample": {
+                            "error": {
+                                "code": "FAILED_EXECUTION",
+                                "message": "Principal does not have access.",
+                            }
+                        },
+                    },
+                ]
+            }
+        ]
+    ) == {
+        "errored": 1,
+        "failed": 0,
+        "passed": 1,
+        "total": 2,
+        "skipped": 0,
+    }
+
+
 def test_evidence_path_prefers_current_release_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -76,6 +120,64 @@ def test_evidence_path_prefers_current_release_artifact(
     monkeypatch.setenv("FOUNDRY_SMOKE_EVIDENCE_FILE", str(current))
 
     assert _evidence_path(tmp_path, "tracked-sample.json") == current
+
+
+def test_release_evidence_must_be_fresh_and_match_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence = tmp_path / "hosted-smoke-evidence.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "release_id": "release-001",
+                "release_started_at": "2026-08-04T16:00:00Z",
+                "generated_at": "2026-08-04T16:01:00Z",
+                "conversation_ids": ["conv-1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RELEASE_ID", "release-001")
+    monkeypatch.setenv("FOUNDRY_RELEASE_STARTED_AT", "2026-08-04T16:00:00Z")
+
+    generated_at, ids, release_id, started_at = _load_release_evidence(
+        evidence,
+        max_age_seconds=600,
+        now=datetime(2026, 8, 4, 16, 2, tzinfo=UTC),
+    )
+
+    assert generated_at == datetime(2026, 8, 4, 16, 1, tzinfo=UTC)
+    assert ids == ["conv-1"]
+    assert release_id == "release-001"
+    assert started_at == datetime(2026, 8, 4, 16, 0, tzinfo=UTC)
+
+
+def test_evaluation_retry_is_narrowly_limited_to_empty_or_malformed_polling() -> None:
+    assert _should_retry_empty_evaluation(
+        status="completed",
+        result_counts={"total": 0},
+        error=None,
+    )
+    assert not _should_retry_empty_evaluation(
+        status="failed",
+        result_counts={"total": 0},
+        error={"code": "Unauthorized"},
+    )
+    trace_readiness_error = {
+        "code": "UserError",
+        "message": 'No trace data found for the provided conversation id(s) ["conv-1"].',
+    }
+    assert _is_trace_readiness_error(trace_readiness_error)
+    assert _should_retry_empty_evaluation(
+        status="failed",
+        result_counts={"total": 0},
+        error=trace_readiness_error,
+    )
+    assert not _is_trace_readiness_error(
+        {"code": "UserError", "message": "The evaluation configuration is invalid."}
+    )
+    assert _is_transient_poll_error(json.JSONDecodeError("empty", "", 0))
+    assert not _is_transient_poll_error(RuntimeError("service failure"))
 
 
 def test_eval_config_references_existing_dataset_and_trace_evidence() -> None:

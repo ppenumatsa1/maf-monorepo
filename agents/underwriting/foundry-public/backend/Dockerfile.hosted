@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,14 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 \
-    && rm -rf /var/lib/apt/lists/*
+COPY backend/requirements.txt backend/requirements.lock ./
+COPY .wheels/ /wheels/
+RUN pip install --no-cache-dir --no-index --find-links=/wheels \
+        --require-hashes -r requirements.lock \
+    && rm -rf /wheels
 
-COPY pyproject.toml ./
-COPY backend ./backend
+RUN adduser --disabled-password --gecos "" appuser
 
-RUN pip install --no-cache-dir .
+COPY --chown=appuser:appuser backend /app/backend
+
+USER appuser
 
 EXPOSE 8088
 

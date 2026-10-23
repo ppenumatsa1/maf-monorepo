@@ -43,7 +43,7 @@ registry_name="$(required_env AZURE_CONTAINER_REGISTRY_NAME)"
 registry_endpoint="$(required_env AZURE_CONTAINER_REGISTRY_ENDPOINT)"
 backend_repository="$(required_env BACKEND_IMAGE_REPOSITORY)"
 frontend_repository="$(required_env FRONTEND_IMAGE_REPOSITORY)"
-hosted_repository="underwriting-hosted"
+hosted_repository="$(required_env HOSTED_AGENT_IMAGE_REPOSITORY)"
 tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
 
 build_acr_image() {
@@ -123,6 +123,7 @@ umask 077
   printf 'PUBLIC_BACKEND_PREBUILT_IMAGE=%q\n' "$backend_image"
   printf 'PUBLIC_FRONTEND_PREBUILT_IMAGE=%q\n' "$frontend_image"
   printf 'HOSTED_AGENT_PREBUILT_IMAGE=%q\n' "$hosted_image"
+  printf 'HOSTED_AGENT_IMAGE_REPOSITORY=%q\n' "$hosted_repository"
 } >"$image_env"
 
 echo "Built immutable backend, frontend, and hosted-agent images."

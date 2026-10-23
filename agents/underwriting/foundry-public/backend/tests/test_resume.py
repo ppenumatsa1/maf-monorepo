@@ -6,6 +6,7 @@ from app.core.config import load_settings
 from app.infrastructure.db.engine import create_db_engine, init_db, reset_db
 from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.main import resume_workflow, run_workflow
+from app.modules.underwriting import events as event_types
 from app.modules.underwriting.models import UnderwritingApplication
 
 
@@ -45,3 +46,6 @@ def test_crash_then_resume_from_latest_maf_checkpoint(monkeypatch, tmp_path) -> 
     assert outputs, "resume should finish and produce outputs"
     checkpoints_after = repo.list_checkpoints(run_id)
     assert len(checkpoints_after) >= len(checkpoints_before)
+    persisted_event_types = {event["event_type"] for event in repo.list_events(run_id)}
+    assert event_types.RESUME_COMPLETED in persisted_event_types
+    assert event_types.WORKFLOW_COMPLETED in persisted_event_types

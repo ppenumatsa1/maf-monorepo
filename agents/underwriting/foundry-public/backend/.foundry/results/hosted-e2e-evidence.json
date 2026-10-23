@@ -1,11 +1,11 @@
 {
   "generated_at": "2026-08-13T15:49:20Z",
   "started_at": "2026-08-13T15:48:12Z",
-  "frontend_url": "https://azcawhcedyxchnbtmpubfe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io",
-  "backend_url": "https://azcawhcedyxchnbtmpubbe.salmoncliff-e93b7aa4.northcentralus.azurecontainerapps.io",
-  "resource_group": "rg-underwriting-readiness-0731",
-  "backend_container_app": "azcawhcedyxchnbtmpubbe",
-  "frontend_container_app": "azcawhcedyxchnbtmpubfe",
+  "frontend_url": "https://frontend.example.invalid",
+  "backend_url": "https://backend.example.invalid",
+  "resource_group": "external-profile-resource-group",
+  "backend_container_app": "external-profile-backend-app",
+  "frontend_container_app": "external-profile-frontend-app",
   "workflow_run_ids": [
     "run-hosted-happy-20260813154812-83546",
     "run-hosted-recover-20260813154812-83546"

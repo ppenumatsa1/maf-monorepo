@@ -69,14 +69,24 @@ class ReleaseRecordTests(unittest.TestCase):
             ("aca_deployment", "2026-08-15T20:00:35.000Z", "2026-08-15T20:00:50.000Z"),
             ("smoke", "2026-08-15T20:00:50.000Z", "2026-08-15T20:01:00.000Z"),
             ("deployed_e2e", "2026-08-15T20:01:00.000Z", "2026-08-15T20:01:30.000Z"),
+            (
+                "native_teams_acceptance",
+                "2026-08-15T20:01:30.000Z",
+                "2026-08-15T20:31:30.000Z",
+            ),
             ("evaluation", "2026-08-15T20:01:00.000Z", "2026-08-15T20:01:40.000Z"),
-            ("telemetry", "2026-08-15T20:01:30.000Z", "2026-08-15T20:01:50.000Z"),
+            ("telemetry", "2026-08-15T20:31:30.000Z", "2026-08-15T20:31:50.000Z"),
             (
                 "deployment_verification",
-                "2026-08-15T20:01:50.000Z",
-                "2026-08-15T20:02:00.000Z",
+                "2026-08-15T20:31:50.000Z",
+                "2026-08-15T20:32:00.000Z",
             ),
-            ("final_evidence", "2026-08-15T20:02:00.000Z", "2026-08-15T20:02:10.000Z"),
+            (
+                "rollback_verification",
+                "2026-08-15T20:32:00.000Z",
+                "2026-08-15T20:32:05.000Z",
+            ),
+            ("final_evidence", "2026-08-15T20:32:05.000Z", "2026-08-15T20:32:10.000Z"),
         )
         for index, (stage, started_at, ended_at) in enumerate(intervals):
             start_release_timing(
@@ -129,6 +139,7 @@ class ReleaseRecordTests(unittest.TestCase):
         ]
         self.assertEqual(timing["stages"]["package_build"]["duration_ms"], 10_000)
         self.assertEqual(timing["stages"]["evaluation"]["duration_ms"], 40_000)
+        self.assertEqual(timing["operator_wait_duration_ms"], 1_800_000)
         self.assertEqual(timing["app_only_duration_ms"], 110_000)
         self.assertEqual(timing["app_only"]["duration_ms"], 110_000)
         self.assertEqual(timing["app_only"]["status"], "succeeded")
@@ -140,7 +151,7 @@ class ReleaseRecordTests(unittest.TestCase):
             timing["stages"]["evaluation"]["started_at"],
             timing["stages"]["deployed_e2e"]["ended_at"],
         )
-        self.assertGreater(
+        self.assertLess(
             timing["stages"]["evaluation"]["ended_at"],
             timing["stages"]["telemetry"]["started_at"],
         )
@@ -169,7 +180,9 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertEqual(timing["app_only"]["status"], "running")
         self.assertIn("smoke", timing["stages"])
         self.assertNotIn("deployed_e2e", timing["stages"])
+        self.assertNotIn("native_teams_acceptance", timing["stages"])
         self.assertNotIn("telemetry", timing["stages"])
+        self.assertEqual(timing["operator_wait_duration_ms"], 0)
 
     def test_rejects_invalid_ordering(self) -> None:
         start_release_timing(
@@ -245,6 +258,36 @@ class ReleaseRecordTests(unittest.TestCase):
             releases_root=self.releases,
         )
         with self.assertRaisesRegex(ValueError, "timing"):
+            finalize_record("test-release-001", "succeeded", releases_root=self.releases)
+
+    def test_rejects_app_only_to_telemetry_over_fifteen_minutes(self) -> None:
+        self.write_evidence(
+            "verification.json",
+            {
+                "release_id": "test-release-001",
+                "generated_at": "2026-08-15T20:02:10.000Z",
+            },
+        )
+        register_artifact(
+            "test-release-001",
+            "evidence/verification.json",
+            "verification",
+            self.releases,
+        )
+        self.record_successful_timing()
+        record_path = self.release_dir / "release.json"
+        record = json.loads(record_path.read_text())
+        timing = record["extensions"]["release_timing"]
+        timing["app_only_started_at"] = "2026-08-15T19:46:00.000Z"
+        timing["app_only"]["started_at"] = timing["app_only_started_at"]
+        timing["app_only"]["duration_ms"] = 950_000
+        timing["app_only_duration_ms"] = 950_000
+        package = timing["stages"]["package_build"]
+        package["started_at"] = timing["app_only_started_at"]
+        package["duration_ms"] = 850_000
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "15-minute"):
             finalize_record("test-release-001", "succeeded", releases_root=self.releases)
 
     def test_rejects_unsafe_and_duplicate_paths(self) -> None:

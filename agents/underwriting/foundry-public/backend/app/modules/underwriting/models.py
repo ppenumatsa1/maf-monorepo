@@ -19,6 +19,37 @@ class Decision(StrEnum):
     DECLINED = "DECLINED"
 
 
+class OriginChannel(StrEnum):
+    API = "api"
+    RESPONSES = "responses"
+    TEAMS_ACTIVITY = "teams_activity"
+
+
+class ReviewerOutcome(StrEnum):
+    APPROVED = "APPROVED"
+    DECLINED = "DECLINED"
+
+
+class ReviewerType(StrEnum):
+    HUMAN = "human"
+    ADMINISTRATIVE = "administrative"
+    UNKNOWN_LEGACY = "unknown_legacy"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+
+
+class CardActionStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    SUPERSEDED = "superseded"
+    RELEASED = "released"
+
+
 @dataclass(slots=True)
 class UnderwritingApplication:
     application_id: str
@@ -81,8 +112,51 @@ class FinalDecisionResult:
     rationale: str
     score_breakdown: dict[str, Any]
     idempotency_key: str
+    reviewer_outcome: ReviewerOutcome | None = None
+    review_checkpoint_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["decision"] = self.decision.value
+        if self.reviewer_outcome is None:
+            payload.pop("reviewer_outcome", None)
+            payload.pop("review_checkpoint_id", None)
+        else:
+            payload["machine_recommendation"] = self.decision.value
+            payload["reviewer_outcome"] = self.reviewer_outcome.value
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class HumanReviewRequest:
+    workflow_run_id: str
+    application_id: str
+    machine_recommendation: Decision
+
+
+@dataclass(frozen=True, slots=True)
+class HumanReviewDecision:
+    workflow_run_id: str
+    checkpoint_id: str
+    outcome: ReviewerOutcome
+    origin_channel: OriginChannel
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalClaim:
+    workflow_run_id: str
+    checkpoint_id: str
+    request_id: str
+    outcome: ReviewerOutcome
+    origin_channel: OriginChannel
+    reviewer_type: ReviewerType
+    acquired: bool
+    completed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CardActionClaim:
+    workflow_run_id: str
+    checkpoint_id: str
+    decision: ReviewerOutcome
+    batch_id: str

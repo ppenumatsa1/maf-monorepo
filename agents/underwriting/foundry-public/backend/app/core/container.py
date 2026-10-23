@@ -3,8 +3,11 @@ from __future__ import annotations
 from functools import lru_cache
 
 from app.core.config import Settings, load_settings
-from app.infrastructure.db.engine import create_db_engine, init_db
+from app.infrastructure.db.engine import close_db_engine, get_runtime_db_engine, init_db
 from app.infrastructure.foundry.responses_client import UnderwritingResponsesClient
+from app.infrastructure.persistence.teams_card_action_repository import (
+    TeamsCardActionRepository,
+)
 from app.infrastructure.persistence.workflow_run_repository import WorkflowRunRepository
 from app.maf.factory import create_workflow_engine
 from app.modules.underwriting.copilot_bridge import UnderwritingCopilotBridge
@@ -20,9 +23,10 @@ def build_underwriting_service(
     if settings.execution_mode not in {"hosted", "local"}:
         raise ValueError("UNDERWRITING_EXECUTION_MODE must be 'hosted' or 'local'")
 
-    engine = create_db_engine(settings)
+    engine = get_runtime_db_engine(settings)
     init_db(engine, schema_managed_externally=settings.db_schema_managed_externally)
     repository = WorkflowRunRepository(engine)
+    card_actions = TeamsCardActionRepository(engine)
     workflow = (
         create_workflow_engine(repository=repository, settings=settings)
         if settings.execution_mode == "local"
@@ -39,6 +43,7 @@ def build_underwriting_service(
         settings=settings,
         workflow=workflow,
         workflow_run_repository=repository,
+        card_action_repository=card_actions,
         responses_client=effective_responses_client,
     )
 
@@ -61,3 +66,10 @@ def get_copilot_bridge() -> UnderwritingCopilotBridge:
         repository=service.repository,
         responses_client=service.responses_client,
     )
+
+
+def close_underwriting_runtime(service: UnderwritingService) -> None:
+    if service.engine is not None:
+        close_db_engine(service.engine)
+    get_copilot_bridge.cache_clear()
+    get_underwriting_service.cache_clear()

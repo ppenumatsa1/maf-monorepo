@@ -1,0 +1,35 @@
+flowchart TD
+    subgraph BG[" "]
+        direction TD
+        A["Insurance application submitted"] --> B["Intake and initialize underwriting case"]
+
+        B --> R["Risk assessment<br/>Age and requested coverage"]
+        B --> C["Credit assessment<br/>Normalized credit score"]
+        B --> M["Medical assessment<br/>Health disclosures"]
+        B --> D["Driving assessment<br/>Driving history"]
+
+        R --> AGG["Aggregate completed assessment scores"]
+        C --> AGG
+        M --> AGG
+        D --> AGG
+
+        AGG --> COMPLETE{"All four assessments complete?"}
+        COMPLETE -->|No| WAIT["Wait for remaining assessments"]
+        WAIT --> AGG
+        COMPLETE -->|Yes| SCORE["Calculate score breakdown and average"]
+        SCORE --> POLICY{"Apply deterministic underwriting policy"}
+
+        POLICY --> APPROVED["Approved"]
+        POLICY --> CONDITIONAL["Approved with conditions"]
+        POLICY --> REFER["Refer to human underwriter"]
+        POLICY --> DECLINED["Declined"]
+
+        APPROVED --> EXPLAIN["Attach explanatory rationale"]
+        CONDITIONAL --> EXPLAIN
+        REFER --> EXPLAIN
+        DECLINED --> EXPLAIN
+        EXPLAIN --> RESULT["Publish and retain underwriting decision"]
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a

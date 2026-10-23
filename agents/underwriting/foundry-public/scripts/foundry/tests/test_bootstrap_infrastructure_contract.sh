@@ -5,6 +5,7 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 prepare_script="$root_dir/scripts/foundry/prepare_bootstrap_env.sh"
 template="$root_dir/infra/foundry-hosted/iac/main.bicep"
 mock_bin="$root_dir/scripts/foundry/tests/mock-bin"
+provision_workflow="$root_dir/../../../.github/workflows/underwriting-public-provision.yml"
 
 output="$(
   PATH="$mock_bin:$PATH" bash "$prepare_script" 2>&1
@@ -27,8 +28,11 @@ grep -Fq 'set_default FOUNDRY_ACCOUNT_NAME "${resource_name_base}ai"' "$prepare_
 grep -Fq "param infrastructureMode string = 'bootstrap'" "$template"
 grep -Fq "resource foundryModelDeployment" "$template"
 grep -A18 "resource foundryAccountBootstrap" "$template" | grep -Fq 'allowProjectManagement: true'
+grep -A18 "resource foundryAccountBootstrap" "$template" | grep -Fq 'disableLocalAuth: true'
 grep -A4 -Fq "resource foundryProjectBootstrap" "$template"
 grep -A4 "resource foundryProjectBootstrap" "$template" | grep -Fq 'location: location'
+grep -A16 "resource foundryProjectBootstrap" "$template" | grep -Fq 'foundryModelDeployment'
+grep -A16 "resource publicBackendFoundryUser" "$template" | grep -Fq 'foundryProjectBootstrap'
 grep -Fq "resource backendContainerApp" "$template"
 grep -Fq "resource frontendContainerApp" "$template"
 grep -A30 "resource backendContainerApp" "$template" | grep -Fq 'external: false'
@@ -39,7 +43,8 @@ grep -Fq "output FOUNDRY_RUNTIME_CONNECTION_NAME" "$template"
 grep -Fq "output FOUNDRY_MODEL_DEPLOYMENT_NAME" "$template"
 grep -Fq "reference(foundryAccountId, '2025-06-01').endpoint" "$template"
 ! grep -Fq "reference(foundryAccountId, '2025-06-01').properties.endpoint" "$template"
-! grep -Fq "4f18d577-3506-4a11-85e5-a83b14727a84" "$root_dir/scripts/foundry/rebuild_postgres_server.sh"
+! grep -Eq '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
+  "$root_dir/scripts/foundry/rebuild_postgres_server.sh"
 grep -Fq 'required_env_value POSTGRES_SERVER_NAME' "$root_dir/scripts/foundry/rebuild_postgres_server.sh"
 grep -Fq 'INFRASTRUCTURE_MODE="$(required_env_value INFRASTRUCTURE_MODE)"' "$root_dir/scripts/foundry/rebuild_postgres_server.sh"
 grep -Fq "requires a bootstrap-mode environment" "$root_dir/scripts/foundry/rebuild_postgres_server.sh"
@@ -74,10 +79,20 @@ grep -Fq 'relevance' "$root_dir/backend/eval.yaml"
 ! grep -Fq 'task_completion' "$root_dir/backend/eval.yaml"
 grep -Fq 'foundry-release-readiness:' "$root_dir/Makefile"
 grep -A5 'foundry-release-readiness:' "$root_dir/Makefile" | grep -Fq 'foundry-runtime-connection'
+grep -Fq 'foundry-provision: foundry-provision-infrastructure foundry-provision-converge' "$root_dir/Makefile"
+grep -A12 'foundry-provision-infrastructure:' "$root_dir/Makefile" | grep -Fq 'bootstrap) ./scripts/foundry/prepare_bootstrap_env.sh'
+grep -A12 'foundry-provision-infrastructure:' "$root_dir/Makefile" | grep -Fq 'reuse) ./scripts/foundry/bootstrap_azd_env.sh; ./scripts/foundry/ensure_foundry_azd_defaults.sh'
+grep -A4 'foundry-provision-converge:' "$root_dir/Makefile" | grep -Fq 'foundry-postgres-credentials'
+grep -A4 'foundry-provision-converge:' "$root_dir/Makefile" | grep -Fq 'foundry-postgres-readiness'
+grep -Fq 'foundry-postgres-credentials: foundry-postgres-schema' "$root_dir/Makefile"
+! grep -Fq 'bootstrap_postgres_schema.sh' "$root_dir/scripts/foundry/provision_postgres_runtime_credentials.sh"
+grep -Fq 'run: FOUNDRY_FULL_INFRA_AUTHORIZED=true make foundry-provision-infrastructure' "$provision_workflow"
+grep -Fq 'run: make foundry-provision-converge' "$provision_workflow"
+grep -Fq 'name: Prepare schema migration tooling' "$provision_workflow"
 grep -Fq 'foundry-package:' "$root_dir/Makefile"
 grep -Fq 'foundry-verify:' "$root_dir/Makefile"
 grep -Fq 'foundry-evidence:' "$root_dir/Makefile"
-grep -Fq 'Refusing migration outside the canonical Underwriting subscription' \
+! grep -Eq '7df95e88|rg-maf-underwriting|Refusing migration outside the canonical' \
   "$root_dir/scripts/foundry/internalize_backend_ingress.sh"
 grep -Fq 'Backend ingress must already be internal. Use the one-time foundry-backend-internalize command for migration.' \
   "$root_dir/scripts/foundry/deploy_public_backend.sh"

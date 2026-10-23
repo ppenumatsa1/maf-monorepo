@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+.wheels/
 .pytest_cache/
 **/.pytest_cache/
 .coverage
@@ -20,6 +21,8 @@ dist/
 # Env and local data
 .env
 backend/.env
+deployment/profiles/*.env
+!deployment/profiles/*.env.example
 backend/data/checkpoints/*.json
 backend/data/memory/*.json
 
@@ -32,6 +35,12 @@ backend/.tmp/
 # Test artifacts
 playwright-report/
 test-results/
+.artifacts/teams-publication/
+**/appPackage-*.zip
+**/sensitive-state.json
+**/catalog-state.json
+**/publication-token.json
+**/user-state.json
 
 # Local runtime config
 local.ini

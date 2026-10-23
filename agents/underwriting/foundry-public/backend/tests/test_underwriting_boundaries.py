@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 
 from app.core.config import Settings
-from app.modules.underwriting.models import Decision, FinalDecisionResult, UnderwritingApplication
+from app.modules.underwriting.models import (
+    Decision,
+    FinalDecisionResult,
+    OriginChannel,
+    UnderwritingApplication,
+)
 from app.modules.underwriting.projections import (
     build_safe_selected_run_context,
     project_workflow_run,
@@ -137,9 +142,14 @@ def test_public_service_starts_local_workflow_through_facade() -> None:
 
     assert workflow.started is not None
     assert workflow.started["application"] == _application()
+    assert workflow.started["origin_channel"] == OriginChannel.API
     assert projection == {
         "workflow_run_id": "run-boundary-001",
         "status": "COMPLETED",
+        "machine_recommendation": "APPROVED",
+        "reviewer_outcome": None,
+        "review_checkpoint_id": None,
+        "review_status": None,
         "outputs": [
             {
                 "workflow_run_id": "run-boundary-001",

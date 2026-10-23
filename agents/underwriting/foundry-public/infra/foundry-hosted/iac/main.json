@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13231742026457836564"
+      "templateHash": "2127203910852315010"
     }
   },
   "parameters": {
@@ -125,6 +125,18 @@
       "defaultValue": "[take(format('{0}{1}acr', toLower(parameters('namePrefix')), uniqueString(subscription().id, resourceGroup().id, parameters('namePrefix'))), 50)]",
       "metadata": {
         "description": "Azure Container Registry name."
+      }
+    },
+    "containerRegistrySkuName": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "allowedValues": [
+        "Basic",
+        "Standard",
+        "Premium"
+      ],
+      "metadata": {
+        "description": "Azure Container Registry SKU."
       }
     },
     "logAnalyticsWorkspaceName": {
@@ -336,7 +348,7 @@
         "allowProjectManagement": true,
         "customSubDomainName": "[parameters('foundryCustomSubDomainName')]",
         "publicNetworkAccess": "Enabled",
-        "disableLocalAuth": false
+        "disableLocalAuth": true
       },
       "tags": "[parameters('tags')]"
     },
@@ -353,7 +365,8 @@
         "description": "Public Foundry-hosted underwriting workflow"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.CognitiveServices/accounts', parameters('foundryAccountName'))]"
+        "[resourceId('Microsoft.CognitiveServices/accounts', parameters('foundryAccountName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('foundryAccountName'), parameters('foundryModelDeploymentName'))]"
       ]
     },
     {
@@ -385,7 +398,7 @@
       "name": "[parameters('containerRegistryName')]",
       "location": "[parameters('location')]",
       "sku": {
-        "name": "Basic"
+        "name": "[parameters('containerRegistrySkuName')]"
       },
       "properties": {
         "adminUserEnabled": false,
@@ -672,6 +685,7 @@
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/projects', parameters('foundryAccountName'), parameters('foundryProjectName'))]",
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('publicBackendManagedIdentityName'))]"
       ]
     },

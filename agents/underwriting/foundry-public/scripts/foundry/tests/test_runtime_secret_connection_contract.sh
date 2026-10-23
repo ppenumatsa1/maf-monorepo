@@ -15,8 +15,8 @@ set -euo pipefail
 if [[ "$1" == "env" && "$2" == "get-value" ]]; then
   case "$3" in
     INFRASTRUCTURE_MODE) echo bootstrap ;;
-    AZURE_SUBSCRIPTION_ID) echo 7df95e88-701c-4693-af77-3159f83b558d ;;
-    AZURE_RESOURCE_GROUP) echo rg-maf-underwriting ;;
+    AZURE_SUBSCRIPTION_ID) echo 11111111-1111-4111-8111-111111111111 ;;
+    AZURE_RESOURCE_GROUP) echo rg-fixture-underwriting ;;
     AZURE_LOCATION) echo eastus2 ;;
     FOUNDRY_ACCOUNT_NAME) echo underwritingaccount ;;
     FOUNDRY_PROJECT_NAME) echo underwriting ;;
@@ -45,7 +45,7 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$AZ_LOG"
 case "$1 $2" in
   "account set") exit 0 ;;
-  "account show") echo 7df95e88-701c-4693-af77-3159f83b558d ;;
+  "account show") echo 11111111-1111-4111-8111-111111111111 ;;
   "group show") echo eastus2 ;;
   "deployment group")
     parameters_source=""

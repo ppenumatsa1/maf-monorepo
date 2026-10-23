@@ -5,11 +5,18 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.v1.schemas.underwriting import RunHistoryResponse, RunResponse, StartRunRequest
+from app.api.v1.schemas.underwriting import (
+    ReviewDecisionRequest,
+    ReviewProjectionResponse,
+    RunHistoryResponse,
+    RunResponse,
+    StartRunRequest,
+)
 from app.core.container import get_underwriting_service
 from app.core.telemetry import annotate_current_span
-from app.modules.underwriting.models import UnderwritingApplication
-from app.modules.underwriting.service import UnderwritingService
+from app.infrastructure.persistence.workflow_run_repository import ApprovalDecisionError
+from app.modules.underwriting.models import ReviewerOutcome, UnderwritingApplication
+from app.modules.underwriting.service import LocalReviewDisabledError, UnderwritingService
 
 router = APIRouter(prefix="/api/v1/underwriting", tags=["underwriting"])
 service: UnderwritingService | None = None
@@ -51,6 +58,59 @@ async def resume_run(run_id: str) -> RunResponse:
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Hosted workflow invocation failed") from exc
     return RunResponse(**projection)
+
+
+@router.post(
+    "/runs/{run_id}/reviews/{checkpoint_id}",
+    response_model=RunResponse,
+)
+async def decide_review(
+    run_id: str,
+    checkpoint_id: str,
+    request: ReviewDecisionRequest,
+) -> RunResponse:
+    annotate_current_span(run_id, "review")
+    try:
+        projection = await _service().decide_review(
+            workflow_run_id=run_id,
+            checkpoint_id=checkpoint_id,
+            outcome=ReviewerOutcome(request.outcome),
+        )
+    except LocalReviewDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ApprovalDecisionError as exc:
+        status_code = 409
+        if exc.code in {"approval_not_found", "stale_checkpoint"}:
+            status_code = 404 if exc.code == "approval_not_found" else 409
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="Review decision could not be completed"
+        ) from exc
+    return RunResponse(**projection)
+
+
+@router.get(
+    "/runs/{run_id}/review",
+    response_model=ReviewProjectionResponse,
+)
+async def get_review(run_id: str) -> ReviewProjectionResponse:
+    review = _service().get_review(run_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review not found")
+    return ReviewProjectionResponse(
+        workflow_run_id=str(review["workflow_run_id"]),
+        checkpoint_id=str(review["checkpoint_id"]),
+        status=str(review["status"]),
+        machine_recommendation=str(review["machine_recommendation"]),
+        reviewer_outcome=(
+            str(review["reviewer_outcome"]) if review.get("reviewer_outcome") is not None else None
+        ),
+        requested_at=review["requested_at"],
+        resolved_at=review.get("resolved_at"),
+    )
 
 
 @router.get("/runs", response_model=RunHistoryResponse)

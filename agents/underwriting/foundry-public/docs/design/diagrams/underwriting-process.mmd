@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    box rgb(255,255,255) Operator and adapter
+        actor Operator
+        participant UI as React Console
+        participant API as FastAPI Adapter
+    end
+    box rgb(255,255,255) Hosted execution and state
+        participant Host as Foundry Hosted Agent
+        participant Master as MAF Master Workflow
+        participant Checks as Direct Executors
+        participant DB as PostgreSQL
+    end
+
+    Operator->>UI: Start underwriting run
+    UI->>API: POST run
+    API->>Host: Responses start
+    Host->>Master: Execute workflow
+    Master->>DB: Persist run and checkpoint
+    par Risk check
+        Master->>Checks: Run risk executor
+    and Credit check
+        Master->>Checks: Run credit executor
+    and Medical check
+        Master->>Checks: Run medical executor
+    and Driving check
+        Master->>Checks: Run driving executor
+    end
+    Checks-->>Master: CheckResult payloads
+    Master->>Master: Fan-in and deterministic decision
+    Master->>DB: Persist events, state, and result
+    Master-->>Host: Decision and rationale
+    Host-->>API: Response
+    API-->>UI: Run projection
+
+    opt Interrupted execution
+        Master->>DB: Persist latest checkpoint
+        Operator->>UI: Resume run
+        UI->>API: POST resume
+        API->>Host: Responses resume
+        Host->>DB: Load checkpoint
+        Host->>Master: Continue remaining work
+    end

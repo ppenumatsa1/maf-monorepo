@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "evidence_type": "infrastructure_preview",
+  "status": "passed",
+  "release_id": "manual-preview",
+  "release_started_at": "2026-10-22T22:43:48.688Z",
+  "generated_at": "2026-10-22T22:46:32Z",
+  "mode": "reuse",
+  "mutation_performed": false,
+  "preview_sha256": "8cc2a6dade946dd4ca3a0bb71ebefcf90af77b83059a545fd52e51a1b85cd711"
+}

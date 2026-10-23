@@ -1,63 +1,84 @@
-# Tech Stack
+# Technology Stack
 
-## Backend
+Exact dependency versions are authoritative in `pyproject.toml`,
+`backend/requirements*.txt`, `backend/requirements*.lock`,
+`frontend/package.json`, and the frontend lockfile. This document describes
+roles and compatibility boundaries rather than duplicating a version ledger.
 
-- Python 3.11+
-- FastAPI + Uvicorn
-- Microsoft Agent Framework Python SDK
-- Agent Framework AG-UI integration (`agent-framework-ag-ui`)
-- SQLAlchemy + psycopg (PostgreSQL)
-- OpenTelemetry SDK (console exporter in local mode)
-- Azure Monitor OpenTelemetry exporter for Application Insights
-- OpenTelemetry OpenAI v2 instrumentation for safe model metadata
+## Backend and hosted runtime
+
+- Python 3.13 for local tools, FastAPI, and the hosted agent.
+- FastAPI and Uvicorn for the internal API adapter.
+- Pydantic for HTTP and hosted input validation.
+- Microsoft Agent Framework for the master direct-executor workflow,
+  checkpointing, middleware, and AG-UI projection.
+- Foundry agent server Responses support; Activity support is additive in the
+  same hosted process for Teams.
+- Azure AI Projects and Azure Identity for project/agent lifecycle and managed
+  identity.
+- SQLAlchemy and Psycopg for PostgreSQL persistence.
+- Azure Monitor OpenTelemetry and Application Insights for correlation.
+
+Release images use the checked-in locked dependency and wheelhouse contract.
+Local editable installation remains defined by `pyproject.toml`.
 
 ## Frontend
 
-- React 19
-- Vite
-- TypeScript
-- Fetch-based API client for run/history/read-model routes
-- SSE consumption for AG-UI stream events
-- `@copilotkit/react-core` for the embedded selected-run assistant
+- React and React DOM.
+- TypeScript.
+- Vite.
+- Nginx for the production static site and same-origin backend proxy.
+- Fetch/SSE clients for run and progress surfaces.
+- `@copilotkit/react-core` for the selected-run assistant.
+- Zod where runtime frontend validation is required.
 
-## Agent UI and CopilotKit surface
+The frontend does not receive Foundry, PostgreSQL, Bot, or publication
+credentials.
 
-- AG-UI protocol endpoint: `POST /api/v1/underwriting/ag-ui`
-- Backend emits AG-UI-compatible event stream envelopes for underwriting run lifecycle updates.
-- CopilotKit uses the internal backend adapter's REST runtime discovery and
-  assistant route through the frontend's same-origin proxy. It receives a safe
-  selected-run projection only.
+## Data and state
 
-## Testing and validation
+- PostgreSQL for application projections, MAF checkpoints, approvals,
+  card-action bindings, and idempotency.
+- Administrator-owned production schema.
+- A least-privilege runtime database credential shared by backend and hosted
+  workflow through separate secret-delivery mechanisms.
+- A Foundry project `CustomKeys` connection whose placeholder, not resolved
+  URL, appears in hosted-agent metadata.
 
-- Pytest (backend)
-- Playwright (frontend E2E rubric)
-- Makefile as the primary developer and release command surface
-- Hosted validation targets such as `make foundry-smoke` and `make foundry-eval`
-- Selectively vendored Microsoft catalog skills: `microsoft-foundry` and
-  `agent-framework-azure-ai-py`; the exact source revision and refresh policy
-  are recorded in [`.github/skills/README.md`](../../.github/skills/README.md).
+## Azure runtime
 
-## Local runtime
+- Microsoft Foundry hosted agent.
+- Azure Container Apps for external frontend and internal backend.
+- Azure Container Registry for immutable application images.
+- Azure Database for PostgreSQL Flexible Server using the public-lane
+  TLS/firewall contract.
+- Log Analytics and Application Insights.
+- Azure Bot Service and `MsTeamsChannel` when Shared Teams publication is
+  enabled.
+- Bicep and Azure Developer CLI for infrastructure and packaging.
 
-- Docker Compose for PostgreSQL + backend + frontend containers
-- Local CLI commands for happy path, retry, crash, resume, and durable-state inspection
+This is a public-network lane. Private-runner, VNet, private endpoint, private
+DNS, Bastion, and NAT components are not part of the topology.
 
-## Public runtime integration
+## Quality and delivery
 
-- Azure AI Foundry hosted Responses entrypoint that executes the MAF workflow
-- Azure Container Apps for backend/frontend runtime hosting
-- Azure Database for PostgreSQL over TLS with one dedicated least-privilege
-  runtime credential delivered to the backend through an ACA secret and to the
-  hosted agent through the project `CustomKeys` connection
-- Application Insights telemetry via connection-string configuration
+- pytest for backend and script tests.
+- Ruff for backend lint/format checks.
+- frontend lint and build scripts.
+- Playwright for browser E2E.
+- deterministic and hosted trace evaluation.
+- Make as the primary command surface.
+- automatic credential-free GitHub CI.
+- protected GitHub OIDC workflows for preview/provision, app-only deploy,
+  package validation, observability, and evidence retry.
+- local authenticated equivalents for diagnosis/operator execution.
+- interactive Microsoft 365 Shared publication.
 
-The internal backend adapter relays hosted start/resume requests and reads
-durable projections behind the external frontend's same-origin proxy. The
-Foundry hosted agent is the production MAF executor.
+## Vendored guidance
 
-## Release governance surfaces
+Repository skills under `.github/skills/` provide focused Microsoft platform,
+SDK, validation, and documentation guidance. See
+[`.github/skills/README.md`](../../.github/skills/README.md) for source and
+refresh policy.
 
-- `docs/design/engineering-operating-model.md` defines the canonical release workflow.
-- `docs/design/issues-changes-fixes.md` is the evidence ledger for hosted readiness claims.
-- Local validation and authenticated hosted release remain separate concerns: local gates prove code behavior, while hosted smoke/eval/telemetry prove the clean public cutover.
+Skills guide implementation; source tests and live evidence remain the proof.

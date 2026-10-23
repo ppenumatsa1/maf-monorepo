@@ -38,6 +38,12 @@ class Settings:
     foundry_responses_timeout_seconds: float = 60.0
     frontend_origin: str = "http://localhost:5173"
     execution_mode: str = "hosted"
+    db_pool_min_size: int = 0
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle_seconds: int = 1800
+    local_review_mutation_enabled: bool = False
+    local_review_actor_id: str = ""
 
     @property
     def db_url(self) -> str:
@@ -56,8 +62,55 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int, *, minimum: int) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+    if parsed < minimum:
+        raise RuntimeError(f"{name} must be at least {minimum}")
+    return parsed
+
+
+def _uses_hosted_database_pool() -> bool:
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    return app_env.startswith(("aca", "foundry")) or _env_bool("DB_SCHEMA_MANAGED_EXTERNALLY")
+
+
+def _env_int_with_alias(
+    name: str,
+    alias: str,
+    default: int,
+    *,
+    minimum: int,
+) -> int:
+    if os.getenv(name) is not None:
+        return _env_int(name, default, minimum=minimum)
+    return _env_int(alias, default, minimum=minimum)
+
+
 def load_settings() -> Settings:
     load_dotenv()
+    hosted_database_pool = _uses_hosted_database_pool()
+    execution_mode = os.getenv("UNDERWRITING_EXECUTION_MODE", "hosted").strip().lower()
+    local_review_mutation_enabled = _env_bool("ENABLE_LOCAL_REVIEW_MUTATION")
+    local_review_actor_id = os.getenv("LOCAL_REVIEW_ACTOR_ID", "").strip()
+    if local_review_mutation_enabled and (execution_mode != "local" or hosted_database_pool):
+        raise RuntimeError(
+            "ENABLE_LOCAL_REVIEW_MUTATION is allowed only for non-hosted local execution"
+        )
+    if local_review_mutation_enabled and not local_review_actor_id:
+        raise RuntimeError(
+            "LOCAL_REVIEW_ACTOR_ID is required when local review mutation is enabled"
+        )
+    pool_min_size = _env_int("DB_POOL_MIN_SIZE", 0, minimum=0)
+    if pool_min_size != 0:
+        raise RuntimeError(
+            "DB_POOL_MIN_SIZE must be 0 because SQLAlchemy QueuePool opens connections lazily"
+        )
     return Settings(
         db_host=os.getenv("DB_HOST", "localhost"),
         db_port=int(os.getenv("DB_PORT", "5432")),
@@ -93,5 +146,25 @@ def load_settings() -> Settings:
             os.getenv("FOUNDRY_RESPONSES_TIMEOUT_SECONDS", "60")
         ),
         frontend_origin=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/"),
-        execution_mode=os.getenv("UNDERWRITING_EXECUTION_MODE", "hosted").lower(),
+        execution_mode=execution_mode,
+        db_pool_min_size=pool_min_size,
+        db_pool_size=_env_int_with_alias(
+            "DB_POOL_MAX_SIZE",
+            "DB_POOL_SIZE",
+            2 if hosted_database_pool else 5,
+            minimum=1,
+        ),
+        db_max_overflow=_env_int(
+            "DB_MAX_OVERFLOW",
+            0 if hosted_database_pool else 10,
+            minimum=0,
+        ),
+        db_pool_recycle_seconds=_env_int_with_alias(
+            "DB_POOL_MAX_IDLE_SECONDS",
+            "DB_POOL_RECYCLE_SECONDS",
+            30 if hosted_database_pool else 1800,
+            minimum=1,
+        ),
+        local_review_mutation_enabled=local_review_mutation_enabled,
+        local_review_actor_id=local_review_actor_id,
     )

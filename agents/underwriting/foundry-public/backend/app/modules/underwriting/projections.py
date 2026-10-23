@@ -31,11 +31,22 @@ def final_decision_outputs(
     repository: UnderwritingRunRepositoryPort,
     workflow_run_id: str,
 ) -> list[dict[str, Any]]:
-    return [
+    outputs = [
         result["result_json"]
         for result in repository.list_underwriting_results(workflow_run_id)
         if result.get("check_type") == "final_decision"
         and isinstance(result.get("result_json"), dict)
+    ]
+    get_review = getattr(repository, "get_review_projection", None)
+    review = get_review(workflow_run_id) if callable(get_review) else None
+    return [
+        {
+            **output,
+            "machine_recommendation": output.get("decision"),
+            "reviewer_outcome": (review.get("reviewer_outcome") if review is not None else None),
+            "review_checkpoint_id": (review.get("checkpoint_id") if review is not None else None),
+        }
+        for output in outputs
     ]
 
 
@@ -48,15 +59,29 @@ def project_workflow_run(
 ) -> dict[str, Any]:
     get_run = getattr(repository, "get_workflow_run", None)
     run = get_run(workflow_run_id) if callable(get_run) else None
+    persisted_outputs = final_decision_outputs(repository, workflow_run_id)
     projected_outputs = (
-        final_decision_outputs(repository, workflow_run_id)
-        if outputs is None
-        else [serialize_output(output) for output in outputs]
+        persisted_outputs if not outputs else [serialize_output(output) for output in outputs]
     )
+    get_review = getattr(repository, "get_review_projection", None)
+    review = get_review(workflow_run_id) if callable(get_review) else None
     return {
         "workflow_run_id": workflow_run_id,
         "status": str(run.get("status") if run is not None else fallback_status),
         "outputs": projected_outputs,
+        "machine_recommendation": (
+            run.get("machine_recommendation")
+            if run is not None
+            else (
+                projected_outputs[0].get("machine_recommendation")
+                or projected_outputs[0].get("decision")
+                if projected_outputs and isinstance(projected_outputs[0], dict)
+                else None
+            )
+        ),
+        "reviewer_outcome": (review.get("reviewer_outcome") if review is not None else None),
+        "review_checkpoint_id": (review.get("checkpoint_id") if review is not None else None),
+        "review_status": review.get("status") if review is not None else None,
     }
 
 

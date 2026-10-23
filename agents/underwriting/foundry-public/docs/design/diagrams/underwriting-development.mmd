@@ -1,0 +1,20 @@
+flowchart TD
+    subgraph BG[" "]
+        direction TD
+        A["Local CLI"] --> SVC["UnderwritingService"]
+        B["Public FastAPI adapter"] --> SVC
+        SVC -->|local validation| RUN["UnderwritingMafRunner"]
+        SVC -->|hosted start and resume| HOSTED["Foundry Responses host<br/>backend/foundry/main.py"]
+        HOSTED -->|hosted execution| RUN
+        RUN --> WF["Master Underwriting Workflow"]
+        WF --> EX["init_context + fan-out/fan-in + final_decision"]
+        EX --> CHECKS["Risk / Credit / Medical / Driving direct executors"]
+        WF --> EVT["Workflow events and checkpoints"]
+        EVT --> DB[("workflow_runs / business_state / workflow_events / maf_checkpoints")]
+        B --> AGUI["POST /api/v1/underwriting/ag-ui"]
+        AGUI --> SVC
+        B --> EVT
+    end
+
+    classDef default fill:#ffffff,stroke:#334155,color:#0f172a
+    style BG fill:#ffffff,stroke:#ffffff,color:#0f172a

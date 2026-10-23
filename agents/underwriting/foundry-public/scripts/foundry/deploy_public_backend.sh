@@ -30,6 +30,7 @@ required_env() {
 require_bin az
 require_bin azd
 require_bin git
+require_bin jq
 
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 
@@ -41,6 +42,8 @@ backend_name="$(required_env BACKEND_CONTAINER_APP_NAME)"
 frontend_name="$(required_env FRONTEND_CONTAINER_APP_NAME)"
 backend_identity_name="$(required_env PUBLIC_BACKEND_MANAGED_IDENTITY_NAME)"
 image_repository="$(required_env BACKEND_IMAGE_REPOSITORY)"
+backend_target_port=8000
+backend_readiness_attempts="${BACKEND_READINESS_ATTEMPTS:-120}"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
 project_endpoint="$(required_env AZURE_AI_PROJECT_ENDPOINT)"
 hosted_agent_name="$(required_env AGENT_UNDERWRITING_HOSTED_NAME)"
@@ -97,6 +100,15 @@ if [[ -z "$image" ]]; then
     --file "$ROOT_DIR/backend/Dockerfile" \
     "$ROOT_DIR"
 fi
+if [[ -n "${RELEASE_ID:-}" &&
+      ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "Release deployment requires an immutable backend image digest." >&2
+  exit 1
+fi
+if [[ ! "$backend_readiness_attempts" =~ ^[1-9][0-9]*$ ]]; then
+  echo "BACKEND_READINESS_ATTEMPTS must be a positive integer." >&2
+  exit 1
+fi
 
 az containerapp secret set \
   --subscription "$subscription_id" \
@@ -124,5 +136,40 @@ az containerapp update \
     "FOUNDRY_RESPONSES_ENDPOINT=${responses_endpoint}" \
     "FRONTEND_ORIGIN=https://${frontend_fqdn}" \
   --output none
+
+az containerapp ingress update \
+  --subscription "$subscription_id" \
+  --resource-group "$resource_group" \
+  --name "$backend_name" \
+  --target-port "$backend_target_port" \
+  --output none
+
+for ((attempt = 1; attempt <= backend_readiness_attempts; attempt++)); do
+  revision_state="$(
+    az containerapp show \
+      --subscription "$subscription_id" \
+      --resource-group "$resource_group" \
+      --name "$backend_name" \
+      --output json
+  )"
+  latest_revision="$(jq -r '.properties.latestRevisionName // empty' <<<"$revision_state")"
+  latest_ready_revision="$(
+    jq -r '.properties.latestReadyRevisionName // empty' <<<"$revision_state"
+  )"
+  deployed_image="$(jq -r '.properties.template.containers[0].image // empty' <<<"$revision_state")"
+  target_port="$(jq -r '.properties.configuration.ingress.targetPort // empty' <<<"$revision_state")"
+  if [[ -n "$latest_revision" &&
+        "$latest_revision" == "$latest_ready_revision" &&
+        "$deployed_image" == "$image" &&
+        "$target_port" == "$backend_target_port" ]]; then
+    echo "Backend revision is ready on target port ${backend_target_port}."
+    break
+  fi
+  if (( attempt == backend_readiness_attempts )); then
+    echo "Backend revision did not become ready on target port ${backend_target_port}." >&2
+    exit 1
+  fi
+  sleep 5
+done
 
 echo "PUBLIC_BACKEND_IMAGE=$image"

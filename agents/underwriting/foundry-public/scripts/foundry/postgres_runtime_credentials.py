@@ -14,6 +14,8 @@ RUNTIME_TABLES = (
     "workflow_events",
     "idempotency_records",
     "maf_checkpoints",
+    "underwriting_approvals",
+    "teams_card_actions",
 )
 RUNTIME_SEQUENCES = (
     "business_state_id_seq",
@@ -109,6 +111,8 @@ def build_runtime_url(
 
 def build_verification_sql(runtime_username: str) -> str:
     role_literal = quote_literal(runtime_username)
+    allowed_tables = ", ".join(quote_literal(table) for table in RUNTIME_TABLES)
+    allowed_sequences = ", ".join(quote_literal(sequence) for sequence in RUNTIME_SEQUENCES)
     table_checks = "\n  ".join(
         (
             f"IF NOT has_table_privilege(current_user, 'public.{table}', 'SELECT')"
@@ -116,6 +120,11 @@ def build_verification_sql(runtime_username: str) -> str:
             f" OR NOT has_table_privilege(current_user, 'public.{table}', 'UPDATE')"
             f" OR NOT has_table_privilege(current_user, 'public.{table}', 'DELETE') THEN\n"
             f"    RAISE EXCEPTION 'Runtime credential is missing required table privileges.';\n"
+            f"  END IF;\n"
+            f"  IF has_table_privilege(current_user, 'public.{table}', 'TRUNCATE')"
+            f" OR has_table_privilege(current_user, 'public.{table}', 'REFERENCES')"
+            f" OR has_table_privilege(current_user, 'public.{table}', 'TRIGGER') THEN\n"
+            f"    RAISE EXCEPTION 'Runtime credential has prohibited table privileges.';\n"
             f"  END IF;"
         )
         for table in RUNTIME_TABLES
@@ -124,6 +133,10 @@ def build_verification_sql(runtime_username: str) -> str:
         (
             f"IF NOT has_sequence_privilege(current_user, 'public.{sequence}', 'USAGE') THEN\n"
             f"    RAISE EXCEPTION 'Runtime credential is missing required sequence privileges.';\n"
+            f"  END IF;\n"
+            f"  IF has_sequence_privilege(current_user, 'public.{sequence}', 'SELECT')"
+            f" OR has_sequence_privilege(current_user, 'public.{sequence}', 'UPDATE') THEN\n"
+            f"    RAISE EXCEPTION 'Runtime credential has prohibited sequence privileges.';\n"
             f"  END IF;"
         )
         for sequence in RUNTIME_SEQUENCES
@@ -160,6 +173,43 @@ BEGIN
 
   {table_checks}
   {sequence_checks}
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ({allowed_tables})
+      AND (
+        has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'SELECT')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'INSERT')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'UPDATE')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'DELETE')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'TRUNCATE')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'REFERENCES')
+        OR has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'TRIGGER')
+      )
+  ) THEN
+    RAISE EXCEPTION 'Runtime credential has privileges on a non-runtime table.';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_sequences
+    WHERE schemaname = 'public'
+      AND sequencename NOT IN ({allowed_sequences})
+      AND (
+        has_sequence_privilege(
+          current_user, format('%I.%I', schemaname, sequencename), 'USAGE'
+        )
+        OR has_sequence_privilege(
+          current_user, format('%I.%I', schemaname, sequencename), 'SELECT'
+        )
+        OR has_sequence_privilege(
+          current_user, format('%I.%I', schemaname, sequencename), 'UPDATE'
+        )
+      )
+  ) THEN
+    RAISE EXCEPTION 'Runtime credential has privileges on a non-runtime sequence.';
+  END IF;
 
   PERFORM 1 FROM public.workflow_runs LIMIT 1;
 

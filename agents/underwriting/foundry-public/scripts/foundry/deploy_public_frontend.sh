@@ -90,6 +90,11 @@ if [[ -z "$image" ]]; then
     "$ROOT_DIR/frontend"
   docker push "$image"
 fi
+if [[ -n "${RELEASE_ID:-}" &&
+      ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "Release deployment requires an immutable frontend image digest." >&2
+  exit 1
+fi
 
 az containerapp update \
   --subscription "$subscription_id" \

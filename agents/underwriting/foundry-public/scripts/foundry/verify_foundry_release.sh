@@ -51,15 +51,31 @@ runtime_connection_name="$(required_env FOUNDRY_RUNTIME_CONNECTION_NAME)"
 registry_endpoint="$(required_env AZURE_CONTAINER_REGISTRY_ENDPOINT)"
 backend_repository="$(required_env BACKEND_IMAGE_REPOSITORY)"
 frontend_repository="$(required_env FRONTEND_IMAGE_REPOSITORY)"
+hosted_repository="$(required_env HOSTED_AGENT_IMAGE_REPOSITORY)"
+recorded_hosted_repository="$(required_env AGENT_UNDERWRITING_HOSTED_IMAGE_REPOSITORY)"
+recorded_hosted_image="$(required_env AGENT_UNDERWRITING_HOSTED_IMAGE)"
 database_url="$(required_env DATABASE_URL)"
 runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
+expected_backend_image=""
+expected_frontend_image=""
+expected_hosted_image=""
+if [[ -n "${RELEASE_ID:-}" ]]; then
+  image_authority="$FOUNDRY_RELEASE_EVIDENCE_DIR/release-images.env"
+  [[ -f "$image_authority" ]] || {
+    echo "Release image authority is missing: $image_authority" >&2
+    exit 1
+  }
+  # shellcheck disable=SC1090
+  source "$image_authority"
+  [[ "${HOSTED_AGENT_IMAGE_REPOSITORY:-}" == "$hosted_repository" ]] || {
+    echo "Release image authority uses a different hosted-agent repository." >&2
+    exit 1
+  }
+  expected_backend_image="$PUBLIC_BACKEND_PREBUILT_IMAGE"
+  expected_frontend_image="$PUBLIC_FRONTEND_PREBUILT_IMAGE"
+  expected_hosted_image="$HOSTED_AGENT_PREBUILT_IMAGE"
+fi
 
-[[ "$subscription_id" == "7df95e88-701c-4693-af77-3159f83b558d" &&
-  "$resource_group" == "rg-maf-underwriting" &&
-  "$location" == "eastus2" ]] || {
-  echo "Selected environment is not the canonical Underwriting target." >&2
-  exit 1
-}
 [[ "$database_url" == "$runtime_database_url" ]] || {
   echo "DATABASE_URL and RUNTIME_DATABASE_URL are not identical in the selected environment." >&2
   exit 1
@@ -69,6 +85,22 @@ runtime_database_url="$(required_env RUNTIME_DATABASE_URL)"
   exit 1
 }
 az account set --subscription "$subscription_id" >/dev/null
+actual_subscription="$(az account show --query id --output tsv)"
+[[ "$actual_subscription" == "$subscription_id" ]] || {
+  echo "Azure CLI subscription does not match the authenticated target." >&2
+  exit 1
+}
+actual_location="$(
+  az group show \
+    --subscription "$subscription_id" \
+    --name "$resource_group" \
+    --query location \
+    --output tsv
+)"
+[[ "$actual_location" == "$location" ]] || {
+  echo "Resource group location does not match the authenticated target." >&2
+  exit 1
+}
 
 backend_json="$(
   az containerapp show \
@@ -129,6 +161,12 @@ frontend_upstream="$(
   echo "Container Apps ready images are not from the configured Underwriting repositories." >&2
   exit 1
 }
+if [[ -n "$expected_backend_image" &&
+      ( "$backend_image" != "$expected_backend_image" ||
+        "$frontend_image" != "$expected_frontend_image" ) ]]; then
+  echo "Container Apps do not use the exact release-authority image digests." >&2
+  exit 1
+fi
 [[ "$backend_schema_mode" == "true" ]] || {
   echo "Backend revision does not enable external schema management." >&2
   exit 1
@@ -213,6 +251,10 @@ hosted_json="$(
 )"
 jq -e '
   .status == "active"
+  and .is_active_version
+  and .immutable_image_digest
+  and any(.protocols[]; .protocol == "responses" and .version == "2.0.0")
+  and any(.protocols[]; .protocol == "activity" and .version == "2.0.0")
   and (.image | length > 0)
   and .db_schema_managed_externally
   and .database_url_placeholder
@@ -225,14 +267,28 @@ jq -e '
 }
 hosted_image="$(jq -r '.image' <<<"$hosted_json")"
 unset database_url runtime_database_url
-[[ "$hosted_image" == "${registry_endpoint}/underwriting-hosted:"* ||
-  "$hosted_image" == "${registry_endpoint}/underwriting-hosted@"* ]] || {
+[[ "$recorded_hosted_repository" == "$hosted_repository" &&
+  "$recorded_hosted_image" == "$hosted_image" ]] || {
+  echo "Hosted-agent AZD state does not match the configured repository and active image." >&2
+  exit 1
+}
+[[ "$hosted_image" == "${registry_endpoint}/${hosted_repository}@sha256:"* ]] || {
   echo "Hosted agent image is not from the configured Underwriting repository." >&2
   exit 1
 }
+if [[ -n "$expected_hosted_image" && "$hosted_image" != "$expected_hosted_image" ]]; then
+  echo "Hosted agent does not use the exact release-authority image digest." >&2
+  exit 1
+fi
+hosted_json="$(
+  jq --arg image_repository "$hosted_repository" \
+    '. + {image_repository: $image_repository}' <<<"$hosted_json"
+)"
 
 mkdir -p "$(dirname "$EVIDENCE_FILE")"
 jq -n \
+  --arg release_id "${RELEASE_ID:-manual-verification}" \
+  --arg release_started_at "${FOUNDRY_RELEASE_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
   --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg subscription_id "$subscription_id" \
   --arg resource_group "$resource_group" \
@@ -246,6 +302,11 @@ jq -n \
   --arg frontend_image "$frontend_image" \
   --argjson hosted "$hosted_json" \
   '{
+    schema_version: 1,
+    evidence_type: "deployment_verification",
+    status: "passed",
+    release_id: $release_id,
+    release_started_at: $release_started_at,
     generated_at: $generated_at,
     target: {
       subscription_id: $subscription_id,

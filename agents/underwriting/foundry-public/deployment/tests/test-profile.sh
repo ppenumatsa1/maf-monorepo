@@ -1,80 +1,127 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+unset DEPLOYMENT_PROFILE_ALLOW_ENV_OVERRIDES
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 project_dir="$(cd "$script_dir/.." && pwd -P)"
-profile="$script_dir/profiles/foundry-public.env"
-bootstrap_profile="$script_dir/profiles/foundry-public-bootstrap.env"
-
-for forbidden_key in \
-  RUNTIME_DATABASE_URL \
-  DATABASE_URL \
-  APPLICATIONINSIGHTS_CONNECTION_STRING \
-  POSTGRES_ADMIN_PASSWORD \
-  AZURE_CONTAINER_REGISTRY_NAME \
-  POSTGRES_SERVER_NAME; do
-  if grep -q "^${forbidden_key}=" "$profile"; then
-    printf 'profile must not contain %s\n' "$forbidden_key" >&2
-    exit 1
-  fi
-done
-
-grep -Fxq 'AZURE_SUBSCRIPTION_ID=7df95e88-701c-4693-af77-3159f83b558d' "$profile"
-grep -Fxq 'AZURE_RESOURCE_GROUP=rg-maf-underwriting' "$profile"
-grep -Fxq 'AZURE_LOCATION=eastus2' "$profile"
-grep -Fxq 'AZURE_SUBSCRIPTION_ID=7df95e88-701c-4693-af77-3159f83b558d' "$bootstrap_profile"
-grep -Fxq 'AZURE_RESOURCE_GROUP=rg-maf-underwriting' "$bootstrap_profile"
-! grep -Eq '00000000-0000-0000-0000-000000000000|203\.0\.113\.10|rg-underwriting-foundry-public' \
-  "$profile" "$bootstrap_profile"
-
 scratch_dir="$project_dir/backend/.tmp/profile-contract-$$"
-azd_command="$scratch_dir/azd-command"
-azd_log="$scratch_dir/azd.log"
-bin_dir="$scratch_dir/bin"
-bootstrap_log="$scratch_dir/bootstrap.log"
-mkdir -p "$bin_dir"
+mkdir -p "$scratch_dir/bin"
 trap 'rm -rf "$scratch_dir"' EXIT
 
-cat > "$azd_command" <<'EOF'
+profile="$scratch_dir/foundry-public.env"
+cat >"$profile" <<'EOF'
+CONTRACT_VERSION=1
+DEPLOYMENT_LANE=foundry-public
+AZURE_ENV_NAME=portable-underwriting
+AZURE_SUBSCRIPTION_ID=11111111-1111-4111-8111-111111111111
+AZURE_RESOURCE_GROUP=rg-portable-underwriting
+AZURE_LOCATION=eastus2
+NAME_PREFIX=portableuw
+INFRASTRUCTURE_MODE=reuse
+FOUNDRY_LOCATION=eastus2
+FOUNDRY_ACCOUNT_NAME=portable-foundry
+FOUNDRY_PROJECT_NAME=portable-underwriting
+FOUNDRY_CUSTOM_SUBDOMAIN_NAME=portable-foundry
+HOSTED_AGENT_NAME=underwriting-hosted
+FOUNDRY_RUNTIME_CONNECTION_NAME=underwriting-runtime
+FOUNDRY_MODEL_DEPLOYMENT_NAME=portable-model
+FOUNDRY_MODEL_FORMAT=OpenAI
+FOUNDRY_MODEL_NAME=model-name
+FOUNDRY_MODEL_VERSION=1
+FOUNDRY_MODEL_SKU_NAME=GlobalStandard
+FOUNDRY_MODEL_CAPACITY=25
+FOUNDRY_RAI_POLICY_NAME=Default.Policy
+POSTGRES_SERVER_NAME=portable-postgres
+POSTGRES_SERVER_LOCATION=eastus2
+POSTGRES_SKU_NAME=Standard_D2s_v5
+POSTGRES_SKU_TIER=GeneralPurpose
+POSTGRES_VERSION=17
+POSTGRES_DATABASE=underwriting
+POSTGRES_ADMIN_USERNAME=pgadmin
+POSTGRES_RUNTIME_USERNAME=underwriting_runtime
+CONTAINER_REGISTRY_NAME=portableuwacr
+CONTAINER_REGISTRY_SKU_NAME=Basic
+CONTAINER_APPS_ENVIRONMENT_NAME=portable-cae
+BACKEND_CONTAINER_APP_NAME=portable-backend
+FRONTEND_CONTAINER_APP_NAME=portable-frontend
+PUBLIC_BACKEND_MANAGED_IDENTITY_NAME=portable-backend-mi
+PUBLIC_FRONTEND_MANAGED_IDENTITY_NAME=portable-frontend-mi
+APPLICATION_INSIGHTS_NAME=portable-ai
+LOG_ANALYTICS_WORKSPACE_NAME=portable-log
+BACKEND_IMAGE_REPOSITORY=portable-backend
+FRONTEND_IMAGE_REPOSITORY=portable-frontend
+HOSTED_AGENT_IMAGE_REPOSITORY=portable-hosted
+EVALUATION_STORAGE_ACCOUNT_NAME=portableuweval
+BOT_SERVICE_NAME=portable-underwriting-bot
+BOT_SERVICE_SKU_NAME=F0
+EOF
+
+bash "$script_dir/profile.sh" validate "$profile"
+for forbidden_key in \
+  AZURE_TENANT_ID RUNTIME_DATABASE_URL DATABASE_URL \
+  APPLICATIONINSIGHTS_CONNECTION_STRING POSTGRES_ADMIN_PASSWORD \
+  POSTGRES_HOSTED_PASSWORD; do
+  ! grep -q "^${forbidden_key}=" "$profile"
+done
+
+if bash "$script_dir/profile.sh" validate \
+  "$script_dir/profiles/foundry-public.env.example" \
+  >"$scratch_dir/template.out" 2>&1; then
+  echo "The generic profile template must fail until placeholders are replaced." >&2
+  exit 1
+fi
+
+wrong_region="$scratch_dir/wrong-region.env"
+sed 's/^POSTGRES_SERVER_LOCATION=.*/POSTGRES_SERVER_LOCATION=westus2/' \
+  "$profile" >"$wrong_region"
+if bash "$script_dir/profile.sh" validate "$wrong_region" \
+  >"$scratch_dir/region.out" 2>&1; then
+  echo "The public profile must require a complete single-region target." >&2
+  exit 1
+fi
+grep -Fq 'public deployment requires one region' "$scratch_dir/region.out"
+
+override_profile="$scratch_dir/override.env"
+sed 's/^AZURE_LOCATION=.*/AZURE_LOCATION=placeholder/' "$profile" >"$override_profile"
+DEPLOYMENT_PROFILE_ALLOW_ENV_OVERRIDES=true \
+AZURE_LOCATION=eastus2 \
+FOUNDRY_LOCATION=eastus2 \
+POSTGRES_SERVER_LOCATION=eastus2 \
+  bash "$script_dir/profile.sh" validate "$override_profile"
+
+cat >"$scratch_dir/bin/azd" <<'EOF'
 #!/usr/bin/env bash
 printf '%s|%s\n' "$PWD" "$*" >> "$AZD_LOG"
 EOF
-chmod +x "$azd_command"
+chmod +x "$scratch_dir/bin/azd"
 
-AZD_COMMAND="$azd_command" AZD_LOG="$azd_log" \
+AZD_COMMAND="$scratch_dir/bin/azd" AZD_LOG="$scratch_dir/azd.log" \
   bash "$script_dir/apply-azd-profile.sh" "$profile"
 
-grep -Fq 'underwriting/foundry-public/infra/foundry-hosted|env select underwriting-foundry-public --no-prompt' "$azd_log"
-grep -Fq 'env set AZURE_SUBSCRIPTION_ID 7df95e88-701c-4693-af77-3159f83b558d --no-prompt' "$azd_log"
-grep -Fq 'env set AZURE_RESOURCE_GROUP rg-maf-underwriting --no-prompt' "$azd_log"
-grep -Fq 'env set AZURE_LOCATION eastus2' "$azd_log"
-grep -Fq 'env set NAME_PREFIX underwriting' "$azd_log"
-! grep -Fq 'agents/order-resolution' "$script_dir/apply-azd-profile.sh"
+grep -Fq 'foundry-public/infra/foundry-hosted|env set AZURE_SUBSCRIPTION_ID 11111111-1111-4111-8111-111111111111' "$scratch_dir/azd.log"
+grep -Fq 'env set AZURE_RESOURCE_GROUP rg-portable-underwriting' "$scratch_dir/azd.log"
+grep -Fq 'env set AZURE_LOCATION eastus2' "$scratch_dir/azd.log"
+grep -Fq 'env set FOUNDRY_MODEL_CAPACITY 25' "$scratch_dir/azd.log"
+grep -Fq 'env set HOSTED_AGENT_IMAGE_REPOSITORY portable-hosted' "$scratch_dir/azd.log"
+grep -Fq 'env set BOT_SERVICE_NAME portable-underwriting-bot' "$scratch_dir/azd.log"
 
-router_output="$("$project_dir/scripts/skills/deployment-mode-router.sh" HEAD)"
-grep -Fxq 'deploy_mode=app_only' <<<"$router_output"
+bootstrap_profile="$scratch_dir/foundry-public-bootstrap.env"
+sed 's/^INFRASTRUCTURE_MODE=reuse$/INFRASTRUCTURE_MODE=bootstrap/' \
+  "$profile" >"$bootstrap_profile"
+bash "$script_dir/profile.sh" validate "$bootstrap_profile"
+: >"$scratch_dir/azd.log"
+AZD_COMMAND="$scratch_dir/bin/azd" AZD_LOG="$scratch_dir/azd.log" \
+  bash "$script_dir/apply-azd-profile.sh" "$bootstrap_profile"
+grep -Fq 'env set INFRASTRUCTURE_MODE bootstrap' "$scratch_dir/azd.log"
+! grep -Fq 'env set INFRASTRUCTURE_MODE reuse' "$scratch_dir/azd.log"
 
-for command in az azd curl; do
-  cat > "$bin_dir/$command" <<'EOF'
-#!/usr/bin/env bash
-if [[ "$1" == "env" && "$2" == "get-value" ]]; then
-  exit 0
-fi
-printf 'unexpected command: %s\n' "$*" >&2
-exit 1
-EOF
-  chmod +x "$bin_dir/$command"
-done
+git -C "$project_dir" check-ignore --no-index -q deployment/profiles/foundry-public.env
+! git -C "$project_dir" check-ignore -q deployment/profiles/foundry-public.env.example
 
-if PATH="$bin_dir:$PATH" bash "$project_dir/scripts/foundry/bootstrap_azd_env.sh" >"$bootstrap_log" 2>&1; then
-  printf 'bootstrap must reject a selected environment without target configuration\n' >&2
+if grep -REn \
+  'AZURE_SUBSCRIPTION_ID=[0-9a-fA-F-]{36}|AZURE_RESOURCE_GROUP=rg-[A-Za-z0-9-]+|AZURE_LOCATION=(eastus2|westus2)' \
+  "$script_dir/profiles"/*.example; then
+  echo "Tracked profile templates must not contain a real target." >&2
   exit 1
 fi
-grep -Fq 'Missing selected AZD environment value: AZURE_SUBSCRIPTION_ID' "$bootstrap_log"
-
-if FOUNDRY_DEPLOY_MODE=full PATH="$bin_dir:$PATH" \
-  bash "$project_dir/scripts/foundry/deploy_public_dev.sh" >"$bootstrap_log" 2>&1; then
-  printf 'release script must reject FOUNDRY_DEPLOY_MODE overrides\n' >&2
-  exit 1
-fi
-grep -Fq 'FOUNDRY_DEPLOY_MODE overrides are forbidden' "$bootstrap_log"

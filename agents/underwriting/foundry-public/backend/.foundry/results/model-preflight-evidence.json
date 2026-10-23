@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "evidence_type": "capacity_preflight",
+  "status": "passed",
+  "release_id": "manual-capacity-preflight",
+  "release_started_at": "2026-10-22T22:43:48.688Z",
+  "generated_at": "2026-10-22T22:48:41Z",
+  "mode": "app_only",
+  "mutation_performed": false,
+  "incremental": {
+    "application_insights": 0,
+    "bot_services": 0,
+    "container_apps": 0,
+    "container_apps_environments": 0,
+    "container_registries": 0,
+    "foundry_accounts": 0,
+    "log_analytics_workspaces": 0,
+    "model_capacity": 0,
+    "postgres_servers": 0,
+    "teams_channels": 0
+  },
+  "checks": [
+    "Existing healthy Foundry account, project, and model deployments need zero additional quota.",
+    "Existing healthy PostgreSQL server needs zero additional capacity.",
+    "Existing healthy backend and frontend Container Apps need zero additional infrastructure capacity.",
+    "Existing healthy Container Registry needs zero additional capacity.",
+    "Existing healthy Application Insights and Log Analytics resources need zero additional infrastructure capacity."
+  ]
+}

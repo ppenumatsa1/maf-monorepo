@@ -15,6 +15,7 @@ if [[ -n "${RELEASE_ID:-}" ]]; then
 fi
 FOUNDRY_DIR="$ROOT_DIR/infra/foundry-hosted"
 EVIDENCE_FILE="${HOSTED_E2E_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/hosted-e2e-evidence.json}"
+TEAMS_EVIDENCE_FILE="${TEAMS_NATIVE_ACCEPTANCE_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/teams-native-acceptance.json}"
 REPORT_FILE="${APPINSIGHTS_EVIDENCE_FILE:-$ROOT_DIR/backend/.foundry/results/appinsights-evidence.json}"
 MAX_ATTEMPTS="${TELEMETRY_MAX_ATTEMPTS:-12}"
 
@@ -43,6 +44,33 @@ require_bin awk
   echo "Hosted E2E evidence is required: $EVIDENCE_FILE" >&2
   exit 1
 }
+[[ -f "$TEAMS_EVIDENCE_FILE" ]] || {
+  echo "Native Teams acceptance evidence is required: $TEAMS_EVIDENCE_FILE" >&2
+  exit 1
+}
+jq -e '
+  .status == "passed"
+  and .playwright_status == "passed"
+  and (.workflow_run_ids | type == "array" and length > 0)
+  and ((.workflow_run_ids | length) == (.workflow_run_ids | unique | length))
+  and (.scenarios | type == "array" and length > 0)
+  and all(.scenarios[]; .status == "passed")
+' "$EVIDENCE_FILE" >/dev/null || {
+  echo "Hosted E2E evidence is incomplete or does not have exact unique IDs." >&2
+  exit 1
+}
+jq -e '
+  .status == "passed"
+  and (.workflow_run_ids | type == "array" and length == 2)
+  and ((.workflow_run_ids | length) == (.workflow_run_ids | unique | length))
+  and (.conversation_hashes | type == "array" and length > 0)
+  and ((.conversation_hashes | length) == (.conversation_hashes | unique | length))
+  and (.scenarios | type == "array" and length > 0)
+  and all(.scenarios[]; .status == "passed")
+' "$TEAMS_EVIDENCE_FILE" >/dev/null || {
+  echo "Native Teams acceptance evidence is incomplete." >&2
+  exit 1
+}
 
 "$ROOT_DIR/scripts/foundry/ensure_foundry_azd_defaults.sh"
 
@@ -50,7 +78,19 @@ resource_group="$(required_env AZURE_RESOURCE_GROUP)"
 subscription_id="$(required_env AZURE_SUBSCRIPTION_ID)"
 application_insights_name="$(required_env APPLICATION_INSIGHTS_NAME)"
 az account set --subscription "$subscription_id" >/dev/null
-started_at="$(jq -r '.started_at // .generated_at // empty' "$EVIDENCE_FILE")"
+started_at="$(jq -r '.release_started_at // .started_at // .generated_at // empty' "$EVIDENCE_FILE")"
+evidence_release_id="$(jq -r '.release_id // empty' "$EVIDENCE_FILE")"
+evidence_release_started_at="$(jq -r '.release_started_at // empty' "$EVIDENCE_FILE")"
+teams_release_id="$(jq -r '.release_id // empty' "$TEAMS_EVIDENCE_FILE")"
+teams_release_started_at="$(jq -r '.release_started_at // empty' "$TEAMS_EVIDENCE_FILE")"
+if [[ -n "${RELEASE_ID:-}" &&
+      ( "$evidence_release_id" != "$RELEASE_ID" ||
+        "$evidence_release_started_at" != "${FOUNDRY_RELEASE_STARTED_AT:-}" ||
+        "$teams_release_id" != "$RELEASE_ID" ||
+        "$teams_release_started_at" != "${FOUNDRY_RELEASE_STARTED_AT:-}" ) ]]; then
+  echo "Web or native Teams evidence does not belong to the active release window." >&2
+  exit 1
+fi
 mapfile -t workflow_run_ids < <(
   jq -r '
     [
@@ -61,7 +101,7 @@ mapfile -t workflow_run_ids < <(
     ]
     | .[]
     | select(type == "string" and length > 0)
-  ' "$EVIDENCE_FILE" | awk '!seen[$0]++'
+  ' "$EVIDENCE_FILE" "$TEAMS_EVIDENCE_FILE" | awk '!seen[$0]++'
 )
 
 [[ -n "$started_at" && "${#workflow_run_ids[@]}" -gt 0 ]] || {
@@ -86,10 +126,18 @@ union isfuzzy=true requests, dependencies, traces, customEvents, exceptions
     dependency_rows = countif(itemType == "dependency"),
     trace_rows = countif(itemType == "trace"),
     request_run_count = dcountif(workflowRunId, itemType == "request"),
+    entrypoint_run_count = dcountif(
+      workflowRunId,
+      itemType == "request"
+        or (
+          itemType == "dependency"
+          and name in ("foundry.responses.invoke", "foundry.activity.message", "foundry.activity.invoke")
+        )
+    ),
     hosted_invocation_run_count = dcountif(
       workflowRunId,
       itemType == "dependency"
-        and name == "foundry.responses.invoke"
+        and name in ("foundry.responses.invoke", "foundry.activity.message", "foundry.activity.invoke")
         and isnotempty(tostring(customDimensions["gen_ai.agent.name"]))
     ),
     workflow_span_run_count = dcountif(
@@ -117,17 +165,20 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   dependency_rows="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][3] // 0')"
   trace_rows="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][4] // 0')"
   request_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][5] // 0')"
-  hosted_invocation_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][6] // 0')"
-  workflow_span_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][7] // 0')"
-  exception_rows="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][8] // 0')"
+  entrypoint_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][6] // 0')"
+  hosted_invocation_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][7] // 0')"
+  workflow_span_run_count="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][8] // 0')"
+  exception_rows="$(printf '%s\n' "$result" | jq -r '.tables[0].rows[0][9] // 0')"
   if [[ "$telemetry_rows" -gt 0 &&
         "$matched_count" -eq "${#workflow_run_ids[@]}" &&
-        "$request_run_count" -eq "${#workflow_run_ids[@]}" &&
+        "$entrypoint_run_count" -eq "${#workflow_run_ids[@]}" &&
         "$hosted_invocation_run_count" -eq "${#workflow_run_ids[@]}" &&
         "$workflow_span_run_count" -eq "${#workflow_run_ids[@]}" &&
         "$exception_rows" -eq 0 ]]; then
     mkdir -p "$(dirname "$REPORT_FILE")"
     jq -n \
+      --arg release_id "${RELEASE_ID:-manual-telemetry}" \
+      --arg release_started_at "${FOUNDRY_RELEASE_STARTED_AT:-$started_at}" \
       --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --arg resource_group "$resource_group" \
       --arg application_insights_name "$application_insights_name" \
@@ -139,10 +190,16 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
       --argjson dependency_rows "$dependency_rows" \
       --argjson trace_rows "$trace_rows" \
       --argjson request_run_count "$request_run_count" \
+      --argjson entrypoint_run_count "$entrypoint_run_count" \
       --argjson hosted_invocation_run_count "$hosted_invocation_run_count" \
       --argjson workflow_span_run_count "$workflow_span_run_count" \
       --argjson exception_rows "$exception_rows" \
       '{
+        schema_version: 1,
+        evidence_type: "application_insights",
+        status: "passed",
+        release_id: $release_id,
+        release_started_at: $release_started_at,
         generated_at: $generated_at,
         resource_group: $resource_group,
         application_insights_name: $application_insights_name,
@@ -154,6 +211,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
         dependency_rows: $dependency_rows,
         trace_rows: $trace_rows,
         request_run_count: $request_run_count,
+        entrypoint_run_count: $entrypoint_run_count,
         hosted_invocation_run_count: $hosted_invocation_run_count,
         workflow_span_run_count: $workflow_span_run_count,
         exception_rows: $exception_rows
@@ -162,7 +220,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     echo "Evidence written to ${REPORT_FILE}."
     exit 0
   fi
-  echo "Awaiting correlated telemetry (attempt ${attempt}/${MAX_ATTEMPTS}; rows=${telemetry_rows}, runs=${matched_count}/${#workflow_run_ids[@]}, request-runs=${request_run_count}/${#workflow_run_ids[@]}, hosted-invocation-runs=${hosted_invocation_run_count}/${#workflow_run_ids[@]}, workflow-span-runs=${workflow_span_run_count}/${#workflow_run_ids[@]}, exceptions=${exception_rows})."
+  echo "Awaiting correlated telemetry (attempt ${attempt}/${MAX_ATTEMPTS}; rows=${telemetry_rows}, runs=${matched_count}/${#workflow_run_ids[@]}, entrypoint-runs=${entrypoint_run_count}/${#workflow_run_ids[@]}, hosted-invocation-runs=${hosted_invocation_run_count}/${#workflow_run_ids[@]}, workflow-span-runs=${workflow_span_run_count}/${#workflow_run_ids[@]}, exceptions=${exception_rows})."
   sleep 15
 done
 

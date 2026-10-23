@@ -166,7 +166,9 @@ flowchart LR
   Docs: https://learn.microsoft.com/en-us/agent-framework/workflows/checkpoints
 - Risk, credit, medical, and driving executor progress is part of the master workflow state; operationally, this prototype exposes master-run resume (`make resume RUN_ID=...`).
 - For multiple failed runs, checkpoint selection is isolated per `workflow_run_id` (latest checkpoint per run).
-- Version-40 nested-graph checkpoints are unsupported for resume after deployment. There is no compatibility workflow or fallback: begin a new run rather than resuming a pre-cutover checkpoint.
+- Superseded nested-graph checkpoints are unsupported for resume after
+  deployment. There is no compatibility workflow or fallback: begin a new run
+  rather than resuming a pre-cutover checkpoint.
 
 ### 3.2 Fan-in aggregation and barrier behavior
 
@@ -203,7 +205,8 @@ It changes **delivery governance**, not the underwriting workflow design.
   internal backend adapter.
 - The hosted Responses entrypoint is the production executor.
 - PostgreSQL remains the durable recovery and audit store.
-- AG-UI and CopilotKit remain public surfaces backed by durable projections.
+- AG-UI and CopilotKit remain browser-facing surfaces behind the frontend
+  proxy and are backed by durable projections.
 - Release readiness is claimed from recorded hosted smoke, E2E, eval, and telemetry evidence.
 
 ### 3.6 What does clean cutover / no shims mean here?
@@ -216,6 +219,20 @@ Specifically, the public lane should not introduce:
 - a shadow checkpoint or history store,
 - direct browser-to-Foundry traffic,
 - local-only fallback behavior presented as production hosting.
+
+### 3.7 How does human-underwriter review preserve decision auditability?
+
+- Deterministic policy remains the machine authority.
+- Only `REFER_TO_HUMAN_UNDERWRITER` creates a review checkpoint.
+- The machine recommendation is immutable.
+- A reviewer records a separate `APPROVED` or `DECLINED` outcome.
+- Responses/API and Teams checkpoints are isolated by trusted origin.
+- Teams uses a privacy-safe Adaptive Card with opaque, expiring, one-time,
+  reviewer/conversation-bound actions.
+- Typed approval words are ordinary text, not decisions.
+
+See [business rules](business-rules.md) and
+[human-underwriter review](hitl-review.md).
 
 ---
 
@@ -343,7 +360,8 @@ Current position:
 ## 9. What this prototype does not claim yet
 
 1. Durable Extension behavior.
-2. Compatibility resume for version-40 nested-graph checkpoints or an independent executor resume model.
+2. Compatibility resume for superseded nested-graph checkpoints or an
+   independent executor resume model.
 3. `AddFanInBarrierEdge` behavior beyond documented fan-in concept.
 4. Arbitrary executor-private fields as automatically recovery-safe.
 5. Production-grade multi-tenant identity, authentication, and authorization.

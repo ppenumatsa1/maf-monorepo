@@ -13,6 +13,8 @@ IDEMPOTENCY_SKIP = "idempotency_skip"
 CHECK_COMPLETED = "check_completed"
 FAN_IN_RESULT_RECEIVED = "fan_in_result_received"
 FINAL_DECISION = "final_decision"
+REVIEW_REQUESTED = "review_requested"
+REVIEW_RESOLVED = "review_resolved"
 
 __all__ = [
     "CHECK_COMPLETED",
@@ -25,6 +27,8 @@ __all__ = [
     "RETRY_ATTEMPT",
     "RETRY_BACKOFF",
     "RETRY_EXHAUSTED",
+    "REVIEW_REQUESTED",
+    "REVIEW_RESOLVED",
     "WORKFLOW_COMPLETED",
     "WORKFLOW_CRASHED",
     "WORKFLOW_START",

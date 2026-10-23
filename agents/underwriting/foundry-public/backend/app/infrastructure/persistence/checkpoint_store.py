@@ -25,6 +25,10 @@ CHECKPOINT_ALLOWED_TYPES = frozenset(
         "app.modules.underwriting.models:CheckType",
         "app.modules.underwriting.models:Decision",
         "app.modules.underwriting.models:FinalDecisionResult",
+        "app.modules.underwriting.models:HumanReviewDecision",
+        "app.modules.underwriting.models:HumanReviewRequest",
+        "app.modules.underwriting.models:OriginChannel",
+        "app.modules.underwriting.models:ReviewerOutcome",
         "app.modules.underwriting.models:UnderwritingApplication",
         "app.modules.underwriting.models:UnderwritingRunRequest",
     }

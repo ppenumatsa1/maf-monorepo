@@ -243,5 +243,17 @@ def test_public_adapter_dispatches_to_hosted_agent_without_constructing_runner(
     assert projection == {
         "workflow_run_id": "run-adapter-test",
         "status": "COMPLETED",
-        "outputs": [{"decision": "APPROVED", "rationale": "Hosted result"}],
+        "outputs": [
+            {
+                "decision": "APPROVED",
+                "rationale": "Hosted result",
+                "machine_recommendation": "APPROVED",
+                "reviewer_outcome": None,
+                "review_checkpoint_id": None,
+            }
+        ],
+        "machine_recommendation": "APPROVED",
+        "reviewer_outcome": None,
+        "review_checkpoint_id": None,
+        "review_status": None,
     }

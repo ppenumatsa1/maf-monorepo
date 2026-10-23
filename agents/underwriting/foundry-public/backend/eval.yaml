@@ -14,7 +14,9 @@ foundry:
     - coherence
   trace_evaluation:
     evidence_file: .foundry/results/hosted-smoke-evidence.json
-    minimum_trace_age_seconds: 90
+    max_evidence_age_seconds: 3600
+    readiness_retry_seconds: 15
+    readiness_timeout_seconds: 240
   poll_interval: 5
   timeout: 900
 options:
